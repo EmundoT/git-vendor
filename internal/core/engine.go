@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -66,18 +67,24 @@ func (m *Manager) ParseSmartURL(rawURL string) (string, string, string) {
 }
 
 func (m *Manager) FetchRepoDir(url, ref, subdir string) ([]string, error) {
+	// Create context with 30 second timeout for directory listing
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	tempDir, err := os.MkdirTemp("", "git-vendor-index-*")
 	if err != nil { return nil, err }
 	defer os.RemoveAll(tempDir)
 
-	err = runGit(tempDir, "clone", "--filter=blob:none", "--no-checkout", "--depth", "1", url, ".")
+	err = runGitWithContext(ctx, tempDir, "clone", "--filter=blob:none", "--no-checkout", "--depth", "1", url, ".")
 	if err != nil { return nil, err }
 
-	if ref != "" && ref != "HEAD" { runGit(tempDir, "fetch", "origin", ref) }
+	if ref != "" && ref != "HEAD" {
+		runGitWithContext(ctx, tempDir, "fetch", "origin", ref)
+	}
 	target := ref
 	if target == "" { target = "HEAD" }
-	
-	cmd := exec.Command("git", "ls-tree", target)
+
+	cmd := exec.CommandContext(ctx, "git", "ls-tree", target)
 	if subdir != "" && subdir != "." {
 		cleanSub := strings.TrimSuffix(subdir, "/")
 		cmd.Args = append(cmd.Args, cleanSub + "/")
@@ -85,7 +92,7 @@ func (m *Manager) FetchRepoDir(url, ref, subdir string) ([]string, error) {
 	cmd.Dir = tempDir
 	out, err := cmd.Output()
 	if err != nil && subdir != "" {
-		cmd = exec.Command("git", "ls-tree", target, strings.TrimSuffix(subdir, "/"))
+		cmd = exec.CommandContext(ctx, "git", "ls-tree", target, strings.TrimSuffix(subdir, "/"))
 		cmd.Dir = tempDir
 		out, err = cmd.Output()
 	}
@@ -98,7 +105,7 @@ func (m *Manager) FetchRepoDir(url, ref, subdir string) ([]string, error) {
 		if len(parts) < 4 { continue }
 		objType := parts[1]
 		fullPath := strings.Join(parts[3:], " ")
-		
+
 		relName := fullPath
 		if subdir != "" && subdir != "." {
 			cleanSub := strings.TrimSuffix(subdir, "/") + "/"
@@ -337,6 +344,13 @@ func runGit(dir string, args ...string) error {
 	if output, err := cmd.CombinedOutput(); err != nil { return fmt.Errorf("%s", string(output)) }
 	return nil
 }
+
+func runGitWithContext(ctx context.Context, dir string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil { return fmt.Errorf("%s", string(output)) }
+	return nil
+}
 func getHeadHash(dir string) (string, error) {
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = dir
@@ -388,6 +402,17 @@ func (m *Manager) isLicenseAllowed(license string) bool {
 	return false
 }
 func (m *Manager) GetConfig() (types.VendorConfig, error) { return m.loadConfig() }
+
+func (m *Manager) GetLockHash(vendorName, ref string) string {
+	lock, err := m.loadLock()
+	if err != nil { return "" }
+	for _, l := range lock.Vendors {
+		if l.Name == vendorName && l.Ref == ref {
+			return l.CommitHash
+		}
+	}
+	return ""
+}
 func (m *Manager) loadConfig() (types.VendorConfig, error) {
 	data, err := os.ReadFile(m.ConfigPath())
 	if err != nil {

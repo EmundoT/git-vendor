@@ -22,9 +22,10 @@ var (
 )
 
 type VendorManager interface {
-	ParseSmartURL(string) (string, string, string) 
+	ParseSmartURL(string) (string, string, string)
 	FetchRepoDir(string, string, string) ([]string, error)
 	ListLocalDir(string) ([]string, error)
+	GetLockHash(vendorName, ref string) string
 }
 
 func check(err error) {
@@ -133,7 +134,21 @@ func RunEditVendorWizard(mgr interface{}, vendor types.VendorSpec) *types.Vendor
 		// 1. Select Ref (Branch) to Edit
 		var branchOpts []huh.Option[string]
 		for i, s := range vendor.Specs {
-			label := fmt.Sprintf("Branch: %s (%d mappings)", s.Ref, len(s.Mapping))
+			// Get lock status
+			status := "not synced"
+			if hash := manager.GetLockHash(vendor.Name, s.Ref); hash != "" {
+				status = fmt.Sprintf("locked: %s", hash[:7])
+			}
+
+			// Show number of paths instead of "mappings"
+			pathCount := "no paths"
+			if len(s.Mapping) == 1 {
+				pathCount = "1 path"
+			} else if len(s.Mapping) > 1 {
+				pathCount = fmt.Sprintf("%d paths", len(s.Mapping))
+			}
+
+			label := fmt.Sprintf("%s (%s, %s)", s.Ref, pathCount, status)
 			branchOpts = append(branchOpts, huh.NewOption(label, fmt.Sprintf("%d", i)))
 		}
 		branchOpts = append(branchOpts, huh.NewOption("+ Add New Branch", "new"))
@@ -252,14 +267,9 @@ func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 
 	if mode == "browse" {
 		m.To = runLocalBrowser(mgr)
-		// If they picked a folder, we assume they want to put it inside? Or rename?
-		// Simple behavior: If browsing, selecting a folder usually means "put it here".
-		// But if mapping a file, selecting a folder means "put in this folder".
-		// If mapping a folder, it might mean "put content here" or "create subfolder".
-		// We'll let them edit the path after picking.
-		huh.NewInput().Title("Refine Local Path").Value(&m.To).Run()
+		if m.To == "" { return nil } // User cancelled
 	} else {
-		huh.NewInput().Title("Local Target").Description("Hit Enter for auto").Value(&m.To).Run()
+		huh.NewInput().Title("Local Target").Description("Leave empty for automatic naming").Value(&m.To).Run()
 	}
 
 	return &m
