@@ -390,9 +390,16 @@ func (m *Manager) isLicenseAllowed(license string) bool {
 func (m *Manager) GetConfig() (types.VendorConfig, error) { return m.loadConfig() }
 func (m *Manager) loadConfig() (types.VendorConfig, error) {
 	data, err := os.ReadFile(m.ConfigPath())
-	if err != nil { return types.VendorConfig{}, nil }
+	if err != nil {
+		if os.IsNotExist(err) {
+			return types.VendorConfig{}, nil // OK: file doesn't exist yet
+		}
+		return types.VendorConfig{}, fmt.Errorf("failed to read vendor.yml: %w", err)
+	}
 	var cfg types.VendorConfig
-	yaml.Unmarshal(data, &cfg)
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return types.VendorConfig{}, fmt.Errorf("invalid vendor.yml: %w", err)
+	}
 	return cfg, nil
 }
 func (m *Manager) saveConfig(cfg types.VendorConfig) error {
@@ -403,7 +410,9 @@ func (m *Manager) loadLock() (types.VendorLock, error) {
 	data, err := os.ReadFile(m.LockPath())
 	if err != nil { return types.VendorLock{}, err }
 	var lock types.VendorLock
-	yaml.Unmarshal(data, &lock)
+	if err := yaml.Unmarshal(data, &lock); err != nil {
+		return types.VendorLock{}, fmt.Errorf("invalid vendor.lock: %w", err)
+	}
 	return lock, nil
 }
 func (m *Manager) saveLock(lock types.VendorLock) error {

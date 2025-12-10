@@ -6,6 +6,8 @@ import (
 	"git-vendor/internal/tui"
 	"git-vendor/internal/types"
 	"os"
+
+	"github.com/charmbracelet/huh"
 )
 
 func main() {
@@ -28,7 +30,11 @@ func main() {
     tui.PrintSuccess("Initialized in ./vendor/")
 
 	case "add":
-		cfg, _ := manager.GetConfig()
+		cfg, err := manager.GetConfig()
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
+		}
 		existing := make(map[string]types.VendorSpec)
 		for _, v := range cfg.Vendors { existing[v.URL] = v }
 
@@ -42,7 +48,11 @@ func main() {
 		tui.PrintSuccess("Done.")
 
 	case "edit":
-		cfg, _ := manager.GetConfig()
+		cfg, err := manager.GetConfig()
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
+		}
 		var names []string
 		for _, v := range cfg.Vendors { names = append(names, v.Name) }
 		
@@ -73,6 +83,25 @@ func main() {
 			return
 		}
 		name := os.Args[2]
+
+		// Add confirmation prompt
+		confirmed := false
+		err := huh.NewConfirm().
+			Title(fmt.Sprintf("Remove vendor '%s'?", name)).
+			Description("This will delete the config entry and license file.").
+			Value(&confirmed).
+			Run()
+
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			return
+		}
+
+		if !confirmed {
+			fmt.Println("Cancelled.")
+			return
+		}
+
 		if err := manager.RemoveVendor(name); err != nil {
 			tui.PrintError("Error", err.Error())
 		} else {
@@ -80,7 +109,11 @@ func main() {
 		}
 
 	case "list":
-		cfg, _ := manager.GetConfig()
+		cfg, err := manager.GetConfig()
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
+		}
 		if len(cfg.Vendors) == 0 {
 			fmt.Println("No vendors configured.")
 		} else {
