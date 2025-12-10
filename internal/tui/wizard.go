@@ -48,6 +48,21 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 		Placeholder("https://github.com/owner/repo").
 		Description("Paste a full repo URL or a specific file link").
 		Value(&rawURL).
+		Validate(func(s string) error {
+			if s == "" {
+				return fmt.Errorf("URL cannot be empty")
+			}
+			s = strings.TrimSpace(s)
+			// Check if it looks like a valid URL
+			if !strings.HasPrefix(s, "http://") && !strings.HasPrefix(s, "https://") && !strings.HasPrefix(s, "git@") {
+				return fmt.Errorf("URL must start with http://, https://, or git@")
+			}
+			// Check if it's a GitHub URL (since ParseSmartURL is GitHub-specific)
+			if !strings.Contains(s, "github.com") {
+				return fmt.Errorf("currently only GitHub URLs are supported")
+			}
+			return nil
+		}).
 		Run()
 	check(err)
 

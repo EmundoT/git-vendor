@@ -39,3 +39,6 @@ vendor.yml
 vendor.lock
 autonomous-coding
 licenses
+
+# AI stuff
+.claude/settings.local.json
