@@ -1,0 +1,201 @@
+package core
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+)
+
+// GitClient handles git command operations
+type GitClient interface {
+	Init(dir string) error
+	AddRemote(dir, name, url string) error
+	Fetch(dir string, depth int, ref string) error
+	FetchAll(dir string) error
+	Checkout(dir, ref string) error
+	GetHeadHash(dir string) (string, error)
+	Clone(dir, url string, opts *CloneOptions) error
+	ListTree(dir, ref, subdir string) ([]string, error)
+}
+
+// CloneOptions configures git clone behavior
+type CloneOptions struct {
+	Filter     string // e.g., "blob:none"
+	NoCheckout bool
+	Depth      int
+}
+
+// SystemGitClient implements GitClient using system git commands
+type SystemGitClient struct {
+	verbose bool
+}
+
+// NewSystemGitClient creates a new SystemGitClient
+func NewSystemGitClient(verbose bool) *SystemGitClient {
+	return &SystemGitClient{verbose: verbose}
+}
+
+// Init initializes a git repository
+func (g *SystemGitClient) Init(dir string) error {
+	return g.run(dir, "init")
+}
+
+// AddRemote adds a git remote
+func (g *SystemGitClient) AddRemote(dir, name, url string) error {
+	return g.run(dir, "remote", "add", name, url)
+}
+
+// Fetch fetches from remote with optional depth
+func (g *SystemGitClient) Fetch(dir string, depth int, ref string) error {
+	args := []string{"fetch"}
+	if depth > 0 {
+		args = append(args, "--depth", fmt.Sprintf("%d", depth))
+	}
+	args = append(args, "origin", ref)
+	return g.run(dir, args...)
+}
+
+// FetchAll fetches all refs from origin
+func (g *SystemGitClient) FetchAll(dir string) error {
+	return g.run(dir, "fetch", "origin")
+}
+
+// Checkout checks out a git ref
+func (g *SystemGitClient) Checkout(dir, ref string) error {
+	return g.run(dir, "checkout", ref)
+}
+
+// GetHeadHash returns the current HEAD commit hash
+func (g *SystemGitClient) GetHeadHash(dir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// Clone clones a repository with options
+func (g *SystemGitClient) Clone(dir, url string, opts *CloneOptions) error {
+	args := []string{"clone"}
+
+	if opts != nil {
+		if opts.Filter != "" {
+			args = append(args, "--filter="+opts.Filter)
+		}
+		if opts.NoCheckout {
+			args = append(args, "--no-checkout")
+		}
+		if opts.Depth > 0 {
+			args = append(args, "--depth", fmt.Sprintf("%d", opts.Depth))
+		}
+	}
+
+	args = append(args, url, ".")
+	return g.run(dir, args...)
+}
+
+// ListTree lists files/directories at a given ref and subdir
+func (g *SystemGitClient) ListTree(dir, ref, subdir string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	target := ref
+	if target == "" {
+		target = "HEAD"
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "ls-tree", target)
+	if subdir != "" && subdir != "." {
+		cleanSub := strings.TrimSuffix(subdir, "/")
+		cmd.Args = append(cmd.Args, cleanSub+"/")
+	}
+	cmd.Dir = dir
+
+	out, err := cmd.Output()
+	if err != nil && subdir != "" {
+		// Try without trailing slash
+		cmd = exec.CommandContext(ctx, "git", "ls-tree", target, strings.TrimSuffix(subdir, "/"))
+		cmd.Dir = dir
+		out, err = cmd.Output()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("git ls-tree failed: %w", err)
+	}
+
+	lines := strings.Split(string(out), "\n")
+	var items []string
+
+	for _, l := range lines {
+		parts := strings.Fields(l)
+		if len(parts) < 4 {
+			continue
+		}
+
+		objType := parts[1]
+		fullPath := strings.Join(parts[3:], " ")
+
+		relName := fullPath
+		if subdir != "" && subdir != "." {
+			cleanSub := strings.TrimSuffix(subdir, "/") + "/"
+			if !strings.HasPrefix(fullPath, cleanSub) {
+				continue
+			}
+			relName = strings.TrimPrefix(fullPath, cleanSub)
+		}
+		if relName == "" {
+			continue
+		}
+
+		if objType == "tree" {
+			items = append(items, relName+"/")
+		} else {
+			items = append(items, relName)
+		}
+	}
+
+	sort.Strings(items)
+	return items, nil
+}
+
+// run executes a git command
+func (g *SystemGitClient) run(dir string, args ...string) error {
+	if g.verbose {
+		fmt.Fprintf(os.Stderr, "[DEBUG] git %s (in %s)\n", strings.Join(args, " "), dir)
+	}
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s", string(output))
+	}
+
+	return nil
+}
+
+// ParseSmartURL extracts repository, ref, and path from GitHub URLs
+func ParseSmartURL(rawURL string) (baseURL, ref, path string) {
+	rawURL = cleanURL(rawURL)
+	reDeep := regexp.MustCompile(`(github\.com/[^/]+/[^/]+)/(blob|tree)/([^/]+)/(.+)`)
+	matches := reDeep.FindStringSubmatch(rawURL)
+
+	if len(matches) == 5 {
+		return "https://" + matches[1], matches[3], matches[4]
+	}
+
+	base := strings.TrimSuffix(rawURL, "/")
+	base = strings.TrimSuffix(base, ".git")
+	return base, "", ""
+}
+
+// cleanURL trims whitespace and backslashes
+func cleanURL(raw string) string {
+	return strings.TrimLeft(strings.TrimSpace(raw), "\\")
+}
