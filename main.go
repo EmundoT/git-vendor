@@ -48,6 +48,9 @@ func main() {
 		}
 		tui.PrintSuccess("Done.")
 
+		// Show conflict warnings after adding vendor
+		tui.ShowConflictWarnings(manager, spec.Name)
+
 	case "edit":
 		cfg, err := manager.GetConfig()
 		if err != nil {
@@ -76,6 +79,7 @@ func main() {
 			tui.PrintError("Error", err.Error())
 		} else {
 			tui.PrintSuccess("Saved " + updatedSpec.Name)
+			// Show conflict warnings after editing vendor (conflicts already shown in wizard, but show again for clarity)
 		}
 
 	case "remove":
@@ -118,19 +122,52 @@ func main() {
 		if len(cfg.Vendors) == 0 {
 			fmt.Println("No vendors configured.")
 		} else {
-			fmt.Println("Configured Vendors:")
+			// Check for conflicts
+			conflicts, _ := manager.DetectConflicts()
+			conflictMap := make(map[string]bool)
+			if len(conflicts) > 0 {
+				for _, c := range conflicts {
+					conflictMap[c.Vendor1] = true
+					conflictMap[c.Vendor2] = true
+				}
+			}
+
+			fmt.Println(tui.StyleTitle("Configured Vendors:"))
+			fmt.Println()
+
 			for _, v := range cfg.Vendors {
-				fmt.Printf("- %s (%s)\n", v.Name, v.URL)
+				// Show conflict indicator
+				conflictIndicator := ""
+				if conflictMap[v.Name] {
+					conflictIndicator = " ⚠"
+				}
+
+				fmt.Printf("📦 %s%s\n", v.Name, conflictIndicator)
+				fmt.Printf("   %s\n", v.URL)
+				fmt.Printf("   License: %s\n", v.License)
+
 				for _, s := range v.Specs {
-					fmt.Printf("  @ %s\n", s.Ref)
-					for _, m := range s.Mapping {
+					fmt.Printf("   └─ @ %s\n", s.Ref)
+					for i, m := range s.Mapping {
 						dest := m.To
 						if dest == "" {
 							dest = "(auto)"
 						}
-						fmt.Printf("    • %s -> %s\n", m.From, dest)
+
+						prefix := "      ├─"
+						if i == len(s.Mapping)-1 {
+							prefix = "      └─"
+						}
+
+						fmt.Printf("%s %s → %s\n", prefix, m.From, dest)
 					}
 				}
+				fmt.Println()
+			}
+
+			// Show conflict summary
+			if len(conflicts) > 0 {
+				tui.PrintWarning("Conflicts Detected", fmt.Sprintf("%d path conflict(s) found. Run 'git-vendor validate' for details.", len(conflicts)))
 			}
 		}
 
@@ -172,6 +209,34 @@ func main() {
 			os.Exit(1)
 		}
 		tui.PrintSuccess("Updated all vendors.")
+
+	case "validate":
+		// Perform config validation
+		if err := manager.ValidateConfig(); err != nil {
+			tui.PrintError("Validation Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Check for conflicts
+		conflicts, err := manager.DetectConflicts()
+		if err != nil {
+			tui.PrintError("Conflict Detection Failed", err.Error())
+			os.Exit(1)
+		}
+
+		if len(conflicts) > 0 {
+			tui.PrintWarning("Path Conflicts Detected", fmt.Sprintf("Found %d conflict(s)", len(conflicts)))
+			fmt.Println()
+			for _, conflict := range conflicts {
+				fmt.Printf("⚠ Conflict: %s\n", conflict.Path)
+				fmt.Printf("  • %s: %s → %s\n", conflict.Vendor1, conflict.Mapping1.From, conflict.Mapping1.To)
+				fmt.Printf("  • %s: %s → %s\n", conflict.Vendor2, conflict.Mapping2.From, conflict.Mapping2.To)
+				fmt.Println()
+			}
+			os.Exit(1)
+		}
+
+		tui.PrintSuccess("Validation passed. No issues found.")
 
 	default:
 		tui.PrintHelp()

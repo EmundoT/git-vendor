@@ -26,6 +26,7 @@ type VendorManager interface {
 	FetchRepoDir(string, string, string) ([]string, error)
 	ListLocalDir(string) ([]string, error)
 	GetLockHash(vendorName, ref string) string
+	DetectConflicts() ([]types.PathConflict, error)
 }
 
 func check(err error) {
@@ -173,7 +174,11 @@ func RunEditVendorWizard(mgr interface{}, vendor types.VendorSpec) *types.Vendor
 		check(err)
 
 		if selection == "cancel" { return nil }
-		if selection == "save" { return &vendor }
+		if selection == "save" {
+			// Show conflict warnings before saving
+			ShowConflictWarnings(manager, vendor.Name)
+			return &vendor
+		}
 		
 		if selection == "new" {
 			var newRef string
@@ -435,13 +440,14 @@ func PrintHelp() {
 	fmt.Println("  add                 Add a new vendor dependency (interactive wizard)")
 	fmt.Println("  edit                Modify existing vendor configuration")
 	fmt.Println("  remove <name>       Remove a vendor by name")
-	fmt.Println("  list                Show all configured vendors")
+	fmt.Println("  list                Show all configured vendors with dependency tree")
 	fmt.Println("  sync [options] [vendor-name]")
 	fmt.Println("                      Download dependencies to locked versions")
 	fmt.Println("    --dry-run         Preview what will be synced without making changes")
 	fmt.Println("    --force           Re-download even if already synced")
 	fmt.Println("    <vendor-name>     Sync only the specified vendor")
 	fmt.Println("  update              Fetch latest commits and update lockfile")
+	fmt.Println("  validate            Check configuration integrity and detect conflicts")
 	fmt.Println("\nExamples:")
 	fmt.Println("  git-vendor init")
 	fmt.Println("  git-vendor add")
@@ -449,8 +455,41 @@ func PrintHelp() {
 	fmt.Println("  git-vendor sync my-vendor")
 	fmt.Println("  git-vendor sync --force")
 	fmt.Println("  git-vendor list")
+	fmt.Println("  git-vendor validate")
 	fmt.Println("  git-vendor remove my-vendor")
 	fmt.Println("\nNavigation:")
 	fmt.Println("  Use arrow keys to navigate, Enter to select")
 	fmt.Println("  Press Ctrl+C to cancel at any time")
+}
+
+// ShowConflictWarnings displays any path conflicts involving the given vendor
+func ShowConflictWarnings(mgr VendorManager, vendorName string) {
+	conflicts, err := mgr.DetectConflicts()
+	if err != nil {
+		return // Silently skip if detection fails
+	}
+
+	// Filter conflicts for this vendor
+	var vendorConflicts []types.PathConflict
+	for _, c := range conflicts {
+		if c.Vendor1 == vendorName || c.Vendor2 == vendorName {
+			vendorConflicts = append(vendorConflicts, c)
+		}
+	}
+
+	if len(vendorConflicts) > 0 {
+		fmt.Println()
+		PrintWarning("Path Conflicts Detected", fmt.Sprintf("Found %d conflict(s) with this vendor", len(vendorConflicts)))
+		for _, c := range vendorConflicts {
+			fmt.Printf("  ⚠ %s\n", c.Path)
+			other := c.Vendor2
+			if c.Vendor2 == vendorName {
+				other = c.Vendor1
+			}
+			fmt.Printf("    Conflicts with vendor: %s\n", other)
+		}
+		fmt.Println()
+		fmt.Println("  Run 'git-vendor validate' for full details")
+		fmt.Println()
+	}
 }

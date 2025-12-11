@@ -33,3 +33,12 @@ type LockDetails struct {
 	LicensePath string `yaml:"license_path"` // Automatically managed
 	Updated     string `yaml:"updated"`
 }
+
+// PathConflict represents a conflict between two vendors mapping to overlapping paths
+type PathConflict struct {
+	Path     string
+	Vendor1  string
+	Vendor2  string
+	Mapping1 PathMapping
+	Mapping2 PathMapping
+}
