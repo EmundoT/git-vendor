@@ -1,7 +1,11 @@
 package core
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+
+	"git-vendor/internal/types"
 )
 
 func TestParseSmartURL(t *testing.T) {
@@ -151,5 +155,174 @@ func TestIsLicenseAllowed(t *testing.T) {
 				t.Errorf("isLicenseAllowed(%q) = %v, want %v", tt.license, got, tt.expected)
 			}
 		})
+	}
+}
+
+// TestDetectConflicts_EmptyOwners tests that DetectConflicts doesn't panic
+// when pathMap contains empty slices (Bug #2)
+func TestDetectConflicts_EmptyOwners(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Create Manager with temp directory
+	m := &Manager{RootDir: filepath.Join(tempDir, "vendor")}
+	os.MkdirAll(m.RootDir, 0755)
+
+	// Create a config with overlapping paths that could trigger the bug
+	config := types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "vendor1",
+				URL:  "https://github.com/test/repo1",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "src", To: "lib"},
+						},
+					},
+				},
+			},
+			{
+				Name: "vendor2",
+				URL:  "https://github.com/test/repo2",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "pkg", To: "lib/pkg"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Save the config
+	if err := m.saveConfig(config); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	// This should not panic even with overlapping paths
+	conflicts, err := m.DetectConflicts()
+	if err != nil {
+		t.Fatalf("DetectConflicts() error = %v", err)
+	}
+
+	// We expect conflicts due to overlapping paths
+	if len(conflicts) == 0 {
+		t.Error("Expected conflicts for overlapping paths, got none")
+	}
+}
+
+// TestSyncWithOptions_VendorNotFound tests that vendor not found error
+// is returned early without unnecessary work (Bug #3)
+func TestSyncWithOptions_VendorNotFound(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Create Manager with temp directory
+	m := &Manager{RootDir: filepath.Join(tempDir, "vendor")}
+	os.MkdirAll(m.RootDir, 0755)
+
+	// Create a config with some vendors
+	config := types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "existing-vendor",
+				URL:  "https://github.com/test/repo",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "src", To: "lib"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Save the config
+	if err := m.saveConfig(config); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	// Create an empty lock file to avoid triggering update
+	lock := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "existing-vendor",
+				Ref:        "main",
+				CommitHash: "abc123",
+				Updated:    "2025-01-01T00:00:00Z",
+			},
+		},
+	}
+	if err := m.saveLock(lock); err != nil {
+		t.Fatalf("Failed to save lock: %v", err)
+	}
+
+	// Try to sync a vendor that doesn't exist
+	err := m.SyncWithOptions("nonexistent-vendor", false)
+
+	// Should get a vendor not found error
+	if err == nil {
+		t.Error("Expected error for nonexistent vendor, got nil")
+	}
+
+	// The error should be returned immediately (before attempting any git operations)
+	// This is verified by the fact that we don't need git installed for this test to pass
+	expectedErr := "vendor 'nonexistent-vendor' not found"
+	if err.Error() != expectedErr {
+		t.Errorf("Expected error %q, got %q", expectedErr, err.Error())
+	}
+}
+
+// TestDetectConflicts_NoPanic tests that DetectConflicts handles edge cases safely
+func TestDetectConflicts_NoPanic(t *testing.T) {
+	tempDir := t.TempDir()
+	m := &Manager{RootDir: filepath.Join(tempDir, "vendor")}
+	os.MkdirAll(m.RootDir, 0755)
+
+	// Test with empty config
+	emptyConfig := types.VendorConfig{Vendors: []types.VendorSpec{}}
+	if err := m.saveConfig(emptyConfig); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	conflicts, err := m.DetectConflicts()
+	if err != nil {
+		t.Fatalf("DetectConflicts() with empty config error = %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Errorf("Expected no conflicts with empty config, got %d", len(conflicts))
+	}
+
+	// Test with vendor that has no mappings
+	configNoMappings := types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "test-vendor",
+				URL:  "https://github.com/test/repo",
+				Specs: []types.BranchSpec{
+					{
+						Ref:     "main",
+						Mapping: []types.PathMapping{},
+					},
+				},
+			},
+		},
+	}
+	if err := m.saveConfig(configNoMappings); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	conflicts, err = m.DetectConflicts()
+	if err != nil {
+		t.Fatalf("DetectConflicts() with no mappings error = %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Errorf("Expected no conflicts with no mappings, got %d", len(conflicts))
 	}
 }

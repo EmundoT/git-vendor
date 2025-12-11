@@ -247,6 +247,20 @@ func (m *Manager) sync(dryRun bool, vendorName string, force bool) error {
 		lockMap[l.Name][l.Ref] = l.CommitHash
 	}
 
+	// Validate vendor exists BEFORE doing any work
+	if vendorName != "" {
+		found := false
+		for _, v := range config.Vendors {
+			if v.Name == vendorName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf(ErrVendorNotFound, vendorName)
+		}
+	}
+
 	if dryRun {
 		fmt.Println(tui.StyleTitle("Sync Plan:"))
 		fmt.Println()
@@ -270,20 +284,6 @@ func (m *Manager) sync(dryRun bool, vendorName string, force bool) error {
 			if _, err := m.syncVendor(v, refs); err != nil {
 				return err
 			}
-		}
-	}
-
-	// If vendorName was specified but not found, return error
-	if vendorName != "" {
-		found := false
-		for _, v := range config.Vendors {
-			if v.Name == vendorName {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf(ErrVendorNotFound, vendorName)
 		}
 	}
 
@@ -653,6 +653,11 @@ func (m *Manager) DetectConflicts() ([]types.PathConflict, error) {
 			if isSubPath(path1, path2) {
 				owners1 := pathMap[path1]
 				owners2 := pathMap[path2]
+
+				// Skip malformed entries (empty slices)
+				if len(owners1) == 0 || len(owners2) == 0 {
+					continue
+				}
 
 				// Only report if different vendors
 				if owners1[0].VendorName != owners2[0].VendorName {
