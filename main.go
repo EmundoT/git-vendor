@@ -6,6 +6,7 @@ import (
 	"git-vendor/internal/tui"
 	"git-vendor/internal/types"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 )
@@ -123,17 +124,31 @@ func main() {
 				for _, s := range v.Specs {
 					fmt.Printf("  @ %s\n", s.Ref)
 					for _, m := range s.Mapping {
-						fmt.Printf("    • %s -> %s\n", m.From, m.To)
+						dest := m.To
+						if dest == "" {
+							dest = "(auto)"
+						}
+						fmt.Printf("    • %s -> %s\n", m.From, dest)
 					}
 				}
 			}
 		}
 
 	case "sync":
-		// Check for --dry-run flag
+		// Parse flags and arguments
 		dryRun := false
-		if len(os.Args) > 2 && os.Args[2] == "--dry-run" {
-			dryRun = true
+		force := false
+		vendorName := ""
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			if arg == "--dry-run" {
+				dryRun = true
+			} else if arg == "--force" {
+				force = true
+			} else if !strings.HasPrefix(arg, "--") {
+				vendorName = arg
+			}
 		}
 
 		if dryRun {
@@ -144,7 +159,7 @@ func main() {
 			fmt.Println("This is a dry-run. No files were modified.")
 			fmt.Println("Run 'git-vendor sync' to apply changes.")
 		} else {
-			if err := manager.Sync(); err != nil {
+			if err := manager.SyncWithOptions(vendorName, force); err != nil {
 				tui.PrintError("Sync Failed", err.Error())
 				os.Exit(1)
 			}
@@ -152,7 +167,11 @@ func main() {
 		}
 
 	case "update":
-		manager.UpdateAll()
+		if err := manager.UpdateAll(); err != nil {
+			tui.PrintError("Update Failed", err.Error())
+			os.Exit(1)
+		}
+		tui.PrintSuccess("Updated all vendors.")
 
 	default:
 		tui.PrintHelp()

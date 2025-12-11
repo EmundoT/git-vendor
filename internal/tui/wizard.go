@@ -116,7 +116,12 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 		check(err)
 		if useDeep {
 			var dest string
-			huh.NewInput().Title("Local Target").Description("Hit Enter for auto").Value(&dest).Run()
+			autoName := path.Base(smartPath)
+			if autoName == "" || autoName == "." || autoName == "/" {
+				autoName = "(repository root)"
+			}
+			description := fmt.Sprintf("Leave empty for automatic naming (will use: %s)", autoName)
+			huh.NewInput().Title("Local Target").Description(description).Value(&dest).Run()
 			spec.Specs[0].Mapping = append(spec.Specs[0].Mapping, types.PathMapping{From: smartPath, To: dest})
 		}
 	}
@@ -190,7 +195,11 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 	for {
 		var opts []huh.Option[string]
 		for i, m := range branch.Mapping {
-			label := fmt.Sprintf("%-20s → %s", truncate(m.From, 20), m.To)
+			dest := m.To
+			if dest == "" {
+				dest = "(auto)"
+			}
+			label := fmt.Sprintf("%-20s → %s", truncate(m.From, 20), dest)
 			opts = append(opts, huh.NewOption(label, fmt.Sprintf("%d", i)))
 		}
 		opts = append(opts, huh.NewOption("+ Add Path", "add"))
@@ -230,12 +239,27 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 			).Value(&action).Run()
 
 		if action == "delete" {
-			branch.Mapping = append(branch.Mapping[:idx], branch.Mapping[idx+1:]...)
+			var confirmDelete bool
+			huh.NewConfirm().
+				Title(fmt.Sprintf("Delete mapping for '%s'?", branch.Mapping[idx].From)).
+				Description("This will remove the path mapping.").
+				Value(&confirmDelete).
+				Run()
+			if confirmDelete {
+				branch.Mapping = append(branch.Mapping[:idx], branch.Mapping[idx+1:]...)
+			}
 		} else if action == "edit" {
 			// Reuse creator for editing
 			// Ideally pre-fill, but for now simple edit inputs
 			huh.NewInput().Title("Remote Path").Value(&branch.Mapping[idx].From).Run()
-			huh.NewInput().Title("Local Target").Value(&branch.Mapping[idx].To).Run()
+
+			// Show auto-naming preview
+			autoName := path.Base(branch.Mapping[idx].From)
+			if autoName == "" || autoName == "." || autoName == "/" {
+				autoName = "(repository root)"
+			}
+			description := fmt.Sprintf("Leave empty for automatic naming (will use: %s)", autoName)
+			huh.NewInput().Title("Local Target").Description(description).Value(&branch.Mapping[idx].To).Run()
 		}
 	}
 }
@@ -271,13 +295,23 @@ func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 		m.To = runLocalBrowser(mgr)
 		if m.To == "" { return nil } // User cancelled
 	} else {
-		huh.NewInput().Title("Local Target").Description("Leave empty for automatic naming").Value(&m.To).Run()
+		// Show preview of auto-generated name
+		autoName := path.Base(m.From)
+		if autoName == "" || autoName == "." || autoName == "/" {
+			autoName = "(repository root)"
+		}
+		description := fmt.Sprintf("Leave empty for automatic naming (will use: %s)", autoName)
+		huh.NewInput().Title("Local Target").Description(description).Value(&m.To).Run()
 	}
 
 	return &m
 }
 
 func runRemoteBrowser(mgr VendorManager, url, ref string) string {
+	// Extract repo name from URL for breadcrumb
+	repoName := path.Base(url)
+	repoName = strings.TrimSuffix(repoName, ".git")
+
 	currentDir := ""
 	for {
 		items, err := mgr.FetchRepoDir(url, ref, currentDir)
@@ -298,9 +332,15 @@ func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 		}
 		opts = append(opts, huh.NewOption("❌ Cancel", "CANCEL"))
 
+		// Build breadcrumb trail
+		breadcrumb := repoName + " @ " + ref
+		if currentDir != "" {
+			breadcrumb += " / " + strings.ReplaceAll(currentDir, "/", " / ")
+		}
+
 		var selection string
 		huh.NewSelect[string]().
-			Title(fmt.Sprintf("Remote: /%s", currentDir)).
+			Title(breadcrumb).
 			Description("Navigate: ↑↓ | Select file/folder: Enter | Cancel: Ctrl+C").
 			Options(opts...).
 			Value(&selection).
@@ -396,12 +436,18 @@ func PrintHelp() {
 	fmt.Println("  edit                Modify existing vendor configuration")
 	fmt.Println("  remove <name>       Remove a vendor by name")
 	fmt.Println("  list                Show all configured vendors")
-	fmt.Println("  sync [--dry-run]    Download dependencies to locked versions")
+	fmt.Println("  sync [options] [vendor-name]")
+	fmt.Println("                      Download dependencies to locked versions")
+	fmt.Println("    --dry-run         Preview what will be synced without making changes")
+	fmt.Println("    --force           Re-download even if already synced")
+	fmt.Println("    <vendor-name>     Sync only the specified vendor")
 	fmt.Println("  update              Fetch latest commits and update lockfile")
 	fmt.Println("\nExamples:")
 	fmt.Println("  git-vendor init")
 	fmt.Println("  git-vendor add")
 	fmt.Println("  git-vendor sync --dry-run")
+	fmt.Println("  git-vendor sync my-vendor")
+	fmt.Println("  git-vendor sync --force")
 	fmt.Println("  git-vendor list")
 	fmt.Println("  git-vendor remove my-vendor")
 	fmt.Println("\nNavigation:")

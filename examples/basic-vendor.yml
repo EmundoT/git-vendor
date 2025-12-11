@@ -1,0 +1,13 @@
+# Basic vendor.yml example
+# This shows a simple single-file vendoring setup
+
+vendors:
+  - name: go-humanize
+    url: https://github.com/dustin/go-humanize
+    license: MIT
+    specs:
+      - ref: main
+        mapping:
+          # Vendor a single utility file
+          - from: humanize.go
+            to: internal/utils/humanize.go

@@ -1,0 +1,21 @@
+# Directory vendoring example
+# This shows vendoring entire directories
+
+vendors:
+  - name: component-library
+    url: https://github.com/company/component-library
+    license: MIT
+    specs:
+      - ref: main
+        mapping:
+          # Vendor an entire directory
+          - from: components/buttons
+            to: src/vendor/buttons
+
+          # Vendor another directory
+          - from: components/forms
+            to: src/vendor/forms
+
+          # Vendor utility directory with auto-naming
+          - from: utils
+            to: ""  # Will use "utils" as destination

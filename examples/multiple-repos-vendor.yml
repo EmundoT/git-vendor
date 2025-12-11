@@ -1,0 +1,43 @@
+# Multiple repositories example
+# This shows vendoring from different repositories
+
+vendors:
+  # First vendor: UI components
+  - name: ui-components
+    url: https://github.com/company/design-system
+    license: MIT
+    specs:
+      - ref: v2.1.0
+        mapping:
+          - from: src/components/Button
+            to: components/vendor/Button
+
+          - from: src/components/Input
+            to: components/vendor/Input
+
+  # Second vendor: Utilities
+  - name: lodash-subset
+    url: https://github.com/lodash/lodash
+    license: MIT
+    specs:
+      - ref: 4.17.21
+        mapping:
+          # Vendor only specific lodash functions
+          - from: debounce.js
+            to: utils/debounce.js
+
+          - from: throttle.js
+            to: utils/throttle.js
+
+  # Third vendor: Configuration examples
+  - name: config-examples
+    url: https://github.com/company/config-templates
+    license: Apache-2.0
+    specs:
+      - ref: main
+        mapping:
+          - from: examples/production.yml
+            to: config/templates/production.yml
+
+          - from: examples/development.yml
+            to: config/templates/development.yml
