@@ -372,21 +372,28 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 		}
 
 		if isLocked {
-			runGit(tempDir, "fetch", "--depth", "1", "origin", spec.Ref)
-			if err := runGit(tempDir, "checkout", targetCommit); err != nil {
-				runGit(tempDir, "fetch", "origin")
-				if err := runGit(tempDir, "checkout", targetCommit); err != nil {
-					// Detect stale lock hash error and provide helpful message
-					errMsg := err.Error()
-					if strings.Contains(errMsg, "reference is not a tree") || strings.Contains(errMsg, "not a valid object") {
-						return nil, fmt.Errorf(ErrStaleCommitMsg, targetCommit[:7])
-					}
-					return nil, fmt.Errorf(ErrCheckoutFailed, targetCommit, err)
+			// Try shallow fetch first, fall back to full fetch if needed
+			if err := runGit(tempDir, "fetch", "--depth", "1", "origin", spec.Ref); err != nil {
+				// Shallow fetch failed, try full fetch
+				if err := runGit(tempDir, "fetch", "origin"); err != nil {
+					return nil, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 				}
 			}
+			if err := runGit(tempDir, "checkout", targetCommit); err != nil {
+				// Detect stale lock hash error and provide helpful message
+				errMsg := err.Error()
+				if strings.Contains(errMsg, "reference is not a tree") || strings.Contains(errMsg, "not a valid object") {
+					return nil, fmt.Errorf(ErrStaleCommitMsg, targetCommit[:7])
+				}
+				return nil, fmt.Errorf(ErrCheckoutFailed, targetCommit, err)
+			}
 		} else {
+			// Try shallow fetch first, fall back to full fetch if needed
 			if err := runGit(tempDir, "fetch", "--depth", "1", "origin", spec.Ref); err != nil {
-				runGit(tempDir, "fetch", "origin")
+				// Shallow fetch failed, try full fetch
+				if err := runGit(tempDir, "fetch", "origin"); err != nil {
+					return nil, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
+				}
 			}
 			if err := runGit(tempDir, "checkout", "FETCH_HEAD"); err != nil {
 				if err := runGit(tempDir, "checkout", spec.Ref); err != nil {
@@ -411,7 +418,9 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 		if _, err := os.Stat(licenseSrc); err == nil {
 			os.MkdirAll(filepath.Join(m.RootDir, LicenseDir), 0755)
 			dest := m.LicensePath(v.Name)
-			copyFile(licenseSrc, dest)
+			if err := copyFile(licenseSrc, dest); err != nil {
+				return nil, fmt.Errorf("failed to copy license from %s to %s: %w", licenseSrc, dest, err)
+			}
 		}
 
 		for _, mapping := range spec.Mapping {
@@ -437,10 +446,14 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 
 			if info.IsDir() {
 				os.MkdirAll(destPath, 0755)
-				copyDir(srcPath, destPath)
+				if err := copyDir(srcPath, destPath); err != nil {
+					return nil, fmt.Errorf("failed to copy directory %s to %s: %w", srcPath, destPath, err)
+				}
 			} else {
 				os.MkdirAll(filepath.Dir(destPath), 0755)
-				copyFile(srcPath, destPath)
+				if err := copyFile(srcPath, destPath); err != nil {
+					return nil, fmt.Errorf("failed to copy file %s to %s: %w", srcPath, destPath, err)
+				}
 			}
 		}
 	}
