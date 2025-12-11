@@ -563,3 +563,169 @@ func (m *Manager) Audit() {
 	if err != nil { tui.PrintWarning("Audit Failed", "No lockfile."); return }
 	tui.PrintSuccess(fmt.Sprintf("Audit Passed. %d vendors locked.", len(lock.Vendors)))
 }
+
+// DetectConflicts checks for path conflicts between vendors
+func (m *Manager) DetectConflicts() ([]types.PathConflict, error) {
+	config, err := m.loadConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	var conflicts []types.PathConflict
+
+	// Build a map of destination paths to vendor+mapping
+	type PathOwner struct {
+		VendorName string
+		Mapping    types.PathMapping
+		Ref        string
+	}
+	pathMap := make(map[string][]PathOwner)
+
+	for _, vendor := range config.Vendors {
+		for _, spec := range vendor.Specs {
+			for _, mapping := range spec.Mapping {
+				destPath := mapping.To
+
+				// Handle auto-naming
+				if destPath == "" || destPath == "." {
+					if spec.DefaultTarget != "" {
+						destPath = filepath.Join(spec.DefaultTarget, filepath.Base(mapping.From))
+					} else {
+						destPath = filepath.Base(mapping.From)
+					}
+				}
+
+				// Normalize path
+				destPath = filepath.Clean(destPath)
+
+				pathMap[destPath] = append(pathMap[destPath], PathOwner{
+					VendorName: vendor.Name,
+					Mapping:    mapping,
+					Ref:        spec.Ref,
+				})
+			}
+		}
+	}
+
+	// Check for conflicts
+	for path, owners := range pathMap {
+		if len(owners) > 1 {
+			// Multiple vendors map to the same path
+			for i := 0; i < len(owners)-1; i++ {
+				for j := i + 1; j < len(owners); j++ {
+					conflicts = append(conflicts, types.PathConflict{
+						Path:     path,
+						Vendor1:  owners[i].VendorName,
+						Vendor2:  owners[j].VendorName,
+						Mapping1: owners[i].Mapping,
+						Mapping2: owners[j].Mapping,
+					})
+				}
+			}
+		}
+	}
+
+	// Also check for overlapping directory paths (e.g., "src" and "src/components")
+	var allPaths []string
+	for path := range pathMap {
+		allPaths = append(allPaths, path)
+	}
+
+	for i := 0; i < len(allPaths)-1; i++ {
+		for j := i + 1; j < len(allPaths); j++ {
+			path1 := allPaths[i]
+			path2 := allPaths[j]
+
+			// Check if one path is a subdirectory of another
+			if isSubPath(path1, path2) {
+				owners1 := pathMap[path1]
+				owners2 := pathMap[path2]
+
+				// Only report if different vendors
+				if owners1[0].VendorName != owners2[0].VendorName {
+					conflicts = append(conflicts, types.PathConflict{
+						Path:     fmt.Sprintf("%s overlaps with %s", path1, path2),
+						Vendor1:  owners1[0].VendorName,
+						Vendor2:  owners2[0].VendorName,
+						Mapping1: owners1[0].Mapping,
+						Mapping2: owners2[0].Mapping,
+					})
+				}
+			}
+		}
+	}
+
+	return conflicts, nil
+}
+
+// isSubPath checks if path1 is a subdirectory of path2 or vice versa
+func isSubPath(path1, path2 string) bool {
+	path1 = filepath.Clean(path1)
+	path2 = filepath.Clean(path2)
+
+	// Check if path2 is under path1
+	rel, err := filepath.Rel(path1, path2)
+	if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+		return true
+	}
+
+	// Check if path1 is under path2
+	rel, err = filepath.Rel(path2, path1)
+	if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+		return true
+	}
+
+	return false
+}
+
+// ValidateConfig performs comprehensive config validation
+func (m *Manager) ValidateConfig() error {
+	config, err := m.loadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Check for empty vendors
+	if len(config.Vendors) == 0 {
+		return fmt.Errorf("no vendors configured")
+	}
+
+	// Check for duplicate vendor names
+	names := make(map[string]bool)
+	for _, vendor := range config.Vendors {
+		if names[vendor.Name] {
+			return fmt.Errorf("duplicate vendor name: %s", vendor.Name)
+		}
+		names[vendor.Name] = true
+
+		// Validate vendor has URL
+		if vendor.URL == "" {
+			return fmt.Errorf("vendor %s has no URL", vendor.Name)
+		}
+
+		// Validate vendor has at least one spec
+		if len(vendor.Specs) == 0 {
+			return fmt.Errorf("vendor %s has no specs configured", vendor.Name)
+		}
+
+		// Validate each spec
+		for _, spec := range vendor.Specs {
+			if spec.Ref == "" {
+				return fmt.Errorf("vendor %s has a spec with no ref", vendor.Name)
+			}
+
+			if len(spec.Mapping) == 0 {
+				return fmt.Errorf("vendor %s @ %s has no path mappings", vendor.Name, spec.Ref)
+			}
+
+			// Validate each mapping
+			for _, mapping := range spec.Mapping {
+				if mapping.From == "" {
+					return fmt.Errorf("vendor %s @ %s has a mapping with empty 'from' path", vendor.Name, spec.Ref)
+				}
+			}
+		}
+	}
+
+	return nil
+}
