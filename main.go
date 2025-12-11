@@ -185,6 +185,7 @@ func main() {
 				force = true
 			} else if arg == "--verbose" || arg == "-v" {
 				core.Verbose = true
+				manager.UpdateVerboseMode(true)
 			} else if !strings.HasPrefix(arg, "--") {
 				vendorName = arg
 			}
@@ -211,6 +212,7 @@ func main() {
 			arg := os.Args[i]
 			if arg == "--verbose" || arg == "-v" {
 				core.Verbose = true
+				manager.UpdateVerboseMode(true)
 			}
 		}
 
