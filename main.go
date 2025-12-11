@@ -130,11 +130,26 @@ func main() {
 		}
 
 	case "sync":
-		if err := manager.Sync(); err != nil {
-			tui.PrintError("Sync Failed", err.Error())
-			os.Exit(1)
+		// Check for --dry-run flag
+		dryRun := false
+		if len(os.Args) > 2 && os.Args[2] == "--dry-run" {
+			dryRun = true
 		}
-		tui.PrintSuccess("Synced.")
+
+		if dryRun {
+			if err := manager.SyncDryRun(); err != nil {
+				tui.PrintError("Preview Failed", err.Error())
+				os.Exit(1)
+			}
+			fmt.Println("This is a dry-run. No files were modified.")
+			fmt.Println("Run 'git-vendor sync' to apply changes.")
+		} else {
+			if err := manager.Sync(); err != nil {
+				tui.PrintError("Sync Failed", err.Error())
+				os.Exit(1)
+			}
+			tui.PrintSuccess("Synced.")
+		}
 
 	case "update":
 		manager.UpdateAll()

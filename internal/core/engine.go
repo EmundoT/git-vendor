@@ -191,11 +191,23 @@ func (m *Manager) AddVendor(spec types.VendorSpec) error {
 }
 
 func (m *Manager) Sync() error {
+	return m.sync(false)
+}
+
+func (m *Manager) SyncDryRun() error {
+	return m.sync(true)
+}
+
+func (m *Manager) sync(dryRun bool) error {
 	config, err := m.loadConfig()
 	if err != nil { return err }
 
 	lock, err := m.loadLock()
 	if err != nil || len(lock.Vendors) == 0 {
+		if dryRun {
+			fmt.Println("No lockfile found. Would run update to create lockfile.")
+			return nil
+		}
 		fmt.Println("No lockfile found. Running update...")
 		return m.UpdateAll()
 	}
@@ -206,13 +218,50 @@ func (m *Manager) Sync() error {
 		lockMap[l.Name][l.Ref] = l.CommitHash
 	}
 
+	if dryRun {
+		fmt.Println(tui.StyleTitle("Sync Plan:"))
+		fmt.Println()
+	}
+
 	for _, v := range config.Vendors {
 		v.URL = cleanURL(v.URL)
-		if _, err := m.syncVendor(v, lockMap[v.Name]); err != nil {
-			return err
+		if dryRun {
+			m.previewSyncVendor(v, lockMap[v.Name])
+		} else {
+			if _, err := m.syncVendor(v, lockMap[v.Name]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func (m *Manager) previewSyncVendor(v types.VendorSpec, lockedRefs map[string]string) {
+	fmt.Printf("✓ %s\n", v.Name)
+
+	for _, spec := range v.Specs {
+		status := "not synced"
+		if lockedRefs != nil {
+			if h, ok := lockedRefs[spec.Ref]; ok && h != "" {
+				status = fmt.Sprintf("locked: %s", h[:7])
+			}
+		}
+
+		fmt.Printf("  @ %s (%s)\n", spec.Ref, status)
+
+		if len(spec.Mapping) == 0 {
+			fmt.Printf("    (no paths configured)\n")
+		} else {
+			for _, m := range spec.Mapping {
+				dest := m.To
+				if dest == "" {
+					dest = "(auto)"
+				}
+				fmt.Printf("    → %s → %s\n", m.From, dest)
+			}
+		}
+	}
+	fmt.Println()
 }
 
 func (m *Manager) UpdateAll() error {
