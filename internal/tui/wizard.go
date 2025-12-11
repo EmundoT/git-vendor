@@ -160,6 +160,7 @@ func RunEditVendorWizard(mgr interface{}, vendor types.VendorSpec) *types.Vendor
 		
 		err := huh.NewSelect[string]().
 			Title("Select Branch to Manage").
+			Description("Use arrow keys to navigate, Enter to select, Ctrl+C to cancel").
 			Options(branchOpts...).
 			Value(&selection).
 			Height(10).
@@ -192,13 +193,14 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 			label := fmt.Sprintf("%-20s → %s", truncate(m.From, 20), m.To)
 			opts = append(opts, huh.NewOption(label, fmt.Sprintf("%d", i)))
 		}
-		opts = append(opts, huh.NewOption("+ Add Mapping", "add"))
+		opts = append(opts, huh.NewOption("+ Add Path", "add"))
 		opts = append(opts, huh.NewOption("← Back", "back"))
 
 		var selection string
-		fmt.Println(styleDim.Render(fmt.Sprintf("Managing mappings for %s", branch.Ref)))
+		fmt.Println(styleDim.Render(fmt.Sprintf("Managing paths for %s", branch.Ref)))
 		huh.NewSelect[string]().
-			Title("Mappings").
+			Title("Paths").
+			Description("Use arrow keys to navigate, Enter to select").
 			Options(opts...).
 			Value(&selection).
 			Height(10).
@@ -220,7 +222,7 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 		
 		var action string
 		huh.NewSelect[string]().
-			Title(fmt.Sprintf("Mapping: %s", branch.Mapping[idx].From)).
+			Title(fmt.Sprintf("Path: %s", branch.Mapping[idx].From)).
 			Options(
 				huh.NewOption("Edit Paths", "edit"),
 				huh.NewOption("Delete", "delete"),
@@ -297,7 +299,13 @@ func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 		opts = append(opts, huh.NewOption("❌ Cancel", "CANCEL"))
 
 		var selection string
-		huh.NewSelect[string]().Title(fmt.Sprintf("Remote: /%s", currentDir)).Options(opts...).Value(&selection).Height(15).Run()
+		huh.NewSelect[string]().
+			Title(fmt.Sprintf("Remote: /%s", currentDir)).
+			Description("Navigate: ↑↓ | Select file/folder: Enter | Cancel: Ctrl+C").
+			Options(opts...).
+			Value(&selection).
+			Height(15).
+			Run()
 
 		if selection == "CANCEL" { return "" }
 		if selection == "SELECT_CURRENT" { return currentDir }
@@ -336,7 +344,13 @@ func runLocalBrowser(mgr VendorManager) string {
 		opts = append(opts, huh.NewOption("❌ Cancel", "CANCEL"))
 
 		var selection string
-		huh.NewSelect[string]().Title(fmt.Sprintf("Local: %s", currentDir)).Options(opts...).Value(&selection).Height(15).Run()
+		huh.NewSelect[string]().
+			Title(fmt.Sprintf("Local: %s", currentDir)).
+			Description("Navigate: ↑↓ | Select file/folder: Enter | Cancel: Ctrl+C").
+			Options(opts...).
+			Value(&selection).
+			Height(15).
+			Run()
 
 		if selection == "CANCEL" { return "" }
 		if selection == "SELECT_CURRENT" { return currentDir }
@@ -367,6 +381,7 @@ func PrintError(title, msg string) { fmt.Println(styleErr.Render("✖ " + title)
 func PrintSuccess(msg string) { fmt.Println(styleSuccess.Render("✔ " + msg)) }
 func PrintInfo(msg string) { fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(msg)) }
 func PrintWarning(title, msg string) { fmt.Println(styleWarn.Render("! " + title)); fmt.Println(msg) }
+func StyleTitle(text string) string { return styleTitle.Render(text) }
 func PrintComplianceSuccess(license string) { fmt.Println(styleSuccess.Render(fmt.Sprintf("✔ License Verified: %s", license))) }
 func AskToOverrideCompliance(license string) bool {
 	var confirm bool
@@ -375,5 +390,21 @@ func AskToOverrideCompliance(license string) bool {
 }
 func PrintHelp() {
 	fmt.Println(styleTitle.Render("git-vendor v5.0"))
-	fmt.Println("Usage: add, edit, remove, sync, update")
+	fmt.Println("\nCommands:")
+	fmt.Println("  init                Initialize vendor directory")
+	fmt.Println("  add                 Add a new vendor dependency (interactive wizard)")
+	fmt.Println("  edit                Modify existing vendor configuration")
+	fmt.Println("  remove <name>       Remove a vendor by name")
+	fmt.Println("  list                Show all configured vendors")
+	fmt.Println("  sync [--dry-run]    Download dependencies to locked versions")
+	fmt.Println("  update              Fetch latest commits and update lockfile")
+	fmt.Println("\nExamples:")
+	fmt.Println("  git-vendor init")
+	fmt.Println("  git-vendor add")
+	fmt.Println("  git-vendor sync --dry-run")
+	fmt.Println("  git-vendor list")
+	fmt.Println("  git-vendor remove my-vendor")
+	fmt.Println("\nNavigation:")
+	fmt.Println("  Use arrow keys to navigate, Enter to select")
+	fmt.Println("  Press Ctrl+C to cancel at any time")
 }
