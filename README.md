@@ -75,6 +75,8 @@ The wizard will guide you through:
 
 The tool automatically extracts the repository, ref, and path.
 
+**⚠️ Limitation**: Branch names containing slashes (e.g., `feature/new-feature`) are not supported in URL parsing due to ambiguity. For such branches, use the base repository URL and manually enter the ref during the wizard.
+
 #### `git-vendor edit`
 
 Modify existing vendor configurations through an interactive wizard.
@@ -111,6 +113,7 @@ Download vendored dependencies to their configured local paths.
 
 - `--dry-run` - Preview what will be synced without making changes
 - `--force` - Re-download files even if already synced
+- `--verbose` / `-v` - Show git commands as they run (useful for debugging)
 - `<vendor-name>` - Sync only the specified vendor
 
 **Examples:**
@@ -137,9 +140,13 @@ git-vendor sync --force
 4. Copies specified paths to local destinations
 5. Caches license files to `vendor/licenses/`
 
-#### `git-vendor update`
+#### `git-vendor update [options]`
 
 Fetch the latest commits for all configured refs and update the lock file.
+
+**Options:**
+
+- `--verbose` / `-v` - Show git commands as they run (useful for debugging)
 
 This command:
 
@@ -358,6 +365,28 @@ your-project/
 - **No Git History**: Vendored files are plain copies, not git repos
 - **Interactive TUI**: User-friendly wizard for complex operations
 - **GitHub-First**: Smart URL parsing optimized for GitHub workflows
+
+## Security
+
+Git-vendor includes several security protections:
+
+### Path Traversal Protection
+
+Destination paths are validated to prevent path traversal attacks:
+
+- **Absolute paths are rejected**: Paths like `/etc/passwd` or `C:\Windows\System32` are not allowed
+- **Parent directory references are rejected**: Paths containing `..` like `../../../etc/passwd` are blocked
+- **Only relative paths within the project are allowed**: All vendored files must be copied to paths relative to your project root
+
+If you encounter an "invalid destination path" error, ensure your path mappings use relative paths without `..` segments.
+
+### License Compliance
+
+Git-vendor automatically detects and validates licenses:
+
+- Approved licenses (MIT, Apache-2.0, BSD variants, ISC, Unlicense, CC0) are allowed by default
+- Other licenses require user confirmation before vendoring
+- License files are cached locally for audit purposes
 
 ## Troubleshooting
 
