@@ -1,0 +1,24 @@
+# Default target example
+# This shows using default_target to set a base directory for all mappings
+
+vendors:
+  - name: shared-utils
+    url: https://github.com/company/utils
+    license: MIT
+    specs:
+      - ref: main
+        default_target: internal/vendor/utils
+        mapping:
+          # These will all be placed under internal/vendor/utils/
+          - from: src/string.go
+            to: ""  # → internal/vendor/utils/string.go
+
+          - from: src/array.go
+            to: ""  # → internal/vendor/utils/array.go
+
+          - from: src/math.go
+            to: ""  # → internal/vendor/utils/math.go
+
+          # You can still override with explicit paths
+          - from: src/special.go
+            to: pkg/special/helper.go  # Ignores default_target

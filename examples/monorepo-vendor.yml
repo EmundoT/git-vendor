@@ -1,0 +1,23 @@
+# Monorepo vendoring example
+# This shows vendoring from a monorepo structure
+
+vendors:
+  - name: monorepo-utils
+    url: https://github.com/company/monorepo
+    license: MIT
+    specs:
+      - ref: main
+        mapping:
+          # Vendor from different packages in the monorepo
+          - from: packages/logger/src
+            to: internal/vendor/logger
+
+          - from: packages/config/src
+            to: internal/vendor/config
+
+          - from: packages/http-client/src
+            to: internal/vendor/http
+
+          # Vendor shared types
+          - from: packages/types/index.ts
+            to: internal/vendor/types.ts

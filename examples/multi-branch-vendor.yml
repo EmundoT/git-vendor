@@ -1,0 +1,25 @@
+# Multi-branch vendor.yml example
+# This shows tracking multiple refs (branches/tags) from the same repository
+
+vendors:
+  - name: versioned-api
+    url: https://github.com/company/api-client
+    license: BSD-3-Clause
+    specs:
+      # Track v1 API
+      - ref: v1.0
+        mapping:
+          - from: client
+            to: internal/api/v1/client
+
+      # Track v2 API (breaking changes)
+      - ref: v2.0
+        mapping:
+          - from: client
+            to: internal/api/v2/client
+
+      # Also track latest development version
+      - ref: main
+        mapping:
+          - from: client
+            to: internal/api/dev/client

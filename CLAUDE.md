@@ -46,7 +46,7 @@ go run main.go <command>
 
 ### Data Model (internal/types/types.go)
 
-```
+```text
 VendorConfig (vendor.yml)
   └─ VendorSpec (one per dependency)
       ├─ Name: display name
@@ -73,7 +73,8 @@ VendorLock (vendor.lock)
 ### File System Structure
 
 All vendor-related files live in `./vendor/`:
-```
+
+```text
 vendor/
 ├── vendor.yml       # Configuration file
 ├── vendor.lock      # Lock file with commit hashes
@@ -100,6 +101,7 @@ Vendored files are copied to paths specified in the configuration (outside vendo
 ### Smart URL Parsing
 
 The `ParseSmartURL` function (engine.go:57) extracts repository, ref, and path from GitHub URLs:
+
 - `github.com/owner/repo` → base URL, no ref, no path
 - `github.com/owner/repo/blob/main/path/to/file.go` → base URL, "main", "path/to/file.go"
 - `github.com/owner/repo/tree/v1.0/src/` → base URL, "v1.0", "src/"
@@ -107,6 +109,7 @@ The `ParseSmartURL` function (engine.go:57) extracts repository, ref, and path f
 ### Remote Directory Browsing
 
 Uses `git ls-tree` to browse remote repository contents without full checkout (engine.go:69):
+
 1. Clone with `--filter=blob:none --no-checkout --depth 1`
 2. Fetch specific ref if needed
 3. Run `git ls-tree` to list directory contents
@@ -115,6 +118,7 @@ Uses `git ls-tree` to browse remote repository contents without full checkout (e
 ### License Compliance
 
 Automatic license detection via GitHub API (engine.go:431):
+
 - Allowed by default: MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Unlicense, CC0-1.0
 - Other licenses prompt user confirmation
 - License files are automatically copied to `vendor/licenses/{name}.txt`
@@ -122,11 +126,13 @@ Automatic license detection via GitHub API (engine.go:431):
 ## Common Patterns
 
 ### Error Handling
+
 - TUI functions use `check(err)` helper that prints "Aborted." and exits
 - Core functions return errors for caller handling
 - CLI prints styled errors via `tui.PrintError(title, message)`
 
 ### Wizard Flow
+
 1. User inputs URL (validates GitHub URLs only)
 2. ParseSmartURL extracts components
 3. Check if repo already tracked → offer to edit existing
@@ -136,6 +142,7 @@ Automatic license detection via GitHub API (engine.go:431):
 7. Save triggers `UpdateAll()` which regenerates lockfile
 
 ### Git Operations
+
 - Use `runGit(dir, args...)` for standard operations
 - Use `runGitWithContext(ctx, dir, args...)` for operations with timeout
 - Temp directories cleaned up with `defer os.RemoveAll(tempDir)`
@@ -143,17 +150,21 @@ Automatic license detection via GitHub API (engine.go:431):
 ## Development Notes
 
 ### No Tests Currently
+
 There are no test files in the codebase. When adding tests:
+
 - Test Manager operations with mock file system
 - Test URL parsing with various GitHub URL formats
 - Test git operations may require git test fixtures or mocking
 
 ### Dependencies
+
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
 
 ### Concurrency Considerations
+
 - Git operations use 30-second timeout contexts for directory listing
 - No parallel vendor processing (sequential in UpdateAll)
 - File copying is synchronous
@@ -165,3 +176,4 @@ There are no test files in the codebase. When adding tests:
 3. **License location**: Checks LICENSE, LICENSE.txt, and COPYING in repository root only
 4. **Path mapping**: Empty destination ("To" field) uses auto-naming based on source basename
 5. **Edit mode**: When editing existing vendor, changes aren't saved until user selects "💾 Save & Exit"
+6. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing

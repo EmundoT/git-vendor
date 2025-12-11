@@ -28,6 +28,31 @@ const (
 	LicenseDir  = "licenses"
 )
 
+// License constants
+var AllowedLicenses = []string{
+	"MIT",
+	"Apache-2.0",
+	"BSD-3-Clause",
+	"BSD-2-Clause",
+	"ISC",
+	"Unlicense",
+	"CC0-1.0",
+}
+
+// Error messages
+const (
+	ErrStaleCommitMsg = "locked commit %s no longer exists in the repository.\n\nThis usually happens when the remote repository has been force-pushed or the commit was deleted.\nRun 'git-vendor update' to fetch the latest commit and update the lockfile, then try syncing again"
+	ErrCheckoutFailed = "checkout locked hash %s failed: %w"
+	ErrRefCheckoutFailed = "checkout ref %s failed: %w"
+	ErrPathNotFound = "path '%s' not found"
+	ErrInvalidURL = "invalid url"
+	ErrVendorNotFound = "vendor '%s' not found"
+	ErrComplianceFailed = "compliance check failed"
+)
+
+// License file names
+var LicenseFileNames = []string{"LICENSE", "LICENSE.txt", "COPYING"}
+
 type Manager struct {
 	RootDir string
 }
@@ -141,7 +166,7 @@ func (m *Manager) RemoveVendor(name string) error {
 	for i, v := range config.Vendors {
 		if v.Name == name { found = i; break }
 	}
-	if found == -1 { return fmt.Errorf("vendor '%s' not found", name) }
+	if found == -1 { return fmt.Errorf(ErrVendorNotFound, name) }
 	config.Vendors = append(config.Vendors[:found], config.Vendors[found+1:]...)
 	
 	os.Remove(m.LicensePath(name))
@@ -181,7 +206,7 @@ func (m *Manager) AddVendor(spec types.VendorSpec) error {
 		}
 		if !m.isLicenseAllowed(spec.License) {
 			if !tui.AskToOverrideCompliance(spec.License) {
-				return fmt.Errorf("compliance check failed")
+				return fmt.Errorf(ErrComplianceFailed)
 			}
 		} else {
 			tui.PrintComplianceSuccess(spec.License)
@@ -191,14 +216,18 @@ func (m *Manager) AddVendor(spec types.VendorSpec) error {
 }
 
 func (m *Manager) Sync() error {
-	return m.sync(false)
+	return m.SyncWithOptions("", false)
 }
 
 func (m *Manager) SyncDryRun() error {
-	return m.sync(true)
+	return m.sync(true, "", false)
 }
 
-func (m *Manager) sync(dryRun bool) error {
+func (m *Manager) SyncWithOptions(vendorName string, force bool) error {
+	return m.sync(false, vendorName, force)
+}
+
+func (m *Manager) sync(dryRun bool, vendorName string, force bool) error {
 	config, err := m.loadConfig()
 	if err != nil { return err }
 
@@ -224,15 +253,40 @@ func (m *Manager) sync(dryRun bool) error {
 	}
 
 	for _, v := range config.Vendors {
+		// Skip vendors that don't match the filter
+		if vendorName != "" && v.Name != vendorName {
+			continue
+		}
+
 		v.URL = cleanURL(v.URL)
 		if dryRun {
 			m.previewSyncVendor(v, lockMap[v.Name])
 		} else {
-			if _, err := m.syncVendor(v, lockMap[v.Name]); err != nil {
+			// If force is true, pass nil to ignore lock and re-download
+			refs := lockMap[v.Name]
+			if force {
+				refs = nil
+			}
+			if _, err := m.syncVendor(v, refs); err != nil {
 				return err
 			}
 		}
 	}
+
+	// If vendorName was specified but not found, return error
+	if vendorName != "" {
+		found := false
+		for _, v := range config.Vendors {
+			if v.Name == vendorName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf(ErrVendorNotFound, vendorName)
+		}
+	}
+
 	return nil
 }
 
@@ -272,7 +326,7 @@ func (m *Manager) UpdateAll() error {
 
 	for _, v := range config.Vendors {
 		v.URL = cleanURL(v.URL)
-		
+
 		updatedRefs, err := m.syncVendor(v, nil)
 		if err != nil {
 			tui.PrintError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
@@ -281,12 +335,14 @@ func (m *Manager) UpdateAll() error {
 
 		for ref, hash := range updatedRefs {
 			licenseFile := m.LicensePath(v.Name)
-			
+
 			lock.Vendors = append(lock.Vendors, types.LockDetails{
-				Name: v.Name, Ref: ref, CommitHash: hash, 
+				Name: v.Name, Ref: ref, CommitHash: hash,
 				LicensePath: licenseFile,
 				Updated: time.Now().Format(time.RFC3339),
 			})
+
+			tui.PrintSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, hash[:7]))
 		}
 	}
 	return m.saveLock(lock)
@@ -320,7 +376,12 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 			if err := runGit(tempDir, "checkout", targetCommit); err != nil {
 				runGit(tempDir, "fetch", "origin")
 				if err := runGit(tempDir, "checkout", targetCommit); err != nil {
-					return nil, fmt.Errorf("checkout locked hash %s failed: %w", targetCommit, err)
+					// Detect stale lock hash error and provide helpful message
+					errMsg := err.Error()
+					if strings.Contains(errMsg, "reference is not a tree") || strings.Contains(errMsg, "not a valid object") {
+						return nil, fmt.Errorf(ErrStaleCommitMsg, targetCommit[:7])
+					}
+					return nil, fmt.Errorf(ErrCheckoutFailed, targetCommit, err)
 				}
 			}
 		} else {
@@ -329,7 +390,7 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 			}
 			if err := runGit(tempDir, "checkout", "FETCH_HEAD"); err != nil {
 				if err := runGit(tempDir, "checkout", spec.Ref); err != nil {
-					return nil, fmt.Errorf("checkout ref %s failed: %w", spec.Ref, err)
+					return nil, fmt.Errorf(ErrRefCheckoutFailed, spec.Ref, err)
 				}
 			}
 		}
@@ -338,12 +399,13 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 		results[spec.Ref] = hash
 
 		// License Automation
-		licenseSrc := filepath.Join(tempDir, "LICENSE")
-		if _, err := os.Stat(licenseSrc); os.IsNotExist(err) {
-			licenseSrc = filepath.Join(tempDir, "LICENSE.txt")
-		}
-		if _, err := os.Stat(licenseSrc); os.IsNotExist(err) {
-			licenseSrc = filepath.Join(tempDir, "COPYING")
+		var licenseSrc string
+		for _, name := range LicenseFileNames {
+			path := filepath.Join(tempDir, name)
+			if _, err := os.Stat(path); err == nil {
+				licenseSrc = path
+				break
+			}
 		}
 
 		if _, err := os.Stat(licenseSrc); err == nil {
@@ -370,7 +432,7 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 
 			info, err := os.Stat(srcPath)
 			if err != nil {
-				return nil, fmt.Errorf("path '%s' not found", srcClean)
+				return nil, fmt.Errorf(ErrPathNotFound, srcClean)
 			}
 
 			if info.IsDir() {
@@ -432,7 +494,7 @@ func (m *Manager) CheckGitHubLicense(rawURL string) (string, error) {
 	clean := cleanURL(rawURL)
 	re := regexp.MustCompile(`github\.com/([^/]+)/([^/\.]+)(\.git)?`)
 	matches := re.FindStringSubmatch(clean)
-	if len(matches) < 3 { return "", fmt.Errorf("invalid url") }
+	if len(matches) < 3 { return "", fmt.Errorf(ErrInvalidURL) }
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/license", matches[1], matches[2])
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "git-vendor-cli")
@@ -446,8 +508,11 @@ func (m *Manager) CheckGitHubLicense(rawURL string) (string, error) {
 	return res.License.SpdxID, nil
 }
 func (m *Manager) isLicenseAllowed(license string) bool {
-	allowed := []string{"MIT", "Apache-2.0", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Unlicense", "CC0-1.0"}
-	for _, l := range allowed { if license == l { return true } }
+	for _, l := range AllowedLicenses {
+		if license == l {
+			return true
+		}
+	}
 	return false
 }
 func (m *Manager) GetConfig() (types.VendorConfig, error) { return m.loadConfig() }

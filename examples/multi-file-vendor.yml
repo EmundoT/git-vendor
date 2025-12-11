@@ -1,0 +1,20 @@
+# Multi-file vendor.yml example
+# This shows vendoring multiple files from the same repository
+
+vendors:
+  - name: awesome-lib
+    url: https://github.com/owner/awesome-lib
+    license: Apache-2.0
+    specs:
+      - ref: v1.2.3
+        mapping:
+          # Vendor specific utility files
+          - from: src/utils/string.go
+            to: pkg/vendor/awesome/string.go
+
+          - from: src/utils/array.go
+            to: pkg/vendor/awesome/array.go
+
+          # Vendor a type definition
+          - from: src/types/config.go
+            to: pkg/vendor/awesome/config.go

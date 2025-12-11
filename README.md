@@ -1,0 +1,398 @@
+# git-vendor
+
+A lightweight CLI tool for managing vendored dependencies from Git repositories with granular path control.
+
+## Features
+
+- **Granular Path Vendoring**: Vendor specific files or directories, not entire repositories
+- **Interactive TUI**: User-friendly terminal interface with file browser
+- **Deterministic Locking**: Lock dependencies to specific commits for reproducibility
+- **Multi-Ref Support**: Track multiple branches/tags from the same repository
+- **Smart URL Parsing**: Paste GitHub file links directly - auto-extracts repo, branch, and path
+- **License Compliance**: Automatic license detection and verification
+- **Dry-Run Mode**: Preview changes before applying them
+
+## Installation
+
+```bash
+go install github.com/yourusername/git-vendor@latest
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/yourusername/git-vendor
+cd git-vendor
+go build -o git-vendor
+```
+
+## Quick Start
+
+```bash
+# Initialize vendor directory
+git-vendor init
+
+# Add a vendor dependency (interactive wizard)
+git-vendor add
+
+# Sync all dependencies
+git-vendor sync
+
+# List configured vendors
+git-vendor list
+```
+
+## Usage
+
+### Commands
+
+#### `git-vendor init`
+
+Initialize the vendor directory structure in your project.
+
+Creates:
+
+- `vendor/vendor.yml` - Configuration file
+- `vendor/vendor.lock` - Lock file with commit hashes
+- `vendor/licenses/` - Directory for cached license files
+
+#### `git-vendor add`
+
+Add a new vendor dependency using an interactive wizard.
+
+The wizard will guide you through:
+
+1. Entering the repository URL (or paste a GitHub file link)
+2. Selecting the git ref (branch/tag)
+3. Choosing specific paths to vendor
+4. Configuring local destination paths
+
+**Smart URL Parsing**: You can paste any GitHub URL:
+
+- `https://github.com/owner/repo` - Base repository
+- `https://github.com/owner/repo/blob/main/src/file.go` - Specific file
+- `https://github.com/owner/repo/tree/main/src/` - Specific directory
+
+The tool automatically extracts the repository, ref, and path.
+
+#### `git-vendor edit`
+
+Modify existing vendor configurations through an interactive wizard.
+
+Allows you to:
+
+- Add/remove path mappings
+- Change tracked branches/tags
+- Update configuration settings
+
+#### `git-vendor remove <name>`
+
+Remove a vendor dependency.
+
+Requires confirmation before deletion. Removes:
+
+- Configuration entry from `vendor.yml`
+- Cached license file from `vendor/licenses/`
+
+#### `git-vendor list`
+
+Display all configured vendor dependencies with their:
+
+- Repository URL
+- Tracked refs
+- Path mappings
+- Sync status
+
+#### `git-vendor sync [options] [vendor-name]`
+
+Download vendored dependencies to their configured local paths.
+
+**Options:**
+
+- `--dry-run` - Preview what will be synced without making changes
+- `--force` - Re-download files even if already synced
+- `<vendor-name>` - Sync only the specified vendor
+
+**Examples:**
+
+```bash
+# Sync all vendors
+git-vendor sync
+
+# Preview sync without changes
+git-vendor sync --dry-run
+
+# Sync only specific vendor
+git-vendor sync my-vendor
+
+# Force re-download
+git-vendor sync --force
+```
+
+**How it works:**
+
+1. Reads locked commit hashes from `vendor.lock`
+2. Clones repositories to temporary directories
+3. Checks out exact commit hashes for reproducibility
+4. Copies specified paths to local destinations
+5. Caches license files to `vendor/licenses/`
+
+#### `git-vendor update`
+
+Fetch the latest commits for all configured refs and update the lock file.
+
+This command:
+
+1. Fetches the latest commit for each tracked ref
+2. Updates `vendor.lock` with new commit hashes
+3. Downloads and caches license files
+4. Shows which vendors were updated
+
+Run this when you want to:
+
+- Update to the latest version of dependencies
+- Regenerate the lock file after manual config changes
+- Refresh cached license files
+
+### Configuration Files
+
+#### vendor.yml
+
+Main configuration file defining all vendor dependencies.
+
+```yaml
+vendors:
+  - name: example-lib
+    url: https://github.com/owner/repo
+    license: MIT
+    specs:
+      - ref: main
+        default_target: ""
+        mapping:
+          - from: src/utils
+            to: internal/vendor/example-utils
+          - from: src/types.go
+            to: internal/vendor/types.go
+```
+
+**Fields:**
+
+- `name`: Display name for the vendor
+- `url`: Git repository URL
+- `license`: SPDX license identifier (auto-detected)
+- `specs`: Array of refs to track (can track multiple branches/tags)
+  - `ref`: Branch, tag, or commit hash
+  - `default_target`: Optional default destination directory
+  - `mapping`: Array of path mappings
+    - `from`: Remote path in the repository
+    - `to`: Local destination path (empty = auto-named from source)
+
+#### vendor.lock
+
+Lock file storing exact commit hashes for reproducibility.
+
+```yaml
+vendors:
+  - name: example-lib
+    ref: main
+    commit_hash: abc123def456...
+    license_path: vendor/licenses/example-lib.txt
+    updated: "2024-01-15T14:30:45Z"
+```
+
+**Never edit this file manually** - it's automatically generated by `update` and `sync` commands.
+
+## Workflows
+
+### Adding a New Dependency
+
+1. **Run the add wizard:**
+
+   ```bash
+   git-vendor add
+   ```
+
+2. **Enter the repository URL:**
+   - Paste any GitHub URL (repo, file, or directory)
+   - Or enter a basic repository URL
+
+3. **Configure the vendor:**
+   - Confirm/edit vendor name
+   - Confirm/edit git ref (branch/tag)
+   - Select specific paths to vendor
+
+4. **Map paths:**
+   - Choose remote paths using the file browser
+   - Set local destination paths
+   - Leave destination empty for automatic naming
+
+5. **Save and sync:**
+   - The wizard will automatically run `update` to lock commits
+   - Run `git-vendor sync` to download files
+
+### Updating Dependencies
+
+**Update to latest versions:**
+
+```bash
+git-vendor update  # Fetch latest commits
+git-vendor sync    # Download updated files
+```
+
+**Preview before updating:**
+
+```bash
+git-vendor sync --dry-run  # See what will change
+```
+
+### Vendoring Specific Files
+
+Git-vendor excels at vendoring specific files or subdirectories:
+
+```bash
+git-vendor add
+# URL: https://github.com/owner/repo/blob/main/src/utils/helper.go
+# This will auto-suggest vendoring just that one file
+```
+
+Or use the file browser to navigate and select specific files.
+
+## Advanced Usage
+
+### Multi-Ref Tracking
+
+Track multiple branches or tags from the same repository:
+
+```yaml
+vendors:
+  - name: multi-branch-lib
+    url: https://github.com/owner/repo
+    specs:
+      - ref: v1.0
+        mapping:
+          - from: src
+            to: vendor/lib-v1
+      - ref: v2.0
+        mapping:
+          - from: src
+            to: vendor/lib-v2
+```
+
+### Auto-Naming Paths
+
+Leave the destination path empty to use automatic naming:
+
+```yaml
+mapping:
+  - from: src/utils
+    to: ""  # Will be named "utils" in current directory
+```
+
+The auto-naming logic:
+
+1. Uses the base name of the source path
+2. Respects `default_target` if set
+3. Falls back to vendor name for root paths
+
+### License Compliance
+
+Git-vendor automatically:
+
+1. Detects licenses via GitHub API
+2. Validates against allowed licenses (MIT, Apache-2.0, BSD, etc.)
+3. Prompts for confirmation on non-standard licenses
+4. Caches license files in `vendor/licenses/`
+
+**Override license check:**
+When prompted, you can accept any license by confirming the dialog.
+
+## Comparison with Alternatives
+
+### vs. Git Submodules
+
+- ✅ Vendor specific files/directories, not entire repos
+- ✅ No `.gitmodules` file to manage
+- ✅ Simpler workflow for partial vendoring
+- ❌ Requires separate tool installation
+
+### vs. Go Modules
+
+- ✅ Language-agnostic (works with any Git repository)
+- ✅ Granular path control
+- ✅ Can vendor non-Go code
+- ❌ Not integrated with Go toolchain
+
+### vs. Manual Copying
+
+- ✅ Reproducible with lock file
+- ✅ Easy to update
+- ✅ Tracks source and version
+- ✅ License compliance built-in
+
+## Architecture
+
+### Directory Structure
+
+```text
+your-project/
+├── vendor/
+│   ├── vendor.yml      # Configuration
+│   ├── vendor.lock     # Lock file
+│   └── licenses/       # Cached licenses
+│       └── vendor-name.txt
+└── internal/           # Your vendored code lives here
+    └── vendor/         # (or wherever you configure)
+```
+
+### How It Works
+
+1. **Configuration**: `vendor.yml` defines what to vendor and where
+2. **Locking**: `vendor.lock` stores exact commit hashes
+3. **Syncing**: Git operations in temp directories copy files to destinations
+4. **Caching**: Licenses cached locally, repos cloned shallowly for speed
+
+### Key Design Decisions
+
+- **Granular Path Mapping**: Unlike submodules, vendor specific paths
+- **Deterministic Locking**: Lock files ensure reproducible builds
+- **No Git History**: Vendored files are plain copies, not git repos
+- **Interactive TUI**: User-friendly wizard for complex operations
+- **GitHub-First**: Smart URL parsing optimized for GitHub workflows
+
+## Troubleshooting
+
+See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for common issues and solutions.
+
+## Development
+
+### Running Tests
+
+```bash
+go test ./...
+```
+
+### Building from Source
+
+```bash
+go build -o git-vendor
+```
+
+## Contributing
+
+Contributions welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Submit a pull request
+
+## License
+
+MIT License - see [LICENSE](./LICENSE) for details.
+
+## Credits
+
+Built with:
+
+- [charmbracelet/huh](https://github.com/charmbracelet/huh) - TUI forms
+- [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) - Terminal styling
