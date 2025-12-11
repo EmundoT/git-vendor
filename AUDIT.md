@@ -893,10 +893,12 @@ The **implementation** has the panic bug I mentioned, but the feature itself is 
    - ✅ Added tests for copyFile error handling (3 test cases)
    - ✅ Added tests for copyDir error handling (3 test cases)
    - ✅ Added comprehensive DetectConflicts tests (2 additional test cases)
-   - **Coverage improved from 20.1% to 31.2% (+11.1%)**
-   - **Test functions added:** TestValidateConfig, TestCopyFile, TestCopyDir, TestDetectConflicts_Comprehensive
+   - ✅ Added comprehensive config I/O tests (4 test cases for loadConfig, 2 for saveConfig)
+   - ✅ Added comprehensive lock I/O tests (4 test cases for loadLock, 3 for saveLock)
+   - **Coverage improved from 20.1% to 32.3% (+12.2%)**
+   - **Test functions added:** TestValidateConfig, TestCopyFile, TestCopyDir, TestDetectConflicts_Comprehensive, TestLoadConfig, TestSaveConfig, TestLoadLock, TestSaveLock
    - Still needed: Tests for syncVendor, UpdateAll, Sync (require mocking/refactoring)
-   - Target: 60% coverage (currently at 31.2%, need +28.8% more)
+   - Target: 60% coverage (currently at 32.3%, need +27.7% more)
 
 2. ✅ **Fix vendor-not-found logic** (Bug #3) - **COMPLETED**
    - Now fails fast before looping (lines 250-262)
@@ -972,8 +974,9 @@ You're 70% of the way to a great tool. Fix the bugs, add real tests, and this co
 ## TL;DR for the User
 
 1. ✅ **Found 4 critical bugs, ALL 4 are now FIXED** (Bug #1, #2, #4 fixed + verbose mode added)
-2. ⚠️ **Test coverage significantly improved** (was 14.2%, then 20.1%, now 31.2% - over 2x improvement!)
+2. ⚠️ **Test coverage significantly improved** (was 14.2%, then 20.1%, now 32.3% - over 2x improvement!)
    - Added comprehensive tests for ValidateConfig, copyFile, copyDir, DetectConflicts
+   - Added comprehensive tests for config/lock file I/O (loadConfig, saveConfig, loadLock, saveLock)
    - Still needs work to reach 60% target (requires mocking/refactoring)
 3. ❌ **No dependency injection = hard to test** (architectural issue, P2)
 4. ✅ **UX is genuinely excellent**
@@ -986,7 +989,7 @@ You're 70% of the way to a great tool. Fix the bugs, add real tests, and this co
 - All P0 items completed (critical bugs + verbose mode)
 - Security hardened with path traversal protection
 - Documentation improved with limitation warnings and security section
-- **Test coverage improved by 11.1% (20.1% → 31.2%) with new comprehensive tests**
+- **Test coverage improved by 12.2% (20.1% → 32.3%) with new comprehensive tests**
 - Production readiness significantly improved
 
 You asked for honesty. There it is.
