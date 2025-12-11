@@ -53,6 +53,9 @@ const (
 // License file names
 var LicenseFileNames = []string{"LICENSE", "LICENSE.txt", "COPYING"}
 
+// Verbose controls whether git commands are logged
+var Verbose = false
+
 type Manager struct {
 	RootDir string
 }
@@ -426,10 +429,10 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 		for _, mapping := range spec.Mapping {
 			srcClean := strings.Replace(mapping.From, "blob/"+spec.Ref+"/", "", 1)
 			srcClean = strings.Replace(srcClean, "tree/"+spec.Ref+"/", "", 1)
-			
+
 			srcPath := filepath.Join(tempDir, srcClean)
 			destPath := mapping.To
-			
+
 			if destPath == "" || destPath == "." {
 				if spec.DefaultTarget != "" {
 					destPath = filepath.Join(spec.DefaultTarget, filepath.Base(srcClean))
@@ -437,6 +440,11 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 					destPath = filepath.Base(srcClean)
 					if destPath == "." || destPath == "/" { destPath = v.Name }
 				}
+			}
+
+			// Validate destination path to prevent path traversal attacks
+			if err := validateDestPath(destPath); err != nil {
+				return nil, err
 			}
 
 			info, err := os.Stat(srcPath)
@@ -463,6 +471,9 @@ func (m *Manager) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (
 
 // Helpers
 func runGit(dir string, args ...string) error {
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "[DEBUG] git %s (in %s)\n", strings.Join(args, " "), dir)
+	}
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	if output, err := cmd.CombinedOutput(); err != nil { return fmt.Errorf("%s", string(output)) }
@@ -470,6 +481,9 @@ func runGit(dir string, args ...string) error {
 }
 
 func runGitWithContext(ctx context.Context, dir string, args ...string) error {
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "[DEBUG] git %s (in %s)\n", strings.Join(args, " "), dir)
+	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	if output, err := cmd.CombinedOutput(); err != nil { return fmt.Errorf("%s", string(output)) }
@@ -503,6 +517,29 @@ func copyDir(src, dst string) error {
 	})
 }
 func cleanURL(raw string) string { return strings.TrimLeft(strings.TrimSpace(raw), "\\") }
+
+// validateDestPath ensures destination path is safe and doesn't allow path traversal
+func validateDestPath(destPath string) error {
+	// Clean the path to normalize it
+	cleaned := filepath.Clean(destPath)
+
+	// Check if path starts with / or \ (Unix-style absolute or root-relative)
+	if strings.HasPrefix(destPath, "/") || strings.HasPrefix(destPath, "\\") {
+		return fmt.Errorf("invalid destination path: %s (absolute paths are not allowed)", destPath)
+	}
+
+	// Check if path is absolute (security risk) - handles Windows C:\ style paths
+	if filepath.IsAbs(cleaned) {
+		return fmt.Errorf("invalid destination path: %s (absolute paths are not allowed)", destPath)
+	}
+
+	// Check if path contains .. (path traversal attack)
+	if strings.HasPrefix(cleaned, "..") || strings.Contains(cleaned, string(filepath.Separator)+"..") {
+		return fmt.Errorf("invalid destination path: %s (path traversal with .. is not allowed)", destPath)
+	}
+
+	return nil
+}
 func (m *Manager) CheckGitHubLicense(rawURL string) (string, error) {
 	clean := cleanURL(rawURL)
 	re := regexp.MustCompile(`github\.com/([^/]+)/([^/\.]+)(\.git)?`)

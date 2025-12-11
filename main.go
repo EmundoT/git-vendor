@@ -183,6 +183,8 @@ func main() {
 				dryRun = true
 			} else if arg == "--force" {
 				force = true
+			} else if arg == "--verbose" || arg == "-v" {
+				core.Verbose = true
 			} else if !strings.HasPrefix(arg, "--") {
 				vendorName = arg
 			}
@@ -204,6 +206,14 @@ func main() {
 		}
 
 	case "update":
+		// Parse flags
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			if arg == "--verbose" || arg == "-v" {
+				core.Verbose = true
+			}
+		}
+
 		if err := manager.UpdateAll(); err != nil {
 			tui.PrintError("Update Failed", err.Error())
 			os.Exit(1)

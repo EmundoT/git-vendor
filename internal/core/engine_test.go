@@ -326,3 +326,600 @@ func TestDetectConflicts_NoPanic(t *testing.T) {
 		t.Errorf("Expected no conflicts with no mappings, got %d", len(conflicts))
 	}
 }
+
+// TestValidateDestPath tests path traversal protection
+func TestValidateDestPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		destPath  string
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name:      "Valid relative path",
+			destPath:  "internal/vendor/lib",
+			wantError: false,
+		},
+		{
+			name:      "Valid simple path",
+			destPath:  "lib",
+			wantError: false,
+		},
+		{
+			name:      "Valid nested path",
+			destPath:  "src/components/button",
+			wantError: false,
+		},
+		{
+			name:      "Absolute Unix path",
+			destPath:  "/etc/passwd",
+			wantError: true,
+			errorMsg:  "absolute paths are not allowed",
+		},
+		{
+			name:      "Absolute Windows path",
+			destPath:  "C:\\Windows\\System32",
+			wantError: true,
+			errorMsg:  "absolute paths are not allowed",
+		},
+		{
+			name:      "Path traversal with ..",
+			destPath:  "../../../etc/passwd",
+			wantError: true,
+			errorMsg:  "path traversal with .. is not allowed",
+		},
+		{
+			name:      "Path traversal in middle",
+			destPath:  "lib/../../../etc/passwd",
+			wantError: true,
+			errorMsg:  "path traversal with .. is not allowed",
+		},
+		{
+			name:      "Path traversal to parent",
+			destPath:  "../malicious",
+			wantError: true,
+			errorMsg:  "path traversal with .. is not allowed",
+		},
+		{
+			name:      "Current directory is valid",
+			destPath:  ".",
+			wantError: false,
+		},
+		{
+			name:      "Current directory in path is valid",
+			destPath:  "./lib/file.go",
+			wantError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDestPath(tt.destPath)
+
+			if tt.wantError {
+				if err == nil {
+					t.Errorf("validateDestPath(%q) expected error containing %q, got nil", tt.destPath, tt.errorMsg)
+				} else if tt.errorMsg != "" && !contains(err.Error(), tt.errorMsg) {
+					t.Errorf("validateDestPath(%q) error = %q, want error containing %q", tt.destPath, err.Error(), tt.errorMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("validateDestPath(%q) unexpected error = %v", tt.destPath, err)
+				}
+			}
+		})
+	}
+}
+
+// Helper function to check if a string contains a substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+// TestValidateConfig tests comprehensive config validation
+func TestValidateConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    types.VendorConfig
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name: "Valid config with single vendor",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "test-vendor",
+						URL:  "https://github.com/test/repo",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "src", To: "lib"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "Valid config with multiple vendors",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "vendor1",
+						URL:  "https://github.com/test/repo1",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "src", To: "lib1"},
+								},
+							},
+						},
+					},
+					{
+						Name: "vendor2",
+						URL:  "https://github.com/test/repo2",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "dev",
+								Mapping: []types.PathMapping{
+									{From: "pkg", To: "lib2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "Valid config with multiple specs per vendor",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "multi-spec",
+						URL:  "https://github.com/test/repo",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "src", To: "lib"},
+								},
+							},
+							{
+								Ref: "v1.0",
+								Mapping: []types.PathMapping{
+									{From: "pkg", To: "vendor"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "Valid config with empty 'to' path (auto-naming)",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "auto-name",
+						URL:  "https://github.com/test/repo",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "src/file.go", To: ""},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "Empty vendors list",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{},
+			},
+			wantError: true,
+			errorMsg:  "no vendors configured",
+		},
+		{
+			name: "Duplicate vendor names",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "duplicate",
+						URL:  "https://github.com/test/repo1",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "src", To: "lib"},
+								},
+							},
+						},
+					},
+					{
+						Name: "duplicate",
+						URL:  "https://github.com/test/repo2",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "pkg", To: "vendor"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantError: true,
+			errorMsg:  "duplicate vendor name: duplicate",
+		},
+		{
+			name: "Vendor with no URL",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "no-url",
+						URL:  "",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "src", To: "lib"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantError: true,
+			errorMsg:  "vendor no-url has no URL",
+		},
+		{
+			name: "Vendor with no specs",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name:  "no-specs",
+						URL:   "https://github.com/test/repo",
+						Specs: []types.BranchSpec{},
+					},
+				},
+			},
+			wantError: true,
+			errorMsg:  "vendor no-specs has no specs configured",
+		},
+		{
+			name: "Spec with no ref",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "no-ref",
+						URL:  "https://github.com/test/repo",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "",
+								Mapping: []types.PathMapping{
+									{From: "src", To: "lib"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantError: true,
+			errorMsg:  "vendor no-ref has a spec with no ref",
+		},
+		{
+			name: "Spec with no mappings",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "no-mappings",
+						URL:  "https://github.com/test/repo",
+						Specs: []types.BranchSpec{
+							{
+								Ref:     "main",
+								Mapping: []types.PathMapping{},
+							},
+						},
+					},
+				},
+			},
+			wantError: true,
+			errorMsg:  "vendor no-mappings @ main has no path mappings",
+		},
+		{
+			name: "Mapping with empty 'from' path",
+			config: types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "empty-from",
+						URL:  "https://github.com/test/repo",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "", To: "lib"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantError: true,
+			errorMsg:  "vendor empty-from @ main has a mapping with empty 'from' path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			m := &Manager{RootDir: filepath.Join(tempDir, "vendor")}
+			os.MkdirAll(m.RootDir, 0755)
+
+			// Save the test config
+			if err := m.saveConfig(tt.config); err != nil {
+				t.Fatalf("Failed to save config: %v", err)
+			}
+
+			// Run validation
+			err := m.ValidateConfig()
+
+			if tt.wantError {
+				if err == nil {
+					t.Errorf("ValidateConfig() expected error containing %q, got nil", tt.errorMsg)
+				} else if tt.errorMsg != "" && !contains(err.Error(), tt.errorMsg) {
+					t.Errorf("ValidateConfig() error = %q, want error containing %q", err.Error(), tt.errorMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("ValidateConfig() unexpected error = %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestCopyFile tests file copying functionality
+func TestCopyFile(t *testing.T) {
+	t.Run("Successful file copy", func(t *testing.T) {
+		tempDir := t.TempDir()
+		srcFile := filepath.Join(tempDir, "source.txt")
+		dstFile := filepath.Join(tempDir, "dest.txt")
+
+		// Create source file
+		content := "test content"
+		if err := os.WriteFile(srcFile, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to create source file: %v", err)
+		}
+
+		// Copy file
+		if err := copyFile(srcFile, dstFile); err != nil {
+			t.Fatalf("copyFile() error = %v", err)
+		}
+
+		// Verify destination exists and has same content
+		got, err := os.ReadFile(dstFile)
+		if err != nil {
+			t.Fatalf("Failed to read destination file: %v", err)
+		}
+		if string(got) != content {
+			t.Errorf("copyFile() content = %q, want %q", string(got), content)
+		}
+	})
+
+	t.Run("Error when source doesn't exist", func(t *testing.T) {
+		tempDir := t.TempDir()
+		srcFile := filepath.Join(tempDir, "nonexistent.txt")
+		dstFile := filepath.Join(tempDir, "dest.txt")
+
+		err := copyFile(srcFile, dstFile)
+		if err == nil {
+			t.Error("copyFile() expected error for nonexistent source, got nil")
+		}
+	})
+
+	t.Run("Error when destination directory doesn't exist", func(t *testing.T) {
+		tempDir := t.TempDir()
+		srcFile := filepath.Join(tempDir, "source.txt")
+		dstFile := filepath.Join(tempDir, "nonexistent", "dest.txt")
+
+		// Create source file
+		if err := os.WriteFile(srcFile, []byte("test"), 0644); err != nil {
+			t.Fatalf("Failed to create source file: %v", err)
+		}
+
+		err := copyFile(srcFile, dstFile)
+		if err == nil {
+			t.Error("copyFile() expected error for nonexistent destination directory, got nil")
+		}
+	})
+}
+
+// TestCopyDir tests directory copying functionality
+func TestCopyDir(t *testing.T) {
+	t.Run("Successful directory copy", func(t *testing.T) {
+		tempDir := t.TempDir()
+		srcDir := filepath.Join(tempDir, "source")
+		dstDir := filepath.Join(tempDir, "dest")
+
+		// Create source directory with files
+		os.MkdirAll(filepath.Join(srcDir, "subdir"), 0755)
+		os.WriteFile(filepath.Join(srcDir, "file1.txt"), []byte("content1"), 0644)
+		os.WriteFile(filepath.Join(srcDir, "subdir", "file2.txt"), []byte("content2"), 0644)
+
+		// Copy directory
+		if err := copyDir(srcDir, dstDir); err != nil {
+			t.Fatalf("copyDir() error = %v", err)
+		}
+
+		// Verify destination files exist
+		if _, err := os.Stat(filepath.Join(dstDir, "file1.txt")); err != nil {
+			t.Errorf("copyDir() file1.txt not copied: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dstDir, "subdir", "file2.txt")); err != nil {
+			t.Errorf("copyDir() subdir/file2.txt not copied: %v", err)
+		}
+
+		// Verify content
+		content, _ := os.ReadFile(filepath.Join(dstDir, "file1.txt"))
+		if string(content) != "content1" {
+			t.Errorf("copyDir() file1.txt content = %q, want %q", string(content), "content1")
+		}
+	})
+
+	t.Run("Directory copy skips .git directories", func(t *testing.T) {
+		tempDir := t.TempDir()
+		srcDir := filepath.Join(tempDir, "source")
+		dstDir := filepath.Join(tempDir, "dest")
+
+		// Create source with .git directory
+		os.MkdirAll(filepath.Join(srcDir, ".git", "objects"), 0755)
+		os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("content"), 0644)
+		os.WriteFile(filepath.Join(srcDir, ".git", "config"), []byte("gitconfig"), 0644)
+
+		// Copy directory
+		if err := copyDir(srcDir, dstDir); err != nil {
+			t.Fatalf("copyDir() error = %v", err)
+		}
+
+		// Verify regular file was copied
+		if _, err := os.Stat(filepath.Join(dstDir, "file.txt")); err != nil {
+			t.Errorf("copyDir() file.txt not copied: %v", err)
+		}
+
+		// Verify .git was NOT copied
+		if _, err := os.Stat(filepath.Join(dstDir, ".git", "config")); err == nil {
+			t.Error("copyDir() .git/config was copied, but should have been skipped")
+		}
+	})
+
+	t.Run("Error when source directory doesn't exist", func(t *testing.T) {
+		tempDir := t.TempDir()
+		srcDir := filepath.Join(tempDir, "nonexistent")
+		dstDir := filepath.Join(tempDir, "dest")
+
+		err := copyDir(srcDir, dstDir)
+		if err == nil {
+			t.Error("copyDir() expected error for nonexistent source, got nil")
+		}
+	})
+}
+
+// TestDetectConflicts_Comprehensive adds more comprehensive conflict detection tests
+func TestDetectConflicts_Comprehensive(t *testing.T) {
+	t.Run("Detect same path conflict", func(t *testing.T) {
+		tempDir := t.TempDir()
+		m := &Manager{RootDir: filepath.Join(tempDir, "vendor")}
+		os.MkdirAll(m.RootDir, 0755)
+
+		config := types.VendorConfig{
+			Vendors: []types.VendorSpec{
+				{
+					Name: "vendor1",
+					URL:  "https://github.com/test/repo1",
+					Specs: []types.BranchSpec{
+						{
+							Ref: "main",
+							Mapping: []types.PathMapping{
+								{From: "src", To: "lib"},
+							},
+						},
+					},
+				},
+				{
+					Name: "vendor2",
+					URL:  "https://github.com/test/repo2",
+					Specs: []types.BranchSpec{
+						{
+							Ref: "main",
+							Mapping: []types.PathMapping{
+								{From: "pkg", To: "lib"}, // Same destination
+							},
+						},
+					},
+				},
+			},
+		}
+
+		if err := m.saveConfig(config); err != nil {
+			t.Fatalf("Failed to save config: %v", err)
+		}
+
+		conflicts, err := m.DetectConflicts()
+		if err != nil {
+			t.Fatalf("DetectConflicts() error = %v", err)
+		}
+
+		if len(conflicts) == 0 {
+			t.Error("Expected conflicts for same destination path, got none")
+		}
+	})
+
+	t.Run("No conflict for different paths", func(t *testing.T) {
+		tempDir := t.TempDir()
+		m := &Manager{RootDir: filepath.Join(tempDir, "vendor")}
+		os.MkdirAll(m.RootDir, 0755)
+
+		config := types.VendorConfig{
+			Vendors: []types.VendorSpec{
+				{
+					Name: "vendor1",
+					URL:  "https://github.com/test/repo1",
+					Specs: []types.BranchSpec{
+						{
+							Ref: "main",
+							Mapping: []types.PathMapping{
+								{From: "src", To: "lib1"},
+							},
+						},
+					},
+				},
+				{
+					Name: "vendor2",
+					URL:  "https://github.com/test/repo2",
+					Specs: []types.BranchSpec{
+						{
+							Ref: "main",
+							Mapping: []types.PathMapping{
+								{From: "pkg", To: "lib2"},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		if err := m.saveConfig(config); err != nil {
+			t.Fatalf("Failed to save config: %v", err)
+		}
+
+		conflicts, err := m.DetectConflicts()
+		if err != nil {
+			t.Fatalf("DetectConflicts() error = %v", err)
+		}
+
+		if len(conflicts) != 0 {
+			t.Errorf("Expected no conflicts for different paths, got %d", len(conflicts))
+		}
+	})
+}
