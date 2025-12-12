@@ -35,6 +35,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # development/testing files
 git-vendor
+gitvendor.exe
 vendor
 vendor.yml
 vendor.lock

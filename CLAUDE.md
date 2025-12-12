@@ -23,26 +23,35 @@ go run main.go <command>
 
 ## Core Architecture
 
-### Three-Layer Structure
+### Clean Architecture with Dependency Injection
+
+The codebase follows clean architecture principles with proper separation of concerns:
 
 1. **main.go** - Command dispatcher and CLI interface
-   - Routes commands (init, add, edit, remove, list, sync, update)
+   - Routes commands (init, add, edit, remove, list, sync, update, validate)
    - Handles argument parsing and basic validation
    - Entry point for all user interactions
 
-2. **internal/core/engine.go** - Business logic and Git operations
-   - `Manager` struct manages all vendor operations
-   - Handles Git cloning, fetching, and checkout operations
-   - Performs file/directory copying from temp clones to local paths
-   - Manages configuration and lock file I/O
-   - License detection via GitHub API
-   - Smart URL parsing for deep links (blob/tree URLs)
+2. **internal/core/** - Business logic layer (dependency injection pattern)
+   - **engine.go**: `Manager` facade - public API that delegates to VendorSyncer
+   - **vendor_syncer.go**: `VendorSyncer` - orchestrates all business logic
+   - **git_operations.go**: `GitClient` interface - Git command operations
+   - **filesystem.go**: `FileSystem` interface - File I/O operations
+   - **github_client.go**: `LicenseChecker` interface - GitHub API license detection
+   - **config_store.go**: `ConfigStore` interface - vendor.yml I/O
+   - **lock_store.go**: `LockStore` interface - vendor.lock I/O
+   - **mocks_test.go**: Mock implementations for testing
 
 3. **internal/tui/wizard.go** - Interactive user interface
    - Built with charmbracelet/huh (form library) and lipgloss (styling)
    - Multi-step wizards for add/edit operations
    - File browser for both remote (via git ls-tree) and local directories
    - Path mapping management interface
+
+4. **internal/types/types.go** - Data models
+   - VendorConfig, VendorSpec, BranchSpec, PathMapping
+   - VendorLock, LockDetails
+   - PathConflict
 
 ### Data Model (internal/types/types.go)
 
@@ -100,28 +109,40 @@ Vendored files are copied to paths specified in the configuration (outside vendo
 
 ### Smart URL Parsing
 
-The `ParseSmartURL` function (engine.go:57) extracts repository, ref, and path from GitHub URLs:
+The `ParseSmartURL` function (git_operations.go:183) extracts repository, ref, and path from GitHub URLs:
 
 - `github.com/owner/repo` → base URL, no ref, no path
 - `github.com/owner/repo/blob/main/path/to/file.go` → base URL, "main", "path/to/file.go"
 - `github.com/owner/repo/tree/v1.0/src/` → base URL, "v1.0", "src/"
 
+**Limitation**: Branch names with slashes (e.g., `feature/foo`) cannot be parsed from URLs due to regex ambiguity. Use base URL and manually enter ref in wizard.
+
 ### Remote Directory Browsing
 
-Uses `git ls-tree` to browse remote repository contents without full checkout (engine.go:69):
+The `FetchRepoDir` function (vendor_syncer.go:632) browses remote repository contents without full checkout:
 
 1. Clone with `--filter=blob:none --no-checkout --depth 1`
 2. Fetch specific ref if needed
-3. Run `git ls-tree` to list directory contents
+3. Use `GitClient.ListTree()` which runs `git ls-tree` to list directory contents
 4. 30-second timeout protection via context
 
 ### License Compliance
 
-Automatic license detection via GitHub API (engine.go:431):
+Automatic license detection via `GitHubLicenseChecker` (github_client.go:33):
 
+- Queries GitHub API `/repos/:owner/:repo/license` endpoint
 - Allowed by default: MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Unlicense, CC0-1.0
-- Other licenses prompt user confirmation
+- Other licenses prompt user confirmation via `tui.AskToOverrideCompliance()`
 - License files are automatically copied to `vendor/licenses/{name}.txt`
+
+### Path Traversal Protection
+
+Security validation via `ValidateDestPath` (filesystem.go:121):
+
+- Rejects absolute paths (e.g., `/etc/passwd`, `C:\Windows\System32`)
+- Rejects parent directory references (e.g., `../../../etc/passwd`)
+- Only allows relative paths within project directory
+- Called before all file copy operations in `vendor_syncer.go`
 
 ## Common Patterns
 
@@ -143,19 +164,48 @@ Automatic license detection via GitHub API (engine.go:431):
 
 ### Git Operations
 
-- Use `runGit(dir, args...)` for standard operations
-- Use `runGitWithContext(ctx, dir, args...)` for operations with timeout
-- Temp directories cleaned up with `defer os.RemoveAll(tempDir)`
+Git operations use the `GitClient` interface (git_operations.go):
+
+- `SystemGitClient` implements `GitClient` for production
+- Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`
+- Internal `run()` method executes git commands via `exec.Command`
+- Verbose mode logs commands to stderr when `--verbose` flag is used
+- Temp directories cleaned up with `defer fs.RemoveAll(tempDir)`
 
 ## Development Notes
 
-### No Tests Currently
+### Test Coverage
 
-There are no test files in the codebase. When adding tests:
+The codebase has **63.9% test coverage** with comprehensive tests:
 
-- Test Manager operations with mock file system
-- Test URL parsing with various GitHub URL formats
-- Test git operations may require git test fixtures or mocking
+**Test Infrastructure:**
+
+- `mocks_test.go`: Mock implementations for all interfaces (MockConfigStore, MockLockStore, MockGitClient, MockFileSystem, MockLicenseChecker)
+- `engine_test.go`: Comprehensive tests for all business logic
+
+**Well-Tested Areas:**
+
+- syncVendor: 89.7% coverage (15 test cases)
+- UpdateAll: 100% coverage (10 test cases)
+- Sync/SyncDryRun/SyncWithOptions: 100% coverage (12 test cases)
+- FetchRepoDir: 84.6% coverage
+- SaveVendor/RemoveVendor: 100% coverage
+- ValidateConfig: 95.7% coverage (11 test cases)
+- DetectConflicts: 86.1% coverage
+- Config/Lock I/O: 100% coverage (13 test cases)
+
+**Running Tests:**
+
+```bash
+# All tests
+go test ./...
+
+# With coverage
+go test -cover ./internal/core
+
+# Verbose
+go test -v ./...
+```
 
 ### Dependencies
 
@@ -177,3 +227,65 @@ There are no test files in the codebase. When adding tests:
 4. **Path mapping**: Empty destination ("To" field) uses auto-naming based on source basename
 5. **Edit mode**: When editing existing vendor, changes aren't saved until user selects "💾 Save & Exit"
 6. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing
+7. **Branch names with slashes**: URLs with refs like `feature/foo` cannot be parsed - use base URL and enter ref manually
+
+## Quick Reference
+
+### Available Commands
+
+```bash
+git-vendor init                      # Initialize vendor directory
+git-vendor add                       # Add vendor (interactive)
+git-vendor edit                      # Edit vendor (interactive)
+git-vendor remove <name>             # Remove vendor
+git-vendor list                      # List all vendors
+git-vendor sync [options] [vendor]   # Sync dependencies
+git-vendor update [options]          # Update lockfile
+git-vendor validate                  # Validate config and detect conflicts
+```
+
+### Sync Command Flags
+
+```bash
+--dry-run         # Preview without changes
+--force           # Re-download even if synced
+--verbose, -v     # Show git commands
+<vendor-name>     # Sync only specified vendor
+```
+
+### Update Command Flags
+
+```bash
+--verbose, -v     # Show git commands
+```
+
+### File Paths
+
+- Config: `vendor/vendor.yml`
+- Lock: `vendor/vendor.lock`
+- Licenses: `vendor/licenses/<name>.txt`
+- Vendored files: User-specified paths (outside vendor/)
+
+### Important Functions by File
+
+**vendor_syncer.go:**
+
+- `syncVendor()` - Core sync logic for single vendor
+- `UpdateAll()` - Update all vendors, regenerate lockfile
+- `DetectConflicts()` - Find path conflicts between vendors
+- `ValidateConfig()` - Comprehensive config validation
+
+**git_operations.go:**
+
+- `ParseSmartURL()` - Extract repo/ref/path from GitHub URLs
+- `GitClient.ListTree()` - Browse remote directories via git ls-tree
+
+**github_client.go:**
+
+- `CheckLicense()` - Query GitHub API for license
+- `IsAllowed()` - Validate against allowed licenses
+
+**filesystem.go:**
+
+- `ValidateDestPath()` - Security check for path traversal
+- `CopyFile()` / `CopyDir()` - File operations
