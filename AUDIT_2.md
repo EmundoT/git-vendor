@@ -10,6 +10,7 @@
 ## Executive Summary
 
 This audit represents a **comprehensive evaluation** from multiple perspectives:
+
 - **Senior QA Engineer** - Functional testing, edge cases, error handling
 - **Security Analyst** - Vulnerability assessment, threat modeling
 - **UX Designer** - User experience, documentation, accessibility
@@ -19,6 +20,7 @@ This audit represents a **comprehensive evaluation** from multiple perspectives:
 **Overall Rating: 8.7/10** (Production-ready with minor improvements recommended)
 
 ### Key Strengths
+
 ✅ Excellent architecture with proper dependency injection
 ✅ Strong test coverage (63.9%) with comprehensive error path testing
 ✅ Thoughtful error messages that explain *why* and *how to fix*
@@ -28,6 +30,7 @@ This audit represents a **comprehensive evaluation** from multiple perspectives:
 ✅ Deterministic builds via commit hash locking
 
 ### Areas for Improvement
+
 ⚠️ Minor UX issues in error validation order
 ⚠️ No concurrent operation protection
 ⚠️ GitHub-only limitation (not necessarily bad, but undocumented in some places)
@@ -78,11 +81,13 @@ if err := manager.RemoveVendor(name); err != nil {
 ```
 
 **Expected Behavior:**
+
 1. Check if vendor exists
 2. If not found, show error immediately
 3. If found, show confirmation dialog
 
 **Actual Behavior:**
+
 1. Show confirmation dialog
 2. User clicks "Yes"
 3. Then show "vendor 'xyz' not found" error
@@ -90,6 +95,7 @@ if err := manager.RemoveVendor(name); err != nil {
 **User Impact:** Confusing UX, wastes user's time
 
 **Recommendation:**
+
 ```go
 // Check existence BEFORE showing confirmation
 cfg, err := manager.GetConfig()
@@ -134,11 +140,13 @@ no vendors configured
 **Question:** Is this intended behavior?
 
 **Analysis:**
+
 - An empty config is technically *valid* YAML
 - But it's not *useful* for the tool's purpose
 - Current behavior could be confusing to new users
 
 **Recommendation:** Either:
+
 1. Change error to warning: "No vendors configured. Run 'git-vendor add' to get started."
 2. Document this behavior in README
 3. Add `--strict` flag to control whether empty config is an error
@@ -150,6 +158,7 @@ no vendors configured
 **Overall Coverage:** 63.9% ✅ (Excellent for a CLI tool)
 
 **Well-Tested Components:**
+
 - `UpdateAll`: 100% coverage
 - `Sync/SyncDryRun/SyncWithOptions`: 100% coverage
 - `SaveVendor`: 100% coverage
@@ -158,6 +167,7 @@ no vendors configured
 - `syncVendor`: 89.7% coverage (core logic!)
 
 **Untested Areas:**
+
 - `AddVendor`: Low coverage (TUI interaction complexity)
 - `Init`: Minimal coverage (simple operation)
 - Some Manager wrapper methods (thin delegates)
@@ -171,6 +181,7 @@ no vendors configured
 ### 2.1 Threat Model
 
 **Attack Vectors Considered:**
+
 1. ✅ **Path Traversal** - PROTECTED (ValidateDestPath)
 2. ✅ **Malicious Repository URLs** - MITIGATED (GitHub-only)
 3. ⚠️ **YAML Injection** - LOW RISK (user controls config)
@@ -184,6 +195,7 @@ no vendors configured
 **Location:** `filesystem.go:121-142`
 
 **Implementation:**
+
 ```go
 func ValidateDestPath(destPath string) error {
     cleaned := filepath.Clean(destPath)
@@ -208,6 +220,7 @@ func ValidateDestPath(destPath string) error {
 ```
 
 **Strengths:**
+
 - Covers Unix, Windows, and cross-platform scenarios
 - Clear error messages
 - Called before any file operations
@@ -226,6 +239,7 @@ func ValidateDestPath(destPath string) error {
 No file-based locking prevents concurrent `git-vendor sync` invocations.
 
 **Scenario:**
+
 ```bash
 # Terminal 1
 git-vendor sync &
@@ -235,6 +249,7 @@ git-vendor sync &
 ```
 
 **Potential Issues:**
+
 1. Both write to `vendor.lock` (last writer wins, possible corruption)
 2. Both copy files to same destination (race condition)
 3. No atomic operations guarantee
@@ -244,6 +259,7 @@ git-vendor sync &
 **Impact:** MEDIUM (could corrupt lockfile or vendored files)
 
 **Recommendation:**
+
 ```go
 // In sync() function
 lockfile := filepath.Join(s.rootDir, ".sync.lock")
@@ -268,15 +284,18 @@ defer f.Close()
 
 **Observation:**
 GitHub API is called without authentication. Rate limits:
+
 - Unauthenticated: 60 requests/hour/IP
 - Authenticated: 5,000 requests/hour
 
 **Current Behavior:**
+
 - License detection may fail with 403 Forbidden if rate limited
 - No retry logic or backoff
 - No authentication support
 
 **Recommendation:** Consider adding:
+
 1. Environment variable for GitHub token (`GITHUB_TOKEN`)
 2. Exponential backoff on rate limit errors
 3. Cache license info in lockfile to reduce API calls
@@ -294,6 +313,7 @@ GitHub API is called without authentication. Rate limits:
 **Score: 9/10** ✅
 
 **Positives:**
+
 1. ✅ Clear help text with examples
 2. ✅ Wizard-based interface (no need to remember syntax)
 3. ✅ Smart URL parsing (paste GitHub link = magic!)
@@ -301,6 +321,7 @@ GitHub API is called without authentication. Rate limits:
 5. ✅ Dry-run mode builds confidence
 
 **Friction Points:**
+
 1. ⚠️ No progress indicators during long operations
 2. ⚠️ Wizard can't be driven from CLI arguments (not CI-friendly)
 3. ⚠️ No `--help` flag on subcommands
@@ -310,6 +331,7 @@ GitHub API is called without authentication. Rate limits:
 **Analysis of Error Messages:**
 
 **Excellent Examples:**
+
 ```text
 ✖ Error
 locked commit abc123d no longer exists in the repository.
@@ -323,6 +345,7 @@ lockfile, then try syncing again
 **Rating: 10/10** - Explains WHAT, WHY, and HOW TO FIX
 
 **Confusing Example:**
+
 ```text
 ✖ Validation Failed
 no vendors configured
@@ -331,6 +354,7 @@ no vendors configured
 **Rating: 6/10** - States the problem but doesn't guide next steps
 
 **Recommendation:** Add helpful hint:
+
 ```text
 ✖ Validation Failed
 no vendors configured
@@ -343,6 +367,7 @@ Run 'git-vendor add' to add your first dependency.
 **Severity:** P2 (User frustration)
 
 **Current Behavior:**
+
 ```bash
 $ git-vendor sync
 [... silence for 30 seconds ...]
@@ -350,16 +375,19 @@ $ git-vendor sync
 ```
 
 **User Thoughts:**
+
 - "Is it frozen?"
 - "Should I Ctrl+C?"
 - "Is my network slow or is something broken?"
 
 **Industry Standard Examples:**
+
 - npm: Shows package names as they install
 - git: Shows progress bars for clone/fetch
 - cargo: Shows crate names and progress
 
 **Recommendation:**
+
 ```bash
 $ git-vendor sync
 Syncing 3 vendors...
@@ -372,6 +400,7 @@ Syncing 3 vendors...
 Use [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) (already a transitive dependency via huh)
 
 **Benefits:**
+
 - Reduces user anxiety
 - Shows tool is working
 - Makes debugging easier (see which vendor is slow)
@@ -381,6 +410,7 @@ Use [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) (alrea
 **README.md Score: 9/10** ✅
 
 **Strengths:**
+
 - Comprehensive with examples
 - Clear explanation of concepts
 - Security section (path traversal)
@@ -388,6 +418,7 @@ Use [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) (alrea
 - Comparison with alternatives
 
 **Gaps:**
+
 1. ⚠️ No mention of GitHub API rate limits
 2. ⚠️ "currently only GitHub URLs are supported" - is "currently" accurate?
 3. ⚠️ No CI/CD usage examples (all commands are interactive)
@@ -395,17 +426,20 @@ Use [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) (alrea
 **TROUBLESHOOTING.md Score: 8/10** ✅
 
 **Strengths:**
+
 - Well-organized by error type
 - Actionable solutions
 - Explains WHY errors happen
 
 **Gaps:**
+
 1. Line 463-464: Says "Currently, git-vendor doesn't have a verbose mode" but it does (`--verbose` flag exists!)
 2. Missing: How to use in CI/CD (non-interactive mode)
 
 ### 3.5 CLI Design Patterns
 
 **Conformance to Unix Philosophy:**
+
 - ✅ Does one thing well (vendor management)
 - ✅ Exit codes (0 = success, 1 = failure)
 - ⚠️ Not composable (interactive prompts break piping)
@@ -413,6 +447,7 @@ Use [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) (alrea
 
 **Recommendation for CI/CD:**
 Add non-interactive mode:
+
 ```bash
 git-vendor add \
   --name mylib \
@@ -434,6 +469,7 @@ git-vendor import < vendor.yml
 **Tested:** Syncing 3 vendors, ~100KB total files
 
 **Results:**
+
 - Memory: ~15MB peak
 - Disk I/O: Temporary clones deleted after use
 - Network: Shallow clones (`--depth 1`) used where possible
@@ -446,6 +482,7 @@ git-vendor import < vendor.yml
 **Location:** `vendor_syncer.go:320-348`
 
 **Strategy:**
+
 ```go
 // Try shallow fetch first
 if err := s.gitClient.Fetch(tempDir, 1, spec.Ref); err != nil {
@@ -457,11 +494,13 @@ if err := s.gitClient.Fetch(tempDir, 1, spec.Ref); err != nil {
 ```
 
 **Analysis:**
+
 - ✅ Smart: Tries fast path (shallow) first
 - ✅ Resilient: Falls back to full fetch
 - ✅ Clear error if both fail
 
 **Performance Impact:**
+
 - Shallow clone: ~500ms for typical repo
 - Full clone: ~2-5s for same repo
 - Fallback adds latency but ensures reliability
@@ -473,6 +512,7 @@ if err := s.gitClient.Fetch(tempDir, 1, spec.Ref); err != nil {
 **Test Case:** Vendor from a 500MB repository
 
 **Observation:**
+
 - Uses `--filter=blob:none` for directory browsing (good!)
 - Only downloads needed files
 - Temporary clones cleaned up
@@ -480,11 +520,13 @@ if err := s.gitClient.Fetch(tempDir, 1, spec.Ref); err != nil {
 **Edge Case:** What if user vendors 100GB of files?
 
 **Current Behavior:**
+
 - Will download all to temp directory
 - Will copy all to destination
 - No incremental sync (always fresh clone)
 
 **Recommendation:** For v2.0, consider:
+
 1. Check if destination already exists and is up-to-date (skip download)
 2. Use `git archive` instead of clone+copy for large trees
 3. Add `--max-size` flag to prevent accidental huge downloads
@@ -496,6 +538,7 @@ if err := s.gitClient.Fetch(tempDir, 1, spec.Ref); err != nil {
 **Location:** `vendor_syncer.go:256-286` (UpdateAll)
 
 **Current:** Vendors processed sequentially
+
 ```go
 for _, v := range config.Vendors {
     updatedRefs, err := s.syncVendor(v, nil)
@@ -504,6 +547,7 @@ for _, v := range config.Vendors {
 ```
 
 **Opportunity:** Parallel processing with goroutines
+
 ```go
 var wg sync.WaitGroup
 for _, v := range config.Vendors {
@@ -517,10 +561,12 @@ wg.Wait()
 ```
 
 **Benefits:**
+
 - 3 vendors × 5s each = 15s total → Could be 5s total
 - Better utilization of network bandwidth
 
 **Risks:**
+
 - Concurrent writes to lockfile (needs mutex)
 - Error handling complexity
 - Progress reporting harder
@@ -539,10 +585,12 @@ wg.Wait()
 > "The wizard is great! I pasted a GitHub file link and it just worked. But I had no idea if it was frozen during sync - maybe add a spinner?"
 
 **Pain Points:**
+
 - No progress indicator during sync
 - Wants to use in package.json scripts (needs non-interactive mode)
 
 **Feature Request:**
+
 ```bash
 npm run vendor  # Should work without keyboard input
 ```
@@ -555,11 +603,13 @@ npm run vendor  # Should work without keyboard input
 > "Lockfile is perfect for deterministic builds. But how do I vendor in CI? All the commands are interactive."
 
 **Pain Points:**
+
 - Can't automate `add` command
 - No `--yes` flag to auto-confirm prompts
 - Missing CI documentation
 
 **Feature Request:**
+
 ```bash
 # In CI
 git-vendor sync --yes  # Auto-confirm any prompts
@@ -573,11 +623,13 @@ git-vendor sync --yes  # Auto-confirm any prompts
 > "I love that I can vendor just one file! But the license check failed for a valid MIT license. Is GitHub API down?"
 
 **Pain Points:**
+
 - No offline mode (requires GitHub API)
 - Rate limiting on unauthenticated API
 - No way to manually specify license
 
 **Feature Request:**
+
 ```bash
 git-vendor add --license MIT  # Skip API check
 ```
@@ -590,10 +642,12 @@ git-vendor add --license MIT  # Skip API check
 > "I need to know exactly what version of each file we have. The lockfile commit hashes are perfect! But can I see a diff of what changed?"
 
 **Pain Points:**
+
 - No `diff` command to show changes
 - No `audit` command to list vendored files with hashes
 
 **Feature Request:**
+
 ```bash
 git-vendor audit        # List all vendored files with commit hashes
 git-vendor diff vendor  # Show what changed since last sync
@@ -606,6 +660,7 @@ git-vendor diff vendor  # Show what changed since last sync
 ### 6.1 Code Organization
 
 **Structure:**
+
 ```text
 internal/
 ├── core/
@@ -626,6 +681,7 @@ internal/
 **Score: 9/10** ✅
 
 **Strengths:**
+
 - ✅ Clean separation of concerns
 - ✅ Dependency injection for testability
 - ✅ Interface-based design
@@ -635,10 +691,12 @@ internal/
 `engine.go` is now just a thin facade over `vendor_syncer.go`. This is fine but could be simplified:
 
 **Option 1:** Keep both (current)
+
 - `Manager` = public API
 - `VendorSyncer` = implementation
 
 **Option 2:** Merge them
+
 - Expose `VendorSyncer` directly
 - Remove `Manager` layer
 
@@ -649,6 +707,7 @@ internal/
 **Score: 10/10** ✅ **EXCELLENT**
 
 **Example:**
+
 ```go
 type VendorSyncer struct {
     configStore    ConfigStore
@@ -661,11 +720,13 @@ type VendorSyncer struct {
 ```
 
 **Benefits:**
+
 - Fully testable with mocks
 - Easy to swap implementations (e.g., GitLab support)
 - Clear dependencies
 
 **Test Proof:**
+
 ```go
 // From mocks_test.go
 mockConfig := &MockConfigStore{
@@ -683,6 +744,7 @@ syncer := NewVendorSyncer(mockConfig, ...)
 **Score: 9/10** ✅
 
 **Pattern:**
+
 ```go
 if err != nil {
     return fmt.Errorf("context: %w", err)
@@ -690,11 +752,13 @@ if err != nil {
 ```
 
 **Strengths:**
+
 - Wraps errors with context
 - Preserves error chain
 - Uses `%w` for errors.Is/As compatibility
 
 **Example:**
+
 ```go
 // filesystem.go
 if err := os.WriteFile(s.Path(), data, 0644); err != nil {
@@ -709,12 +773,14 @@ if err := os.WriteFile(s.Path(), data, 0644); err != nil {
 **Score: 9/10** ✅
 
 **Strengths:**
+
 - Comprehensive mock infrastructure
 - Tests error paths, not just happy paths
 - Table-driven tests for multiple scenarios
 - Clear test names
 
 **Example:**
+
 ```go
 func TestSyncVendor_ShallowFetchFailsFallbackToFull(t *testing.T) {
     // Test name describes exact scenario
@@ -735,6 +801,7 @@ Add integration tests that use real git repos (could use local test fixtures).
 **Improvement:** +2.7 points (+41%)
 
 **Major Fixes Completed:**
+
 1. ✅ Bug #1: Silent file copy failures - FIXED
 2. ✅ Bug #2: Array bounds panic - FIXED
 3. ✅ Bug #3: Vendor not found check too late - FIXED
@@ -745,6 +812,7 @@ Add integration tests that use real git repos (could use local test fixtures).
 8. ✅ Verbose mode - ADDED
 
 **Remaining Items from Previous Audit:**
+
 - ⚠️ P2: Progress indicators (still missing)
 - ⚠️ P3: Concurrent sync detection (still missing)
 - ⚠️ P2: GitHub API rate limit handling (still missing)
@@ -754,6 +822,7 @@ Add integration tests that use real git repos (could use local test fixtures).
 ### 7.2 New Issues Found in This Audit
 
 **Issues Not in Previous Audit:**
+
 1. ⚠️ Remove command validation order (main.go:92)
 2. ⚠️ Validate on empty config behavior (could be clearer)
 3. ⚠️ TROUBLESHOOTING.md outdated (says no verbose mode)
@@ -767,13 +836,16 @@ Add integration tests that use real git repos (could use local test fixtures).
 ## 8. Recommendations by Priority
 
 ### P0 (Critical - Fix Before Release)
+
 **None** ✅ All critical issues resolved!
 
 ### P1 (High - Should Fix)
+
 1. **Update TROUBLESHOOTING.md** - Lines 463-464 say no verbose mode but `--verbose` exists
 2. **Fix remove command validation order** - Check vendor exists before showing confirmation
 
 ### P2 (Medium - Nice to Have)
+
 1. **Add progress indicators** - Reduce user anxiety during long syncs
 2. **GitHub API rate limit handling** - Add token support, retries, caching
 3. **Improve validate empty config** - Add helpful hint about next steps
@@ -781,6 +853,7 @@ Add integration tests that use real git repos (could use local test fixtures).
 5. **Add non-interactive mode** - CLI flags for `add` command
 
 ### P3 (Low - Future Enhancement)
+
 1. **File locking for concurrent syncs** - Prevent race conditions
 2. **Parallel vendor processing** - Speed up multi-vendor sync
 3. **Incremental sync** - Skip re-download if already up-to-date
@@ -883,16 +956,19 @@ Add integration tests that use real git repos (could use local test fixtures).
 ### Comparison to Alternatives
 
 **vs. Git Submodules:**
+
 - ✅ Better: Granular file control
 - ✅ Better: Simpler workflow
 - ❌ Worse: Requires separate tool
 
 **vs. Manual Copying:**
+
 - ✅ Better: Reproducible
 - ✅ Better: Easy to update
 - ✅ Better: Tracks provenance
 
 **vs. Package Managers:**
+
 - ✅ Better: Language-agnostic
 - ✅ Better: Granular control
 - ❌ Worse: Manual management
@@ -900,12 +976,14 @@ Add integration tests that use real git repos (could use local test fixtures).
 ### Who Should Use This Tool?
 
 ✅ **Perfect For:**
+
 - Projects vendoring utility functions from OSS
 - Language-agnostic vendoring needs
 - Teams wanting deterministic builds
 - Developers comfortable with CLI tools
 
 ⚠️ **Maybe Not For:**
+
 - Large-scale package management (use language-specific tools)
 - Teams requiring GitLab/Bitbucket support
 - Non-technical users (interactive wizard only)
@@ -917,6 +995,7 @@ Add integration tests that use real git repos (could use local test fixtures).
 This is a **well-crafted tool** that solves a real problem. The architecture is clean, the tests are comprehensive, and the UX is thoughtful. The issues found are minor and don't block production use.
 
 **Key Achievements Since Last Audit:**
+
 - Fixed all critical bugs
 - Improved test coverage by 4.5x (14% → 63.9%)
 - Added path traversal protection
@@ -924,6 +1003,7 @@ This is a **well-crafted tool** that solves a real problem. The architecture is 
 - Added verbose mode for debugging
 
 **Recommended Actions:**
+
 1. Fix P1 issues (remove validation, docs update)
 2. Consider P2 improvements (progress indicators, CI support)
 3. Ship it! 🚀
