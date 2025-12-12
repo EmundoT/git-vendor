@@ -1,9 +1,11 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"git-vendor/internal/types"
 )
@@ -1408,4 +1410,1613 @@ func TestSaveLock(t *testing.T) {
 			t.Errorf("Expected empty lock, got %d vendors", len(loadedLock.Vendors))
 		}
 	})
+}
+
+// ============================================================================
+// TestSyncVendor - Comprehensive tests for the core sync function
+// ============================================================================
+
+func TestSyncVendor_HappyPath_LockedRef(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: Create a simple vendor with one spec
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	lockedRefs := map[string]string{"main": "abc123def456"}
+
+	// Mock: Create temp directory
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	// Mock: All git operations succeed
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def456", nil
+	}
+
+	// Mock: License file exists
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		if path == "/tmp/test-12345/LICENSE" {
+			return &mockFileInfo{name: "LICENSE", isDir: false}, nil
+		}
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	hashes, err := syncer.syncVendor(vendor, lockedRefs)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+	if len(hashes) != 1 {
+		t.Errorf("Expected 1 hash, got %d", len(hashes))
+	}
+	if hashes["main"] != "abc123def456" {
+		t.Errorf("Expected hash abc123def456, got %s", hashes["main"])
+	}
+
+	// Verify git operations were called in correct order
+	if len(git.InitCalls) != 1 {
+		t.Errorf("Expected 1 Init call, got %d", len(git.InitCalls))
+	}
+	if len(git.AddRemoteCalls) != 1 {
+		t.Errorf("Expected 1 AddRemote call, got %d", len(git.AddRemoteCalls))
+	}
+	if len(git.FetchCalls) != 1 {
+		t.Errorf("Expected 1 Fetch call, got %d", len(git.FetchCalls))
+	}
+	if len(git.CheckoutCalls) != 1 {
+		t.Errorf("Expected 1 Checkout call, got %d", len(git.CheckoutCalls))
+	}
+
+	// Verify checkout was called with locked hash
+	if git.CheckoutCalls[0][1] != "abc123def456" {
+		t.Errorf("Expected checkout of locked hash, got %s", git.CheckoutCalls[0][1])
+	}
+}
+
+func TestSyncVendor_HappyPath_UnlockedRef(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "latest789", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		if path == "/tmp/test-12345/LICENSE" {
+			return &mockFileInfo{name: "LICENSE", isDir: false}, nil
+		}
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute with nil lockedRefs (unlocked mode)
+	hashes, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+	if hashes["main"] != "latest789" {
+		t.Errorf("Expected hash latest789, got %s", hashes["main"])
+	}
+
+	// Verify checkout was called with FETCH_HEAD (unlocked mode)
+	if len(git.CheckoutCalls) != 1 {
+		t.Errorf("Expected 1 Checkout call, got %d", len(git.CheckoutCalls))
+	}
+	if git.CheckoutCalls[0][1] != "FETCH_HEAD" {
+		t.Errorf("Expected checkout of FETCH_HEAD, got %s", git.CheckoutCalls[0][1])
+	}
+}
+
+func TestSyncVendor_ShallowFetchSucceeds(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify shallow fetch was attempted
+	if len(git.FetchCalls) != 1 {
+		t.Errorf("Expected 1 Fetch call, got %d", len(git.FetchCalls))
+	}
+	if git.FetchCalls[0][1].(int) != 1 {
+		t.Errorf("Expected shallow fetch (depth=1), got depth=%d", git.FetchCalls[0][1])
+	}
+
+	// Verify no fallback to FetchAll
+	if len(git.FetchAllCalls) != 0 {
+		t.Errorf("Expected no FetchAll calls, got %d", len(git.FetchAllCalls))
+	}
+}
+
+func TestSyncVendor_ShallowFetchFails_FullFetchSucceeds(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	// Mock: Shallow fetch fails, full fetch succeeds
+	git.FetchFunc = func(dir string, depth int, ref string) error {
+		if depth == 1 {
+			return fmt.Errorf("shallow fetch failed")
+		}
+		return nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify fallback to FetchAll was called
+	if len(git.FetchAllCalls) != 1 {
+		t.Errorf("Expected 1 FetchAll call (fallback), got %d", len(git.FetchAllCalls))
+	}
+}
+
+func TestSyncVendor_BothFetchesFail(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	// Mock: Both fetches fail
+	git.FetchFunc = func(dir string, depth int, ref string) error {
+		return fmt.Errorf("network error")
+	}
+	git.FetchAllFunc = func(dir string) error {
+		return fmt.Errorf("network error")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "failed to fetch ref") {
+		t.Errorf("Expected 'failed to fetch ref' error, got: %v", err)
+	}
+}
+
+func TestSyncVendor_StaleCommitHashDetection(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	lockedRefs := map[string]string{"main": "stale123"}
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	// Mock: Checkout fails with stale commit error
+	git.CheckoutFunc = func(dir, ref string) error {
+		if ref == "stale123" {
+			return fmt.Errorf("reference is not a tree: stale123")
+		}
+		return nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, lockedRefs)
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "no longer exists in the repository") {
+		t.Errorf("Expected stale commit error message, got: %v", err)
+	}
+	if !contains(err.Error(), "git-vendor update") {
+		t.Errorf("Expected helpful update message, got: %v", err)
+	}
+}
+
+func TestSyncVendor_CheckoutFETCH_HEADFails_RefFallbackSucceeds(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	// Mock: Checkout FETCH_HEAD fails, checkout ref succeeds
+	checkoutAttempts := 0
+	git.CheckoutFunc = func(dir, ref string) error {
+		checkoutAttempts++
+		if ref == "FETCH_HEAD" {
+			return fmt.Errorf("FETCH_HEAD not available")
+		}
+		return nil // Checkout of "main" succeeds
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success (fallback), got error: %v", err)
+	}
+	if checkoutAttempts != 2 {
+		t.Errorf("Expected 2 checkout attempts (FETCH_HEAD then ref), got %d", checkoutAttempts)
+	}
+}
+
+func TestSyncVendor_AllCheckoutsFail(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	// Mock: All checkouts fail
+	git.CheckoutFunc = func(dir, ref string) error {
+		return fmt.Errorf("checkout failed")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "checkout ref") {
+		t.Errorf("Expected checkout error, got: %v", err)
+	}
+}
+
+func TestSyncVendor_TempDirectoryCreationFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	// Mock: CreateTemp fails
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "", fmt.Errorf("disk full")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "disk full") {
+		t.Errorf("Expected disk full error, got: %v", err)
+	}
+}
+
+func TestSyncVendor_PathTraversalBlocked(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: Create vendor with malicious path mapping
+	vendor := types.VendorSpec{
+		Name:    "malicious",
+		URL:     "https://github.com/attacker/repo",
+		License: "MIT",
+		Specs: []types.BranchSpec{
+			{
+				Ref: "main",
+				Mapping: []types.PathMapping{
+					{From: "payload.txt", To: "../../../etc/passwd"},
+				},
+			},
+		},
+	}
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	// Mock: File exists in temp repo
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected path traversal error, got nil")
+	}
+	if !contains(err.Error(), "invalid destination path") || !contains(err.Error(), "not allowed") {
+		t.Errorf("Expected path traversal error, got: %v", err)
+	}
+}
+
+func TestSyncVendor_MultipleSpecsPerVendor(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: Vendor with 3 specs (main, dev, v1.0)
+	vendor := types.VendorSpec{
+		Name:    "test-vendor",
+		URL:     "https://github.com/owner/repo",
+		License: "MIT",
+		Specs: []types.BranchSpec{
+			{
+				Ref: "main",
+				Mapping: []types.PathMapping{
+					{From: "src/file.go", To: "lib/file.go"},
+				},
+			},
+			{
+				Ref: "dev",
+				Mapping: []types.PathMapping{
+					{From: "src/dev.go", To: "lib/dev.go"},
+				},
+			},
+			{
+				Ref: "v1.0",
+				Mapping: []types.PathMapping{
+					{From: "src/release.go", To: "lib/release.go"},
+				},
+			},
+		},
+	}
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	hashCounter := 0
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		hashCounter++
+		return fmt.Sprintf("hash%d00000", hashCounter), nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	hashes, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+	if len(hashes) != 3 {
+		t.Errorf("Expected 3 hashes (one per spec), got %d", len(hashes))
+	}
+	if _, ok := hashes["main"]; !ok {
+		t.Error("Expected hash for 'main' ref")
+	}
+	if _, ok := hashes["dev"]; !ok {
+		t.Error("Expected hash for 'dev' ref")
+	}
+	if _, ok := hashes["v1.0"]; !ok {
+		t.Error("Expected hash for 'v1.0' ref")
+	}
+
+	// Verify each spec triggered a fetch
+	if len(git.FetchCalls) != 3 {
+		t.Errorf("Expected 3 Fetch calls (one per spec), got %d", len(git.FetchCalls))
+	}
+}
+
+func TestSyncVendor_MultipleMappingsPerSpec(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: One spec with 5 file mappings
+	vendor := types.VendorSpec{
+		Name:    "test-vendor",
+		URL:     "https://github.com/owner/repo",
+		License: "MIT",
+		Specs: []types.BranchSpec{
+			{
+				Ref: "main",
+				Mapping: []types.PathMapping{
+					{From: "file1.go", To: "lib/file1.go"},
+					{From: "file2.go", To: "lib/file2.go"},
+					{From: "file3.go", To: "lib/file3.go"},
+					{From: "file4.go", To: "lib/file4.go"},
+					{From: "file5.go", To: "lib/file5.go"},
+				},
+			},
+		},
+	}
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify all 5 files were copied (plus 1 for license = 6 total)
+	if len(fs.CopyFileCalls) < 5 {
+		t.Errorf("Expected at least 5 CopyFile calls (5 mappings), got %d", len(fs.CopyFileCalls))
+	}
+}
+
+func TestSyncVendor_FileCopyFailsInMapping(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	// Mock: File copy fails only for the mapping (not license)
+	fs.CopyFileFunc = func(src, dst string) error {
+		// Let license copy succeed, but fail on the actual mapping
+		if contains(src, "LICENSE") {
+			return nil
+		}
+		return fmt.Errorf("permission denied")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "failed to copy file") {
+		t.Errorf("Expected 'failed to copy file' error, got: %v", err)
+	}
+}
+
+func TestSyncVendor_LicenseCopyFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	// Mock: License file exists
+	statCalls := 0
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		statCalls++
+		if statCalls == 1 && path == "/tmp/test-12345/LICENSE" {
+			// First call: LICENSE exists
+			return &mockFileInfo{name: "LICENSE", isDir: false}, nil
+		}
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	// Mock: License copy fails
+	fs.CopyFileFunc = func(src, dst string) error {
+		if contains(src, "LICENSE") {
+			return fmt.Errorf("disk full")
+		}
+		return nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "failed to copy license") {
+		t.Errorf("Expected license copy error, got: %v", err)
+	}
+}
+
+// ============================================================================
+// TestUpdateAll - Comprehensive tests for update orchestration
+// ============================================================================
+
+func TestUpdateAll_HappyPath_SingleVendor(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: Single vendor with one spec
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	// Mock: syncVendor succeeds
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def456", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.UpdateAll()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify lock was saved with correct entry
+	if len(lock.SaveCalls) != 1 {
+		t.Errorf("Expected 1 Save call, got %d", len(lock.SaveCalls))
+	}
+
+	savedLock := lock.SaveCalls[0]
+	if len(savedLock.Vendors) != 1 {
+		t.Errorf("Expected 1 lock entry, got %d", len(savedLock.Vendors))
+	}
+
+	entry := savedLock.Vendors[0]
+	if entry.Name != "test-vendor" {
+		t.Errorf("Expected vendor name 'test-vendor', got '%s'", entry.Name)
+	}
+	if entry.Ref != "main" {
+		t.Errorf("Expected ref 'main', got '%s'", entry.Ref)
+	}
+	if entry.CommitHash != "abc123def456" {
+		t.Errorf("Expected hash 'abc123def456', got '%s'", entry.CommitHash)
+	}
+	if entry.Updated == "" {
+		t.Error("Expected Updated timestamp, got empty string")
+	}
+}
+
+func TestUpdateAll_HappyPath_MultipleVendors(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: 3 vendors
+	vendor1 := createTestVendorSpec("vendor-a", "https://github.com/owner/repo-a", "main")
+	vendor2 := createTestVendorSpec("vendor-b", "https://github.com/owner/repo-b", "dev")
+	vendor3 := createTestVendorSpec("vendor-c", "https://github.com/owner/repo-c", "v1.0")
+	config.Config = createTestConfig(vendor1, vendor2, vendor3)
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	// Mock: Each vendor gets a unique hash (must be at least 7 chars)
+	callCount := 0
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		callCount++
+		return fmt.Sprintf("hash%d00000", callCount), nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.UpdateAll()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify lock has 3 entries (one per vendor)
+	savedLock := lock.SaveCalls[0]
+	if len(savedLock.Vendors) != 3 {
+		t.Errorf("Expected 3 lock entries, got %d", len(savedLock.Vendors))
+	}
+
+	// Verify all vendors are locked
+	vendorNames := make(map[string]bool)
+	for _, entry := range savedLock.Vendors {
+		vendorNames[entry.Name] = true
+	}
+	if !vendorNames["vendor-a"] || !vendorNames["vendor-b"] || !vendorNames["vendor-c"] {
+		t.Error("Not all vendors were locked")
+	}
+}
+
+func TestUpdateAll_ConfigLoadFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Mock: Config load fails
+	config.LoadFunc = func() (types.VendorConfig, error) {
+		return types.VendorConfig{}, fmt.Errorf("config file corrupt")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.UpdateAll()
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "config file corrupt") {
+		t.Errorf("Expected config error, got: %v", err)
+	}
+
+	// Verify no lock save was attempted
+	if len(lock.SaveCalls) != 0 {
+		t.Errorf("Expected no Save calls, got %d", len(lock.SaveCalls))
+	}
+}
+
+func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: 3 vendors
+	vendor1 := createTestVendorSpec("vendor-good-1", "https://github.com/owner/repo-a", "main")
+	vendor2 := createTestVendorSpec("vendor-bad", "https://github.com/owner/repo-b", "main")
+	vendor3 := createTestVendorSpec("vendor-good-2", "https://github.com/owner/repo-c", "main")
+	config.Config = createTestConfig(vendor1, vendor2, vendor3)
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	// Mock: vendor-bad fails, others succeed
+	git.InitFunc = func(dir string) error {
+		// Fail only for vendor-bad (second call)
+		if git.InitCalls != nil && len(git.InitCalls) == 2 {
+			return fmt.Errorf("git init failed")
+		}
+		return nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.UpdateAll()
+
+	// Verify: Overall success (UpdateAll continues on individual failures)
+	if err != nil {
+		t.Fatalf("Expected success (continue on error), got: %v", err)
+	}
+
+	// Verify: Only 2 vendors were locked (vendor-bad skipped)
+	savedLock := lock.SaveCalls[0]
+	if len(savedLock.Vendors) != 2 {
+		t.Errorf("Expected 2 lock entries (vendor-bad skipped), got %d", len(savedLock.Vendors))
+	}
+
+	// Verify the failed vendor is not in the lock
+	for _, entry := range savedLock.Vendors {
+		if entry.Name == "vendor-bad" {
+			t.Error("vendor-bad should not be in lock file")
+		}
+	}
+}
+
+func TestUpdateAll_LockSaveFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	// Mock: Lock save fails
+	lock.SaveFunc = func(l types.VendorLock) error {
+		return fmt.Errorf("disk full")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.UpdateAll()
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "disk full") {
+		t.Errorf("Expected disk full error, got: %v", err)
+	}
+}
+
+func TestUpdateAll_EmptyConfig(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: Empty config (no vendors)
+	config.Config = types.VendorConfig{Vendors: []types.VendorSpec{}}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.UpdateAll()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success (empty is valid), got error: %v", err)
+	}
+
+	// Verify empty lock was saved
+	savedLock := lock.SaveCalls[0]
+	if len(savedLock.Vendors) != 0 {
+		t.Errorf("Expected empty lock, got %d entries", len(savedLock.Vendors))
+	}
+}
+
+func TestUpdateAll_TimestampFormat(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.UpdateAll()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify timestamp is in RFC3339 format
+	entry := lock.SaveCalls[0].Vendors[0]
+	if entry.Updated == "" {
+		t.Fatal("Expected non-empty timestamp")
+	}
+
+	// Try to parse the timestamp (should not error)
+	_, err = time.Parse(time.RFC3339, entry.Updated)
+	if err != nil {
+		t.Errorf("Timestamp not in RFC3339 format: %v", err)
+	}
+}
+
+func TestUpdateAll_MultipleSpecsPerVendor(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: 1 vendor with 3 specs
+	vendor := types.VendorSpec{
+		Name:    "multi-spec-vendor",
+		URL:     "https://github.com/owner/repo",
+		License: "MIT",
+		Specs: []types.BranchSpec{
+			{
+				Ref: "main",
+				Mapping: []types.PathMapping{
+					{From: "src/file.go", To: "lib/file.go"},
+				},
+			},
+			{
+				Ref: "dev",
+				Mapping: []types.PathMapping{
+					{From: "src/dev.go", To: "lib/dev.go"},
+				},
+			},
+			{
+				Ref: "v1.0",
+				Mapping: []types.PathMapping{
+					{From: "src/release.go", To: "lib/release.go"},
+				},
+			},
+		},
+	}
+	config.Config = createTestConfig(vendor)
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	hashCounter := 0
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		hashCounter++
+		return fmt.Sprintf("hash%d00000", hashCounter), nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.UpdateAll()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify 3 lock entries (one per spec)
+	savedLock := lock.SaveCalls[0]
+	if len(savedLock.Vendors) != 3 {
+		t.Errorf("Expected 3 lock entries (one per spec), got %d", len(savedLock.Vendors))
+	}
+
+	// Verify all refs are present
+	refs := make(map[string]bool)
+	for _, entry := range savedLock.Vendors {
+		refs[entry.Ref] = true
+	}
+	if !refs["main"] || !refs["dev"] || !refs["v1.0"] {
+		t.Error("Not all refs were locked")
+	}
+}
+
+func TestUpdateAll_LicensePathSet(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.UpdateAll()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify license path is set correctly
+	entry := lock.SaveCalls[0].Vendors[0]
+	expectedPath := filepath.Join("/mock/vendor", LicenseDir, "test-vendor.txt")
+	if entry.LicensePath != expectedPath {
+		t.Errorf("Expected license path '%s', got '%s'", expectedPath, entry.LicensePath)
+	}
+}
+
+// ============================================================================
+// TestSync* - Comprehensive tests for sync orchestration
+// ============================================================================
+
+func TestSync_HappyPath_WithLock(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: 2 vendors with lock
+	vendor1 := createTestVendorSpec("vendor-a", "https://github.com/owner/repo-a", "main")
+	vendor2 := createTestVendorSpec("vendor-b", "https://github.com/owner/repo-b", "main")
+	config.Config = createTestConfig(vendor1, vendor2)
+
+	lock.Lock = createTestLock(
+		createTestLockEntry("vendor-a", "main", "locked123hash"),
+		createTestLockEntry("vendor-b", "main", "locked456hash"),
+	)
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.Sync()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify synced with locked hashes
+	if len(git.CheckoutCalls) != 2 {
+		t.Errorf("Expected 2 checkouts (2 vendors), got %d", len(git.CheckoutCalls))
+	}
+	if git.CheckoutCalls[0][1] != "locked123hash" {
+		t.Errorf("Expected checkout of locked123hash, got %s", git.CheckoutCalls[0][1])
+	}
+	if git.CheckoutCalls[1][1] != "locked456hash" {
+		t.Errorf("Expected checkout of locked456hash, got %s", git.CheckoutCalls[1][1])
+	}
+}
+
+func TestSync_NoLock_TriggersUpdate(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	// Mock: Lock load returns error (no lock file)
+	lock.LoadFunc = func() (types.VendorLock, error) {
+		return types.VendorLock{}, fmt.Errorf("file not found")
+	}
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.Sync()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success (UpdateAll triggered), got error: %v", err)
+	}
+
+	// Verify UpdateAll was triggered (lock was saved)
+	if len(lock.SaveCalls) != 1 {
+		t.Errorf("Expected UpdateAll to save lock, got %d saves", len(lock.SaveCalls))
+	}
+}
+
+func TestSyncDryRun_ShowsPreview(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	lock.Lock = createTestLock(createTestLockEntry("test-vendor", "main", "locked123hash"))
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.SyncDryRun()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify NO sync operations were performed
+	if len(git.InitCalls) != 0 {
+		t.Errorf("Expected 0 git operations (dry-run), got %d Init calls", len(git.InitCalls))
+	}
+	if len(git.CheckoutCalls) != 0 {
+		t.Errorf("Expected 0 checkouts (dry-run), got %d", len(git.CheckoutCalls))
+	}
+}
+
+func TestSyncDryRun_NoLock(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	// Mock: No lock file
+	lock.LoadFunc = func() (types.VendorLock, error) {
+		return types.VendorLock{}, fmt.Errorf("file not found")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.SyncDryRun()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify no UpdateAll was triggered (dry-run)
+	if len(lock.SaveCalls) != 0 {
+		t.Errorf("Expected no UpdateAll (dry-run), got %d saves", len(lock.SaveCalls))
+	}
+}
+
+func TestSyncWithOptions_VendorFilter(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: 3 vendors
+	vendor1 := createTestVendorSpec("vendor-a", "https://github.com/owner/repo-a", "main")
+	vendor2 := createTestVendorSpec("vendor-b", "https://github.com/owner/repo-b", "main")
+	vendor3 := createTestVendorSpec("vendor-c", "https://github.com/owner/repo-c", "main")
+	config.Config = createTestConfig(vendor1, vendor2, vendor3)
+
+	lock.Lock = createTestLock(
+		createTestLockEntry("vendor-a", "main", "hashA123456"),
+		createTestLockEntry("vendor-b", "main", "hashB123456"),
+		createTestLockEntry("vendor-c", "main", "hashC123456"),
+	)
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute: Sync only vendor-b
+	err := syncer.SyncWithOptions("vendor-b", false)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify only vendor-b was synced
+	if len(git.AddRemoteCalls) != 1 {
+		t.Errorf("Expected 1 vendor synced, got %d", len(git.AddRemoteCalls))
+	}
+	if len(git.AddRemoteCalls) > 0 && git.AddRemoteCalls[0][2] != "https://github.com/owner/repo-b" {
+		t.Errorf("Expected vendor-b synced, got URL: %s", git.AddRemoteCalls[0][2])
+	}
+}
+
+func TestSyncWithOptions_VendorNotFoundEarly(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	lock.Lock = createTestLock(createTestLockEntry("test-vendor", "main", "locked123hash"))
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute: Try to sync non-existent vendor
+	err := syncer.SyncWithOptions("nonexistent-vendor", false)
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "not found") {
+		t.Errorf("Expected 'not found' error, got: %v", err)
+	}
+
+	// Verify no git operations were attempted
+	if len(git.InitCalls) != 0 {
+		t.Errorf("Expected 0 git operations (early validation), got %d Init calls", len(git.InitCalls))
+	}
+}
+
+func TestSyncWithOptions_ForceSync(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	lock.Lock = createTestLock(createTestLockEntry("test-vendor", "main", "oldlocked123"))
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "newlatest789", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute: Force sync (ignore lock)
+	err := syncer.SyncWithOptions("", true)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verify checkout used FETCH_HEAD (unlocked mode) not the locked hash
+	if len(git.CheckoutCalls) != 1 {
+		t.Errorf("Expected 1 checkout, got %d", len(git.CheckoutCalls))
+	}
+	if git.CheckoutCalls[0][1] == "oldlocked123" {
+		t.Error("Force sync should ignore locked hash, but it was used")
+	}
+	if git.CheckoutCalls[0][1] != "FETCH_HEAD" {
+		t.Errorf("Expected checkout of FETCH_HEAD (force mode), got %s", git.CheckoutCalls[0][1])
+	}
+}
+
+func TestSync_StopsOnFirstError(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: 3 vendors
+	vendor1 := createTestVendorSpec("vendor-a", "https://github.com/owner/repo-a", "main")
+	vendor2 := createTestVendorSpec("vendor-b", "https://github.com/owner/repo-b", "main")
+	vendor3 := createTestVendorSpec("vendor-c", "https://github.com/owner/repo-c", "main")
+	config.Config = createTestConfig(vendor1, vendor2, vendor3)
+
+	lock.Lock = createTestLock(
+		createTestLockEntry("vendor-a", "main", "hashA123456"),
+		createTestLockEntry("vendor-b", "main", "hashB123456"),
+		createTestLockEntry("vendor-c", "main", "hashC123456"),
+	)
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	// Mock: vendor-b fails (second vendor)
+	git.InitFunc = func(dir string) error {
+		if len(git.InitCalls) == 2 {
+			return fmt.Errorf("git init failed")
+		}
+		return nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.Sync()
+
+	// Verify: Error returned
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	// Verify: vendor-c was NOT synced (stopped after vendor-b error)
+	if len(git.AddRemoteCalls) < 3 {
+		// vendor-c should not have been attempted
+		for _, call := range git.AddRemoteCalls {
+			if call[2] == "https://github.com/owner/repo-c" {
+				t.Error("vendor-c should not be synced after vendor-b error")
+			}
+		}
+	}
+}
+
+func TestSync_EmptyConfig(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Setup: Empty config
+	config.Config = types.VendorConfig{Vendors: []types.VendorSpec{}}
+	lock.Lock = types.VendorLock{Vendors: []types.LockDetails{}}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.Sync()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success (empty is valid), got error: %v", err)
+	}
+
+	// Verify no operations
+	if len(git.InitCalls) != 0 {
+		t.Errorf("Expected 0 git operations (empty config), got %d", len(git.InitCalls))
+	}
+}
+
+func TestSync_ConfigLoadFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Mock: Config load fails
+	config.LoadFunc = func() (types.VendorConfig, error) {
+		return types.VendorConfig{}, fmt.Errorf("config corrupt")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.Sync()
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !contains(err.Error(), "config corrupt") {
+		t.Errorf("Expected config error, got: %v", err)
+	}
+}
+
+func TestSync_EmptyLock_TriggersUpdate(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	// Mock: Lock is empty (no vendors)
+	lock.Lock = types.VendorLock{Vendors: []types.LockDetails{}}
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.Sync()
+
+	// Verify: UpdateAll was triggered
+	if err != nil {
+		t.Fatalf("Expected success (UpdateAll triggered), got error: %v", err)
+	}
+
+	// Verify lock was saved (UpdateAll ran)
+	if len(lock.SaveCalls) != 1 {
+		t.Errorf("Expected UpdateAll to save lock, got %d saves", len(lock.SaveCalls))
+	}
+}
+
+// ============================================================================
+// Utility function tests
+// ============================================================================
+
+func TestGetConfig(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	config.Config = createTestConfig(vendor)
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	cfg, err := syncer.GetConfig()
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+	if len(cfg.Vendors) != 1 {
+		t.Errorf("Expected 1 vendor, got %d", len(cfg.Vendors))
+	}
+}
+
+func TestGetLockHash(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	lock.Lock = createTestLock(createTestLockEntry("test-vendor", "main", "abc123hash"))
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	hash := syncer.GetLockHash("test-vendor", "main")
+
+	// Verify
+	if hash != "abc123hash" {
+		t.Errorf("Expected hash 'abc123hash', got '%s'", hash)
+	}
+}
+
+func TestAudit(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	lock.Lock = createTestLock(
+		createTestLockEntry("vendor-a", "main", "hash123456"),
+		createTestLockEntry("vendor-b", "main", "hash789012"),
+	)
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute (just verify no panic)
+	syncer.Audit()
+}
+
+func TestCheckGitHubLicense(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	detectedLicense, err := syncer.CheckGitHubLicense("https://github.com/owner/repo")
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+	if detectedLicense != "MIT" {
+		t.Errorf("Expected MIT license (mock default), got '%s'", detectedLicense)
+	}
+}
+
+func TestListLocalDir(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	items, err := syncer.ListLocalDir("/some/path")
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+	if len(items) < 1 {
+		t.Error("Expected at least 1 item from mock")
+	}
+}
+
+func TestCopyMappings_AutoNaming(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Test auto-naming with empty "to" field
+	vendor := types.VendorSpec{
+		Name:    "test-vendor",
+		URL:     "https://github.com/owner/repo",
+		License: "MIT",
+		Specs: []types.BranchSpec{
+			{
+				Ref: "main",
+				Mapping: []types.PathMapping{
+					{From: "src/file.go", To: ""}, // Empty "to" triggers auto-naming
+				},
+			},
+		},
+	}
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success (auto-naming), got error: %v", err)
+	}
+
+	// Verify file was copied (auto-named as "file.go")
+	if len(fs.CopyFileCalls) < 1 {
+		t.Error("Expected at least 1 CopyFile call")
+	}
+}
+
+func TestCopyMappings_DirectoryCopy(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Test directory copy
+	vendor := types.VendorSpec{
+		Name:    "test-vendor",
+		URL:     "https://github.com/owner/repo",
+		License: "MIT",
+		Specs: []types.BranchSpec{
+			{
+				Ref: "main",
+				Mapping: []types.PathMapping{
+					{From: "src/", To: "lib/"},
+				},
+			},
+		},
+	}
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		// Return isDir=true for directory paths
+		return &mockFileInfo{name: filepath.Base(path), isDir: true}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("Expected success (directory copy), got error: %v", err)
+	}
+
+	// Verify directory was copied
+	if len(fs.CopyDirCalls) < 1 {
+		t.Error("Expected at least 1 CopyDir call")
+	}
+}
+
+func TestCopyMappings_PathNotFound(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+
+	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
+		return "/tmp/test-12345", nil
+	}
+
+	git.GetHeadHashFunc = func(dir string) (string, error) {
+		return "abc123def", nil
+	}
+
+	// Mock: Stat returns error (path not found)
+	fs.StatFunc = func(path string) (os.FileInfo, error) {
+		return nil, fmt.Errorf("path not found")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.syncVendor(vendor, nil)
+
+	// Verify
+	if err == nil {
+		t.Fatal("Expected error (path not found), got nil")
+	}
+	if !contains(err.Error(), "not found") {
+		t.Errorf("Expected 'not found' error, got: %v", err)
+	}
 }
