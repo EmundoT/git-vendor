@@ -126,6 +126,8 @@ checkout ref 'main' failed: error: pathspec 'main' did not match any file(s)
 - The ref name was misspelled
 - The repository changed its default branch name
 
+**Note:** This error typically occurs during `sync` operations when the lockfile references a ref that no longer exists. During `update` operations, the tool has fallback logic that automatically fetches all refs if the specific ref fetch fails, so invalid refs may not immediately fail during update.
+
 **Solution:**
 
 1. **Verify the ref exists:**
@@ -145,6 +147,14 @@ checkout ref 'main' failed: error: pathspec 'main' did not match any file(s)
    # Change "master" to "main" or vice versa
    ```
 
+4. **If error occurs during sync:**
+
+   ```bash
+   # Update to regenerate lockfile with valid refs
+   git-vendor update
+   git-vendor sync
+   ```
+
 ---
 
 ## License Issues
@@ -152,7 +162,7 @@ checkout ref 'main' failed: error: pathspec 'main' did not match any file(s)
 ### Warning: "Accept [LICENSE_NAME] License?"
 
 **Symptoms:**
-During `add` command, you're prompted to accept a license.
+When completing the `add` command (after selecting "💾 Save & Exit"), you're prompted to accept a license.
 
 **Cause:**
 The repository's license is not in the pre-approved list:
@@ -385,17 +395,20 @@ Multiple vendors are configured to copy files to the same destination path.
                to: lib/vendor-b-utils  # Changed to avoid conflict
    ```
 
-**Note:** Path conflicts are warnings, not errors. Sync will proceed, but the last vendor synced will overwrite the previous one.
+**Note:**
+
+- Path conflicts are warnings, not errors. Sync will proceed, but the last vendor synced will overwrite the previous one.
+- On Windows, paths in conflict warnings may use backslashes (`lib\utils`) instead of forward slashes. This is normal OS behavior.
 
 ---
 
-### Error: "vendor 'xyz' has no specs configured"
+### Error: "vendor xyz has no specs configured"
 
 **Symptoms:**
 
 ```text
 ✖ Validation Failed
-vendor 'my-vendor' has no specs configured
+vendor my-vendor has no specs configured
 ```
 
 **Cause:**
@@ -409,6 +422,117 @@ Edit the vendor and add at least one spec (branch/tag):
 git-vendor edit
 # Select the vendor
 # Add a new branch
+```
+
+---
+
+### Error: "vendor xyz has no URL"
+
+**Symptoms:**
+
+```text
+✖ Validation Failed
+vendor my-vendor has no URL
+```
+
+**Cause:**
+The vendor entry exists but has an empty URL field (usually from manual editing).
+
+**Solution:**
+
+Edit the vendor and add a valid repository URL:
+
+```bash
+git-vendor edit
+# Select the vendor
+# Enter a valid GitHub repository URL
+```
+
+---
+
+### Error: "vendor xyz has a spec with no ref"
+
+**Symptoms:**
+
+```text
+✖ Validation Failed
+vendor my-vendor has a spec with no ref
+```
+
+**Cause:**
+A branch/tag specification exists but has an empty ref field.
+
+**Solution:**
+
+Edit the vendor configuration and ensure all specs have a ref:
+
+```bash
+git-vendor edit
+# Select the vendor
+# Select the spec with no ref
+# Enter a valid branch/tag name
+```
+
+---
+
+### Error: "vendor xyz @ ref has no path mappings"
+
+**Symptoms:**
+
+```text
+✖ Validation Failed
+vendor my-vendor @ main has no path mappings
+```
+
+**Cause:**
+The vendor spec exists but has no path mappings configured.
+
+**Solution:**
+
+Add at least one path mapping:
+
+```bash
+git-vendor edit
+# Select the vendor
+# Select the branch/tag
+# Add a path mapping
+```
+
+---
+
+### Error: "vendor xyz @ ref has a mapping with empty 'from' path"
+
+**Symptoms:**
+
+```text
+✖ Validation Failed
+vendor my-vendor @ main has a mapping with empty 'from' path
+```
+
+**Cause:**
+A path mapping exists but the source path (from) is empty.
+
+**Solution:**
+
+Edit the vendor and fix the empty mapping:
+
+```bash
+git-vendor edit
+# Select the vendor
+# Select the branch
+# Delete the invalid mapping and add a correct one
+```
+
+Or manually edit `vendor.yml`:
+
+```yaml
+vendors:
+  - name: my-vendor
+    specs:
+      - ref: main
+        mapping:
+          - from: src/utils  # Must not be empty
+            to: lib/utils
 ```
 
 ---
@@ -586,6 +710,47 @@ This is expected behavior - Ctrl+C cancels the operation.
 - To cancel: Press Ctrl+C (operation will be aborted)
 - To go back: Use the "← Back" or "❌ Cancel" options in the wizard
 - No changes are made until you select "💾 Save & Exit"
+
+---
+
+### Issue: Changes made in wizard not persisting
+
+**Symptoms:**
+
+- Made changes in the `add` or `edit` wizard
+- Exited without seeing changes saved
+- Configuration appears unchanged
+
+**Explanation:**
+The wizard does not save changes until you explicitly select "💾 Save & Exit" from the main menu.
+
+**How the wizard works:**
+
+1. All edits (adding vendors, branches, path mappings) are made in memory
+2. You can navigate freely using "← Back" to make changes
+3. Changes are discarded if you:
+   - Press Ctrl+C
+   - Select "❌ Cancel"
+   - Exit the terminal
+4. Changes are only persisted when you select "💾 Save & Exit"
+
+**Solution:**
+
+Always complete your workflow by selecting "💾 Save & Exit":
+
+```text
+┃ Select Branch to Manage
+┃ > main (2 paths, synced)
+┃   + Add New Branch
+┃   💾 Save & Exit  ← Select this to persist changes
+┃   ❌ Cancel
+```
+
+After selecting "💾 Save & Exit", the wizard will:
+
+- Save changes to `vendor.yml`
+- Run `update` to regenerate `vendor.lock`
+- Check for path conflicts and display warnings if any
 
 ---
 
