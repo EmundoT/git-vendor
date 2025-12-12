@@ -3020,3 +3020,299 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 		t.Errorf("Expected 'not found' error, got: %v", err)
 	}
 }
+
+// ============================================================================
+// FetchRepoDir Tests
+// ============================================================================
+
+func TestFetchRepoDir_HappyPath(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Mock: Clone succeeds
+	git.CloneFunc = func(dir, url string, opts *CloneOptions) error {
+		return nil
+	}
+
+	// Mock: ListTree returns files
+	git.ListTreeFunc = func(dir, ref, subdir string) ([]string, error) {
+		return []string{"file1.go", "file2.go", "subdir/"}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	files, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "src")
+
+	// Verify
+	assertNoError(t, err, "FetchRepoDir should succeed")
+	if len(files) != 3 {
+		t.Errorf("Expected 3 files, got %d", len(files))
+	}
+	if len(git.CloneCalls) != 1 {
+		t.Errorf("Expected 1 Clone call, got %d", len(git.CloneCalls))
+	}
+	if len(git.ListTreeCalls) != 1 {
+		t.Errorf("Expected 1 ListTree call, got %d", len(git.ListTreeCalls))
+	}
+}
+
+func TestFetchRepoDir_CloneFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Mock: Clone fails
+	git.CloneFunc = func(dir, url string, opts *CloneOptions) error {
+		return fmt.Errorf("network timeout")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "src")
+
+	// Verify
+	assertError(t, err, "FetchRepoDir should fail when clone fails")
+	if !contains(err.Error(), "network timeout") {
+		t.Errorf("Expected network timeout error, got: %v", err)
+	}
+}
+
+func TestFetchRepoDir_SpecificRef(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Mock: Clone succeeds
+	git.CloneFunc = func(dir, url string, opts *CloneOptions) error {
+		return nil
+	}
+
+	// Mock: Fetch called for specific ref
+	fetchCalled := false
+	git.FetchFunc = func(dir string, depth int, ref string) error {
+		fetchCalled = true
+		if ref != "v1.0.0" {
+			t.Errorf("Expected ref 'v1.0.0', got '%s'", ref)
+		}
+		return nil
+	}
+
+	// Mock: ListTree returns files
+	git.ListTreeFunc = func(dir, ref, subdir string) ([]string, error) {
+		if ref != "v1.0.0" {
+			t.Errorf("Expected ListTree to use ref 'v1.0.0', got '%s'", ref)
+		}
+		return []string{"file.go"}, nil
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "v1.0.0", "")
+
+	// Verify
+	assertNoError(t, err, "FetchRepoDir should succeed")
+	if !fetchCalled {
+		t.Error("Expected Fetch to be called for specific ref")
+	}
+}
+
+func TestFetchRepoDir_ListTreeFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Mock: Clone succeeds
+	git.CloneFunc = func(dir, url string, opts *CloneOptions) error {
+		return nil
+	}
+
+	// Mock: ListTree fails
+	git.ListTreeFunc = func(dir, ref, subdir string) ([]string, error) {
+		return nil, fmt.Errorf("invalid tree object")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "nonexistent")
+
+	// Verify
+	assertError(t, err, "FetchRepoDir should fail when ListTree fails")
+	if !contains(err.Error(), "invalid tree object") {
+		t.Errorf("Expected tree object error, got: %v", err)
+	}
+}
+
+// ============================================================================
+// SaveVendor Tests
+// ============================================================================
+
+func TestSaveVendor_NewVendor(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Start with empty config
+	config.Config = createTestConfig()
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	vendor := createTestVendorSpec("new-vendor", "https://github.com/owner/repo", "main")
+	err := syncer.SaveVendor(vendor)
+
+	// Verify
+	assertNoError(t, err, "SaveVendor should succeed for new vendor")
+	if len(config.SaveCalls) == 0 {
+		t.Fatal("Expected config to be saved")
+	}
+	savedConfig := config.SaveCalls[0]
+	if len(savedConfig.Vendors) != 1 {
+		t.Errorf("Expected 1 vendor in config, got %d", len(savedConfig.Vendors))
+	}
+	if savedConfig.Vendors[0].Name != "new-vendor" {
+		t.Errorf("Expected vendor name 'new-vendor', got '%s'", savedConfig.Vendors[0].Name)
+	}
+}
+
+func TestSaveVendor_UpdateExisting(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Start with existing vendor
+	existingVendor := createTestVendorSpec("existing-vendor", "https://github.com/owner/old-repo", "main")
+	config.Config = createTestConfig(existingVendor)
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute - update URL
+	updatedVendor := createTestVendorSpec("existing-vendor", "https://github.com/owner/new-repo", "develop")
+	err := syncer.SaveVendor(updatedVendor)
+
+	// Verify
+	assertNoError(t, err, "SaveVendor should succeed for existing vendor")
+	if len(config.SaveCalls) == 0 {
+		t.Fatal("Expected config to be saved")
+	}
+	savedConfig := config.SaveCalls[0]
+	if len(savedConfig.Vendors) != 1 {
+		t.Errorf("Expected 1 vendor (updated, not added), got %d", len(savedConfig.Vendors))
+	}
+	if savedConfig.Vendors[0].URL != "https://github.com/owner/new-repo" {
+		t.Errorf("Expected URL to be updated, got '%s'", savedConfig.Vendors[0].URL)
+	}
+}
+
+func TestSaveVendor_ConfigSaveFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Mock: Config save fails
+	config.SaveFunc = func(cfg types.VendorConfig) error {
+		return fmt.Errorf("permission denied")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	err := syncer.SaveVendor(vendor)
+
+	// Verify
+	assertError(t, err, "SaveVendor should fail when config save fails")
+	if !contains(err.Error(), "permission denied") {
+		t.Errorf("Expected permission denied error, got: %v", err)
+	}
+}
+
+// ============================================================================
+// RemoveVendor Tests
+// ============================================================================
+
+func TestRemoveVendor_HappyPath(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Start with 2 vendors
+	vendor1 := createTestVendorSpec("vendor-1", "https://github.com/owner/repo1", "main")
+	vendor2 := createTestVendorSpec("vendor-2", "https://github.com/owner/repo2", "main")
+	config.Config = createTestConfig(vendor1, vendor2)
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute - remove vendor-1
+	err := syncer.RemoveVendor("vendor-1")
+
+	// Verify
+	assertNoError(t, err, "RemoveVendor should succeed")
+	if len(config.SaveCalls) == 0 {
+		t.Fatal("Expected config to be saved")
+	}
+	savedConfig := config.SaveCalls[0]
+	if len(savedConfig.Vendors) != 1 {
+		t.Errorf("Expected 1 vendor remaining, got %d", len(savedConfig.Vendors))
+	}
+	if savedConfig.Vendors[0].Name != "vendor-2" {
+		t.Errorf("Expected vendor-2 to remain, got '%s'", savedConfig.Vendors[0].Name)
+	}
+	// Verify license file removal was attempted
+	if len(fs.RemoveCalls) == 0 {
+		t.Error("Expected license file removal to be called")
+	}
+}
+
+func TestRemoveVendor_VendorNotFound(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor1 := createTestVendorSpec("vendor-1", "https://github.com/owner/repo1", "main")
+	config.Config = createTestConfig(vendor1)
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute - try to remove nonexistent vendor
+	err := syncer.RemoveVendor("nonexistent-vendor")
+
+	// Verify
+	assertError(t, err, "RemoveVendor should fail for nonexistent vendor")
+	if !contains(err.Error(), "not found") {
+		t.Errorf("Expected 'not found' error, got: %v", err)
+	}
+	// Verify config was not saved
+	if len(config.SaveCalls) > 0 {
+		t.Error("Expected config to not be saved when vendor not found")
+	}
+}
+
+func TestRemoveVendor_ConfigLoadFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	// Mock: Config load fails
+	config.LoadFunc = func() (types.VendorConfig, error) {
+		return types.VendorConfig{}, fmt.Errorf("config file corrupted")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.RemoveVendor("any-vendor")
+
+	// Verify
+	assertError(t, err, "RemoveVendor should fail when config load fails")
+	if !contains(err.Error(), "config file corrupted") {
+		t.Errorf("Expected corrupted config error, got: %v", err)
+	}
+}
+
+func TestRemoveVendor_ConfigSaveFails(t *testing.T) {
+	git, fs, config, lock, license := setupMocks()
+
+	vendor1 := createTestVendorSpec("vendor-1", "https://github.com/owner/repo1", "main")
+	config.Config = createTestConfig(vendor1)
+
+	// Mock: Config save fails
+	config.SaveFunc = func(cfg types.VendorConfig) error {
+		return fmt.Errorf("disk full")
+	}
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Execute
+	err := syncer.RemoveVendor("vendor-1")
+
+	// Verify
+	assertError(t, err, "RemoveVendor should fail when config save fails")
+	if !contains(err.Error(), "disk full") {
+		t.Errorf("Expected disk full error, got: %v", err)
+	}
+}
