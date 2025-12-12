@@ -7,9 +7,11 @@ Common issues and solutions for git-vendor.
 - [Sync Errors](#sync-errors)
 - [License Issues](#license-issues)
 - [Configuration Problems](#configuration-problems)
+- [Validation Errors](#validation-errors)
 - [Performance Issues](#performance-issues)
 - [Git Issues](#git-issues)
 - [TUI/Display Issues](#tuidisplay-issues)
+- [General Debugging](#general-debugging)
 
 ## Sync Errors
 
@@ -281,6 +283,136 @@ You edited `vendor.yml` manually but changes aren't reflected.
 
 ---
 
+## Validation Errors
+
+### Error: "no vendors configured"
+
+**Symptoms:**
+
+```text
+✖ Validation Failed
+no vendors configured
+```
+
+**Cause:**
+The `vendor.yml` file exists but has no vendors defined (empty vendor list).
+
+**Solution:**
+
+This is expected if you just initialized the vendor directory. Add your first vendor:
+
+```bash
+git-vendor add
+```
+
+**Note:** Validation requires at least one vendor to pass. An empty configuration is technically valid YAML but not useful for the tool.
+
+---
+
+### Error: "duplicate vendor name"
+
+**Symptoms:**
+
+```text
+✖ Validation Failed
+duplicate vendor name: my-vendor
+```
+
+**Cause:**
+Two vendors in `vendor.yml` have the same name.
+
+**Solution:**
+
+1. **Edit configuration:**
+
+   ```bash
+   git-vendor edit
+   ```
+
+2. **Or manually edit `vendor.yml`:**
+   - Find the duplicate vendor names
+   - Rename one to be unique
+   - Run `git-vendor update` to regenerate lockfile
+
+---
+
+### Warning: "Path Conflicts Detected"
+
+**Symptoms:**
+
+```text
+! Path Conflicts Detected
+Found 2 conflict(s)
+
+⚠ Conflict: lib/utils
+  • vendor-a: src/utils → lib/utils
+  • vendor-b: pkg/utils → lib/utils
+```
+
+**Cause:**
+Multiple vendors are configured to copy files to the same destination path.
+
+**Solution:**
+
+1. **Review the conflicts:**
+
+   ```bash
+   git-vendor validate  # Shows full conflict details
+   ```
+
+2. **Resolve by editing path mappings:**
+
+   ```bash
+   git-vendor edit
+   # Change one of the conflicting destinations
+   ```
+
+3. **Example resolution:**
+
+   ```yaml
+   vendors:
+     - name: vendor-a
+       specs:
+         - ref: main
+           mapping:
+             - from: src/utils
+               to: lib/vendor-a-utils  # Changed to avoid conflict
+     - name: vendor-b
+       specs:
+         - ref: main
+           mapping:
+             - from: pkg/utils
+               to: lib/vendor-b-utils  # Changed to avoid conflict
+   ```
+
+**Note:** Path conflicts are warnings, not errors. Sync will proceed, but the last vendor synced will overwrite the previous one.
+
+---
+
+### Error: "vendor 'xyz' has no specs configured"
+
+**Symptoms:**
+
+```text
+✖ Validation Failed
+vendor 'my-vendor' has no specs configured
+```
+
+**Cause:**
+The vendor entry exists but has no `specs` (branches/tags to track).
+
+**Solution:**
+
+Edit the vendor and add at least one spec (branch/tag):
+
+```bash
+git-vendor edit
+# Select the vendor
+# Add a new branch
+```
+
+---
+
 ## Performance Issues
 
 ### Issue: Sync takes a very long time
@@ -461,7 +593,23 @@ This is expected behavior - Ctrl+C cancels the operation.
 
 ### Enable verbose output
 
-Currently, git-vendor doesn't have a verbose mode. For debugging:
+git-vendor supports verbose mode with the `--verbose` or `-v` flag:
+
+```bash
+# Show git commands during sync
+git-vendor sync --verbose
+
+# Show git commands during update
+git-vendor update -v
+```
+
+**What verbose mode shows:**
+
+- All git commands being executed
+- Working directories for git operations
+- Helpful for debugging network issues or git errors
+
+**Additional debugging steps:**
 
 1. **Check configuration:**
 
