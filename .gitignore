@@ -43,3 +43,6 @@ licenses
 
 # AI stuff
 .claude/settings.local.json
+
+core.test.exe
+coverage.out
