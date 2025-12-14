@@ -520,3 +520,17 @@ func assertError(t interface{ Errorf(string, ...interface{}) }, err error, msg s
 		t.Errorf("%s: expected error, got nil", msg)
 	}
 }
+
+// newTestManager creates a properly initialized Manager for testing
+func newTestManager(vendorDir string) *Manager {
+	// Ensure the vendor directory exists
+	os.MkdirAll(vendorDir, 0755)
+
+	configStore := NewFileConfigStore(vendorDir)
+	lockStore := NewFileLockStore(vendorDir)
+	gitClient := NewSystemGitClient(false)
+	fs := NewOSFileSystem()
+	licenseChecker := NewGitHubLicenseChecker(nil, AllowedLicenses)
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir, nil)
+	return NewManagerWithSyncer(syncer)
+}
