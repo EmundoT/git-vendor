@@ -20,7 +20,7 @@ func newTestManager(vendorDir string) *Manager {
 	gitClient := NewSystemGitClient(false)
 	fs := NewOSFileSystem()
 	licenseChecker := NewGitHubLicenseChecker(nil, AllowedLicenses)
-	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir)
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir, nil)
 	return NewManagerWithSyncer(syncer)
 }
 
@@ -188,7 +188,7 @@ func TestDetectConflicts_EmptyOwners(t *testing.T) {
 	gitClient := NewSystemGitClient(false)
 	fs := NewOSFileSystem()
 	licenseChecker := NewGitHubLicenseChecker(nil, AllowedLicenses)
-	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir)
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir, nil)
 	m := NewManagerWithSyncer(syncer)
 
 	// Create a config with overlapping paths that could trigger the bug
@@ -252,7 +252,7 @@ func TestSyncWithOptions_VendorNotFound(t *testing.T) {
 	gitClient := NewSystemGitClient(false)
 	fs := NewOSFileSystem()
 	licenseChecker := NewGitHubLicenseChecker(nil, AllowedLicenses)
-	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir)
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir, nil)
 	m := NewManagerWithSyncer(syncer)
 
 	// Create a config with some vendors
@@ -320,7 +320,7 @@ func TestDetectConflicts_NoPanic(t *testing.T) {
 	gitClient := NewSystemGitClient(false)
 	fs := NewOSFileSystem()
 	licenseChecker := NewGitHubLicenseChecker(nil, AllowedLicenses)
-	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir)
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir, nil)
 	m := NewManagerWithSyncer(syncer)
 
 	// Test with empty config
@@ -1441,7 +1441,7 @@ func TestSyncVendor_HappyPath_LockedRef(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	hashes, err := syncer.syncVendor(vendor, lockedRefs)
@@ -1497,7 +1497,7 @@ func TestSyncVendor_HappyPath_UnlockedRef(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute with nil lockedRefs (unlocked mode)
 	hashes, err := syncer.syncVendor(vendor, nil)
@@ -1536,7 +1536,7 @@ func TestSyncVendor_ShallowFetchSucceeds(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -1585,7 +1585,7 @@ func TestSyncVendor_ShallowFetchFails_FullFetchSucceeds(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -1618,7 +1618,7 @@ func TestSyncVendor_BothFetchesFail(t *testing.T) {
 		return fmt.Errorf("network error")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -1650,7 +1650,7 @@ func TestSyncVendor_StaleCommitHashDetection(t *testing.T) {
 		return nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, lockedRefs)
@@ -1694,7 +1694,7 @@ func TestSyncVendor_CheckoutFETCH_HEADFails_RefFallbackSucceeds(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -1722,7 +1722,7 @@ func TestSyncVendor_AllCheckoutsFail(t *testing.T) {
 		return fmt.Errorf("checkout failed")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -1746,7 +1746,7 @@ func TestSyncVendor_TempDirectoryCreationFails(t *testing.T) {
 		return "", fmt.Errorf("disk full")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -1791,7 +1791,7 @@ func TestSyncVendor_PathTraversalBlocked(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -1849,7 +1849,7 @@ func TestSyncVendor_MultipleSpecsPerVendor(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	hashes, err := syncer.syncVendor(vendor, nil)
@@ -1911,7 +1911,7 @@ func TestSyncVendor_MultipleMappingsPerSpec(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -1953,7 +1953,7 @@ func TestSyncVendor_FileCopyFailsInMapping(t *testing.T) {
 		return fmt.Errorf("permission denied")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -1999,7 +1999,7 @@ func TestSyncVendor_LicenseCopyFails(t *testing.T) {
 		return nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -2037,7 +2037,7 @@ func TestUpdateAll_HappyPath_SingleVendor(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -2096,7 +2096,7 @@ func TestUpdateAll_HappyPath_MultipleVendors(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -2130,7 +2130,7 @@ func TestUpdateAll_ConfigLoadFails(t *testing.T) {
 		return types.VendorConfig{}, fmt.Errorf("config file corrupt")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -2179,7 +2179,7 @@ func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -2226,7 +2226,7 @@ func TestUpdateAll_LockSaveFails(t *testing.T) {
 		return fmt.Errorf("disk full")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -2246,7 +2246,7 @@ func TestUpdateAll_EmptyConfig(t *testing.T) {
 	// Setup: Empty config (no vendors)
 	config.Config = types.VendorConfig{Vendors: []types.VendorSpec{}}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -2281,7 +2281,7 @@ func TestUpdateAll_TimestampFormat(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -2349,7 +2349,7 @@ func TestUpdateAll_MultipleSpecsPerVendor(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -2393,7 +2393,7 @@ func TestUpdateAll_LicensePathSet(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -2440,7 +2440,7 @@ func TestSync_HappyPath_WithLock(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.Sync()
@@ -2485,7 +2485,7 @@ func TestSync_NoLock_TriggersUpdate(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.Sync()
@@ -2509,7 +2509,7 @@ func TestSyncDryRun_ShowsPreview(t *testing.T) {
 
 	lock.Lock = createTestLock(createTestLockEntry("test-vendor", "main", "locked123hash"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.SyncDryRun()
@@ -2539,7 +2539,7 @@ func TestSyncDryRun_NoLock(t *testing.T) {
 		return types.VendorLock{}, fmt.Errorf("file not found")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.SyncDryRun()
@@ -2582,7 +2582,7 @@ func TestSyncWithOptions_VendorFilter(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute: Sync only vendor-b
 	err := syncer.SyncWithOptions("vendor-b", false)
@@ -2609,7 +2609,7 @@ func TestSyncWithOptions_VendorNotFoundEarly(t *testing.T) {
 
 	lock.Lock = createTestLock(createTestLockEntry("test-vendor", "main", "locked123hash"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute: Try to sync non-existent vendor
 	err := syncer.SyncWithOptions("nonexistent-vendor", false)
@@ -2648,7 +2648,7 @@ func TestSyncWithOptions_ForceSync(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute: Force sync (ignore lock)
 	err := syncer.SyncWithOptions("", true)
@@ -2705,7 +2705,7 @@ func TestSync_StopsOnFirstError(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.Sync()
@@ -2733,7 +2733,7 @@ func TestSync_EmptyConfig(t *testing.T) {
 	config.Config = types.VendorConfig{Vendors: []types.VendorSpec{}}
 	lock.Lock = types.VendorLock{Vendors: []types.LockDetails{}}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.Sync()
@@ -2757,7 +2757,7 @@ func TestSync_ConfigLoadFails(t *testing.T) {
 		return types.VendorConfig{}, fmt.Errorf("config corrupt")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.Sync()
@@ -2792,7 +2792,7 @@ func TestSync_EmptyLock_TriggersUpdate(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.Sync()
@@ -2818,7 +2818,7 @@ func TestGetConfig(t *testing.T) {
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 	config.Config = createTestConfig(vendor)
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	cfg, err := syncer.GetConfig()
@@ -2837,7 +2837,7 @@ func TestGetLockHash(t *testing.T) {
 
 	lock.Lock = createTestLock(createTestLockEntry("test-vendor", "main", "abc123hash"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	hash := syncer.GetLockHash("test-vendor", "main")
@@ -2856,7 +2856,7 @@ func TestAudit(t *testing.T) {
 		createTestLockEntry("vendor-b", "main", "hash789012"),
 	)
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute (just verify no panic)
 	syncer.Audit()
@@ -2865,7 +2865,7 @@ func TestAudit(t *testing.T) {
 func TestCheckGitHubLicense(t *testing.T) {
 	git, fs, config, lock, license := setupMocks()
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	detectedLicense, err := syncer.CheckGitHubLicense("https://github.com/owner/repo")
@@ -2882,7 +2882,7 @@ func TestCheckGitHubLicense(t *testing.T) {
 func TestListLocalDir(t *testing.T) {
 	git, fs, config, lock, license := setupMocks()
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	items, err := syncer.ListLocalDir("/some/path")
@@ -2926,7 +2926,7 @@ func TestCopyMappings_AutoNaming(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -2973,7 +2973,7 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 		return &mockFileInfo{name: filepath.Base(path), isDir: true}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -3007,7 +3007,7 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 		return nil, fmt.Errorf("path not found")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.syncVendor(vendor, nil)
@@ -3038,7 +3038,7 @@ func TestFetchRepoDir_HappyPath(t *testing.T) {
 		return []string{"file1.go", "file2.go", "subdir/"}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	files, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "src")
@@ -3064,7 +3064,7 @@ func TestFetchRepoDir_CloneFails(t *testing.T) {
 		return fmt.Errorf("network timeout")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "src")
@@ -3102,7 +3102,7 @@ func TestFetchRepoDir_SpecificRef(t *testing.T) {
 		return []string{"file.go"}, nil
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "v1.0.0", "")
@@ -3127,7 +3127,7 @@ func TestFetchRepoDir_ListTreeFails(t *testing.T) {
 		return nil, fmt.Errorf("invalid tree object")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "nonexistent")
@@ -3149,7 +3149,7 @@ func TestSaveVendor_NewVendor(t *testing.T) {
 	// Start with empty config
 	config.Config = createTestConfig()
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	vendor := createTestVendorSpec("new-vendor", "https://github.com/owner/repo", "main")
@@ -3176,7 +3176,7 @@ func TestSaveVendor_UpdateExisting(t *testing.T) {
 	existingVendor := createTestVendorSpec("existing-vendor", "https://github.com/owner/old-repo", "main")
 	config.Config = createTestConfig(existingVendor)
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute - update URL
 	updatedVendor := createTestVendorSpec("existing-vendor", "https://github.com/owner/new-repo", "develop")
@@ -3204,7 +3204,7 @@ func TestSaveVendor_ConfigSaveFails(t *testing.T) {
 		return fmt.Errorf("permission denied")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
@@ -3229,7 +3229,7 @@ func TestRemoveVendor_HappyPath(t *testing.T) {
 	vendor2 := createTestVendorSpec("vendor-2", "https://github.com/owner/repo2", "main")
 	config.Config = createTestConfig(vendor1, vendor2)
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute - remove vendor-1
 	err := syncer.RemoveVendor("vendor-1")
@@ -3258,7 +3258,7 @@ func TestRemoveVendor_VendorNotFound(t *testing.T) {
 	vendor1 := createTestVendorSpec("vendor-1", "https://github.com/owner/repo1", "main")
 	config.Config = createTestConfig(vendor1)
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute - try to remove nonexistent vendor
 	err := syncer.RemoveVendor("nonexistent-vendor")
@@ -3282,7 +3282,7 @@ func TestRemoveVendor_ConfigLoadFails(t *testing.T) {
 		return types.VendorConfig{}, fmt.Errorf("config file corrupted")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.RemoveVendor("any-vendor")
@@ -3305,7 +3305,7 @@ func TestRemoveVendor_ConfigSaveFails(t *testing.T) {
 		return fmt.Errorf("disk full")
 	}
 
-	syncer := createMockSyncer(git, fs, config, lock, license)
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
 	err := syncer.RemoveVendor("vendor-1")

@@ -403,6 +403,47 @@ func (m *MockLicenseChecker) IsAllowed(license string) bool {
 }
 
 // ============================================================================
+// MockUICallback
+// ============================================================================
+
+// MockUICallback implements UICallback interface for testing
+type MockUICallback struct {
+	ShowErrorCalls           []struct{ Title, Message string }
+	ShowSuccessCalls         []string
+	ShowWarningCalls         []struct{ Title, Message string }
+	AskConfirmationCalls     []struct{ Title, Message string }
+	AskConfirmationReturn    bool
+	ShowLicenseComplianceCalls []string
+	StyleTitleCalls          []string
+}
+
+func (m *MockUICallback) ShowError(title, message string) {
+	m.ShowErrorCalls = append(m.ShowErrorCalls, struct{ Title, Message string }{title, message})
+}
+
+func (m *MockUICallback) ShowSuccess(message string) {
+	m.ShowSuccessCalls = append(m.ShowSuccessCalls, message)
+}
+
+func (m *MockUICallback) ShowWarning(title, message string) {
+	m.ShowWarningCalls = append(m.ShowWarningCalls, struct{ Title, Message string }{title, message})
+}
+
+func (m *MockUICallback) AskConfirmation(title, message string) bool {
+	m.AskConfirmationCalls = append(m.AskConfirmationCalls, struct{ Title, Message string }{title, message})
+	return m.AskConfirmationReturn
+}
+
+func (m *MockUICallback) ShowLicenseCompliance(license string) {
+	m.ShowLicenseComplianceCalls = append(m.ShowLicenseComplianceCalls, license)
+}
+
+func (m *MockUICallback) StyleTitle(title string) string {
+	m.StyleTitleCalls = append(m.StyleTitleCalls, title)
+	return title
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -422,8 +463,11 @@ func setupMocks() (*MockGitClient, *MockFileSystem, *MockConfigStore, *MockLockS
 }
 
 // createMockSyncer creates a VendorSyncer with mock dependencies
-func createMockSyncer(git GitClient, fs FileSystem, config ConfigStore, lock LockStore, license LicenseChecker) *VendorSyncer {
-	return NewVendorSyncer(config, lock, git, fs, license, "/mock/vendor")
+func createMockSyncer(git GitClient, fs FileSystem, config ConfigStore, lock LockStore, license LicenseChecker, ui UICallback) *VendorSyncer {
+	if ui == nil {
+		ui = &SilentUICallback{}
+	}
+	return NewVendorSyncer(config, lock, git, fs, license, "/mock/vendor", ui)
 }
 
 // createTestVendorSpec creates a basic vendor spec for testing

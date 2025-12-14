@@ -6,9 +6,28 @@ import (
 	"strings"
 	"time"
 
-	"git-vendor/internal/tui"
 	"git-vendor/internal/types"
 )
+
+// UICallback handles user interaction during vendor operations
+type UICallback interface {
+	ShowError(title, message string)
+	ShowSuccess(message string)
+	ShowWarning(title, message string)
+	AskConfirmation(title, message string) bool
+	ShowLicenseCompliance(license string)
+	StyleTitle(title string) string
+}
+
+// SilentUICallback is a no-op implementation (for testing/CI)
+type SilentUICallback struct{}
+
+func (s *SilentUICallback) ShowError(title, message string)            {}
+func (s *SilentUICallback) ShowSuccess(message string)                 {}
+func (s *SilentUICallback) ShowWarning(title, message string)          {}
+func (s *SilentUICallback) AskConfirmation(title, msg string) bool     { return false }
+func (s *SilentUICallback) ShowLicenseCompliance(license string)       {}
+func (s *SilentUICallback) StyleTitle(title string) string             { return title }
 
 // VendorSyncer orchestrates vendor operations using injected dependencies
 type VendorSyncer struct {
@@ -18,6 +37,7 @@ type VendorSyncer struct {
 	fs             FileSystem
 	licenseChecker LicenseChecker
 	rootDir        string
+	ui             UICallback
 }
 
 // NewVendorSyncer creates a new VendorSyncer with injected dependencies
@@ -28,7 +48,11 @@ func NewVendorSyncer(
 	fs FileSystem,
 	licenseChecker LicenseChecker,
 	rootDir string,
+	ui UICallback,
 ) *VendorSyncer {
+	if ui == nil {
+		ui = &SilentUICallback{}
+	}
 	return &VendorSyncer{
 		configStore:    configStore,
 		lockStore:      lockStore,
@@ -36,6 +60,7 @@ func NewVendorSyncer(
 		fs:             fs,
 		licenseChecker: licenseChecker,
 		rootDir:        rootDir,
+		ui:             ui,
 	}
 }
 
@@ -73,11 +98,14 @@ func (s *VendorSyncer) AddVendor(spec types.VendorSpec) error {
 		}
 
 		if !s.licenseChecker.IsAllowed(spec.License) {
-			if !tui.AskToOverrideCompliance(spec.License) {
+			if !s.ui.AskConfirmation(
+				fmt.Sprintf("Accept %s License?", spec.License),
+				"This license is not in the allowed list. Continue anyway?",
+			) {
 				return fmt.Errorf("%s", ErrComplianceFailed)
 			}
 		} else {
-			tui.PrintComplianceSuccess(spec.License)
+			s.ui.ShowLicenseCompliance(spec.License)
 		}
 	}
 
@@ -196,7 +224,7 @@ func (s *VendorSyncer) sync(dryRun bool, vendorName string, force bool) error {
 	}
 
 	if dryRun {
-		fmt.Println(tui.StyleTitle("Sync Plan:"))
+		fmt.Println(s.ui.StyleTitle("Sync Plan:"))
 		fmt.Println()
 	} else {
 		// Count vendors to sync
@@ -275,7 +303,7 @@ func (s *VendorSyncer) UpdateAll() error {
 	for _, v := range config.Vendors {
 		updatedRefs, err := s.syncVendor(v, nil)
 		if err != nil {
-			tui.PrintError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
+			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 			continue
 		}
 
@@ -290,7 +318,7 @@ func (s *VendorSyncer) UpdateAll() error {
 				Updated:     time.Now().Format(time.RFC3339),
 			})
 
-			tui.PrintSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, hash[:7]))
+			s.ui.ShowSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, hash[:7]))
 		}
 	}
 
@@ -465,10 +493,10 @@ func (s *VendorSyncer) GetLockHash(vendorName, ref string) string {
 func (s *VendorSyncer) Audit() {
 	lock, err := s.lockStore.Load()
 	if err != nil {
-		tui.PrintWarning("Audit Failed", "No lockfile.")
+		s.ui.ShowWarning("Audit Failed", "No lockfile.")
 		return
 	}
-	tui.PrintSuccess(fmt.Sprintf("Audit Passed. %d vendors locked.", len(lock.Vendors)))
+	s.ui.ShowSuccess(fmt.Sprintf("Audit Passed. %d vendors locked.", len(lock.Vendors)))
 }
 
 // ValidateConfig performs comprehensive config validation

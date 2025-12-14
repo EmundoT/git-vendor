@@ -59,14 +59,20 @@ func NewManager() *Manager {
 	gitClient := NewSystemGitClient(Verbose)
 	fs := NewOSFileSystem()
 	licenseChecker := NewGitHubLicenseChecker(nil, AllowedLicenses)
+	ui := &SilentUICallback{} // Default to silent
 
 	// Create syncer with injected dependencies
-	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, rootDir)
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, rootDir, ui)
 
 	return &Manager{
 		RootDir: rootDir,
 		syncer:  syncer,
 	}
+}
+
+// SetUICallback sets the UI callback for user interactions
+func (m *Manager) SetUICallback(ui UICallback) {
+	m.syncer.ui = ui
 }
 
 // NewManagerWithSyncer creates a Manager with a custom VendorSyncer (useful for testing)
