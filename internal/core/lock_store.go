@@ -1,12 +1,7 @@
 package core
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-
 	"git-vendor/internal/types"
-	"gopkg.in/yaml.v3"
 )
 
 // LockStore handles vendor.lock I/O operations
@@ -17,48 +12,31 @@ type LockStore interface {
 	GetHash(vendorName, ref string) string
 }
 
-// FileLockStore implements LockStore using the filesystem
+// FileLockStore implements LockStore using YAMLStore
 type FileLockStore struct {
-	rootDir string
+	store *YAMLStore[types.VendorLock]
 }
 
 // NewFileLockStore creates a new FileLockStore
 func NewFileLockStore(rootDir string) *FileLockStore {
-	return &FileLockStore{rootDir: rootDir}
+	return &FileLockStore{
+		store: NewYAMLStore[types.VendorLock](rootDir, LockName, false), // allowMissing=false
+	}
 }
 
 // Path returns the lock file path
 func (s *FileLockStore) Path() string {
-	return filepath.Join(s.rootDir, LockName)
+	return s.store.Path()
 }
 
 // Load reads and parses vendor.lock
 func (s *FileLockStore) Load() (types.VendorLock, error) {
-	data, err := os.ReadFile(s.Path())
-	if err != nil {
-		return types.VendorLock{}, err
-	}
-
-	var lock types.VendorLock
-	if err := yaml.Unmarshal(data, &lock); err != nil {
-		return types.VendorLock{}, fmt.Errorf("invalid vendor.lock: %w", err)
-	}
-
-	return lock, nil
+	return s.store.Load()
 }
 
 // Save writes vendor.lock
 func (s *FileLockStore) Save(lock types.VendorLock) error {
-	data, err := yaml.Marshal(lock)
-	if err != nil {
-		return fmt.Errorf("failed to marshal lock: %w", err)
-	}
-
-	if err := os.WriteFile(s.Path(), data, 0644); err != nil {
-		return fmt.Errorf("failed to write vendor.lock: %w", err)
-	}
-
-	return nil
+	return s.store.Save(lock)
 }
 
 // GetHash retrieves the locked commit hash for a vendor@ref

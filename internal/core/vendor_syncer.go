@@ -80,16 +80,10 @@ func (s *VendorSyncer) AddVendor(spec types.VendorSpec) error {
 	config, _ := s.configStore.Load()
 
 	// Check if vendor already exists
-	found := false
-	for _, v := range config.Vendors {
-		if v.Name == spec.Name {
-			found = true
-			break
-		}
-	}
+	existing := FindVendor(config.Vendors, spec.Name)
 
 	// If new vendor, check license compliance
-	if !found {
+	if existing == nil {
 		detectedLicense, err := s.licenseChecker.CheckLicense(spec.URL)
 		if err == nil {
 			spec.License = detectedLicense
@@ -116,16 +110,10 @@ func (s *VendorSyncer) AddVendor(spec types.VendorSpec) error {
 func (s *VendorSyncer) SaveVendor(spec types.VendorSpec) error {
 	config, _ := s.configStore.Load()
 
-	found := false
-	for i, v := range config.Vendors {
-		if v.Name == spec.Name {
-			config.Vendors[i] = spec
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	index := FindVendorIndex(config.Vendors, spec.Name)
+	if index >= 0 {
+		config.Vendors[index] = spec
+	} else {
 		config.Vendors = append(config.Vendors, spec)
 	}
 
@@ -143,19 +131,12 @@ func (s *VendorSyncer) RemoveVendor(name string) error {
 		return err
 	}
 
-	found := -1
-	for i, v := range config.Vendors {
-		if v.Name == name {
-			found = i
-			break
-		}
-	}
-
-	if found == -1 {
+	index := FindVendorIndex(config.Vendors, name)
+	if index < 0 {
 		return fmt.Errorf(ErrVendorNotFound, name)
 	}
 
-	config.Vendors = append(config.Vendors[:found], config.Vendors[found+1:]...)
+	config.Vendors = append(config.Vendors[:index], config.Vendors[index+1:]...)
 
 	// Remove license file
 	licensePath := filepath.Join(s.rootDir, LicenseDir, name+".txt")
@@ -438,15 +419,9 @@ func (s *VendorSyncer) copyMappings(tempDir string, v types.VendorSpec, spec typ
 		srcPath := filepath.Join(tempDir, srcClean)
 		destPath := mapping.To
 
+		// Use auto-path computation if destination not explicitly specified
 		if destPath == "" || destPath == "." {
-			if spec.DefaultTarget != "" {
-				destPath = filepath.Join(spec.DefaultTarget, filepath.Base(srcClean))
-			} else {
-				destPath = filepath.Base(srcClean)
-				if destPath == "." || destPath == "/" {
-					destPath = v.Name
-				}
-			}
+			destPath = ComputeAutoPath(srcClean, spec.DefaultTarget, v.Name)
 		}
 
 		// Validate destination path to prevent path traversal attacks
@@ -573,13 +548,9 @@ func (s *VendorSyncer) DetectConflicts() ([]types.PathConflict, error) {
 			for _, mapping := range spec.Mapping {
 				destPath := mapping.To
 
-				// Handle auto-naming
+				// Use auto-path computation if destination not explicitly specified
 				if destPath == "" || destPath == "." {
-					if spec.DefaultTarget != "" {
-						destPath = filepath.Join(spec.DefaultTarget, filepath.Base(mapping.From))
-					} else {
-						destPath = filepath.Base(mapping.From)
-					}
+					destPath = ComputeAutoPath(mapping.From, spec.DefaultTarget, vendor.Name)
 				}
 
 				// Normalize path
