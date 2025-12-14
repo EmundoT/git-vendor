@@ -575,7 +575,7 @@ func TestValidateConfig(t *testing.T) {
 				Vendors: []types.VendorSpec{},
 			},
 			wantError: true,
-			errorMsg:  "no vendors configured",
+			errorMsg:  "no vendors configured. Run 'git-vendor add' to add your first dependency",
 		},
 		{
 			name: "Duplicate vendor names",

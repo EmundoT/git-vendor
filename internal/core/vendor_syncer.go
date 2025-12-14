@@ -198,6 +198,17 @@ func (s *VendorSyncer) sync(dryRun bool, vendorName string, force bool) error {
 	if dryRun {
 		fmt.Println(tui.StyleTitle("Sync Plan:"))
 		fmt.Println()
+	} else {
+		// Count vendors to sync
+		vendorCount := 0
+		for _, v := range config.Vendors {
+			if vendorName == "" || v.Name == vendorName {
+				vendorCount++
+			}
+		}
+		if vendorCount > 0 {
+			fmt.Printf("Syncing %d vendor(s)...\n", vendorCount)
+		}
 	}
 
 	for _, v := range config.Vendors {
@@ -288,7 +299,7 @@ func (s *VendorSyncer) UpdateAll() error {
 
 // syncVendor syncs a single vendor
 func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (map[string]string, error) {
-	fmt.Printf("  • Processing %s...\n", v.Name)
+	fmt.Printf("⠿ %s (cloning repository...)\n", v.Name)
 
 	tempDir, err := s.fs.CreateTemp("", "git-vendor-*")
 	if err != nil {
@@ -359,6 +370,8 @@ func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]stri
 		if err := s.copyMappings(tempDir, v, spec); err != nil {
 			return nil, err
 		}
+
+		fmt.Printf("  ✓ %s @ %s (synced %d path(s))\n", v.Name, spec.Ref, len(spec.Mapping))
 	}
 
 	return results, nil
@@ -467,7 +480,7 @@ func (s *VendorSyncer) ValidateConfig() error {
 
 	// Check for empty vendors
 	if len(config.Vendors) == 0 {
-		return fmt.Errorf("no vendors configured")
+		return fmt.Errorf("no vendors configured. Run 'git-vendor add' to add your first dependency")
 	}
 
 	// Check for duplicate vendor names

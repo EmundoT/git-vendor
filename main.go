@@ -89,9 +89,29 @@ func main() {
 		}
 		name := os.Args[2]
 
-		// Add confirmation prompt
+		// Check if vendor exists BEFORE showing confirmation
+		cfg, err := manager.GetConfig()
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			return
+		}
+
+		found := false
+		for _, v := range cfg.Vendors {
+			if v.Name == name {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			tui.PrintError("Error", fmt.Sprintf("vendor '%s' not found", name))
+			return
+		}
+
+		// NOW show confirmation since vendor exists
 		confirmed := false
-		err := huh.NewConfirm().
+		err = huh.NewConfirm().
 			Title(fmt.Sprintf("Remove vendor '%s'?", name)).
 			Description("This will delete the config entry and license file.").
 			Value(&confirmed).
