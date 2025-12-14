@@ -2165,7 +2165,7 @@ func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
 	// Mock: vendor-bad fails, others succeed
 	git.InitFunc = func(dir string) error {
 		// Fail only for vendor-bad (second call)
-		if git.InitCalls != nil && len(git.InitCalls) == 2 {
+		if len(git.InitCalls) == 2 {
 			return fmt.Errorf("git init failed")
 		}
 		return nil
