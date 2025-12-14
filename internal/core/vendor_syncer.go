@@ -74,7 +74,7 @@ func (s *VendorSyncer) AddVendor(spec types.VendorSpec) error {
 
 		if !s.licenseChecker.IsAllowed(spec.License) {
 			if !tui.AskToOverrideCompliance(spec.License) {
-				return fmt.Errorf(ErrComplianceFailed)
+				return fmt.Errorf("%s", ErrComplianceFailed)
 			}
 		} else {
 			tui.PrintComplianceSuccess(spec.License)

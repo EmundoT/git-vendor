@@ -39,7 +39,7 @@ func (c *GitHubLicenseChecker) CheckLicense(rawURL string) (string, error) {
 	matches := re.FindStringSubmatch(clean)
 
 	if len(matches) < 3 {
-		return "", fmt.Errorf(ErrInvalidURL)
+		return "", fmt.Errorf("invalid URL format")
 	}
 
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/license", matches[1], matches[2])
