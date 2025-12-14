@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -475,19 +474,5 @@ func assertNoError(t interface{ Fatalf(string, ...interface{}) }, err error, msg
 func assertError(t interface{ Errorf(string, ...interface{}) }, err error, msg string) {
 	if err == nil {
 		t.Errorf("%s: expected error, got nil", msg)
-	}
-}
-
-// assertContains checks if a string contains a substring
-func assertContains(t interface{ Errorf(string, ...interface{}) }, s, substr, msg string) {
-	if !contains(s, substr) {
-		t.Errorf("%s: expected %q to contain %q", msg, s, substr)
-	}
-}
-
-// assertEqual checks if two values are equal
-func assertEqual(t interface{ Errorf(string, ...interface{}) }, got, want interface{}, msg string) {
-	if fmt.Sprintf("%v", got) != fmt.Sprintf("%v", want) {
-		t.Errorf("%s: got %v, want %v", msg, got, want)
 	}
 }

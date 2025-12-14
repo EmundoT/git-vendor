@@ -370,6 +370,127 @@ The auto-naming logic:
 2. Respects `default_target` if set
 3. Falls back to vendor name for root paths
 
+## Using in CI/CD
+
+Git-vendor is designed for reproducible builds and works great in automated pipelines.
+
+### Basic CI/CD Workflow
+
+```yaml
+# Example: GitHub Actions
+name: Build
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install git-vendor
+        run: |
+          curl -L https://github.com/yourusername/git-vendor/releases/latest/download/git-vendor-linux-amd64 -o /usr/local/bin/git-vendor
+          chmod +x /usr/local/bin/git-vendor
+
+      - name: Sync vendored dependencies
+        run: git-vendor sync
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build project
+        run: make build
+```
+
+### Configuration Setup
+
+**Option 1: Pre-commit vendor files (Recommended)**
+
+Commit both `vendor/vendor.yml` and `vendor/vendor.lock` to your repository. In CI, simply run:
+
+```bash
+git-vendor sync
+```
+
+This ensures deterministic builds - all developers and CI use the exact same locked commits.
+
+**Option 2: Generate lockfile in CI**
+
+Only commit `vendor/vendor.yml`. In CI, run:
+
+```bash
+git-vendor update  # Generate lockfile from latest commits
+git-vendor sync    # Download dependencies
+```
+
+⚠️ **Warning**: This approach fetches the latest commits at CI runtime, which may cause non-deterministic builds.
+
+### Environment Variables
+
+**GITHUB_TOKEN** (Recommended for CI)
+
+Set a GitHub token to increase API rate limits:
+
+- Unauthenticated: 60 requests/hour
+- With token: 5,000 requests/hour
+
+```yaml
+# GitHub Actions
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# GitLab CI
+variables:
+  GITHUB_TOKEN: $CI_JOB_TOKEN
+
+# CircleCI
+environment:
+  GITHUB_TOKEN: ${GITHUB_TOKEN}
+```
+
+### Validation in CI
+
+Add validation to catch configuration errors early:
+
+```yaml
+- name: Validate vendor config
+  run: git-vendor validate
+```
+
+This checks for:
+
+- Duplicate vendor names
+- Missing URLs or refs
+- Empty path mappings
+- Path conflicts between vendors
+
+### Tips for CI/CD
+
+1. **Use verbose mode for debugging**:
+   ```bash
+   git-vendor sync --verbose
+   ```
+
+2. **Cache vendored files** to speed up builds:
+   ```yaml
+   # GitHub Actions
+   - uses: actions/cache@v3
+     with:
+       path: |
+         vendor/
+         lib/
+       key: vendor-${{ hashFiles('vendor/vendor.lock') }}
+   ```
+
+3. **Use dry-run to preview changes**:
+   ```bash
+   git-vendor sync --dry-run
+   ```
+
+4. **Sync specific vendors** for faster iteration:
+   ```bash
+   git-vendor sync my-vendor
+   ```
+
 ## Security
 
 Git-vendor includes several security protections to ensure safe vendoring operations.

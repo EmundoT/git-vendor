@@ -128,7 +128,14 @@ func ValidateDestPath(destPath string) error {
 		return fmt.Errorf("invalid destination path: %s (absolute paths are not allowed)", destPath)
 	}
 
-	// Check if path is absolute (security risk) - handles Windows C:\ style paths
+	// Check for Windows drive letters (cross-platform check: C:, D:, etc.)
+	// This works even on Linux to prevent Windows-style absolute paths
+	if len(destPath) >= 2 && destPath[1] == ':' && destPath[0] >= 'A' && destPath[0] <= 'Z' ||
+		len(destPath) >= 2 && destPath[1] == ':' && destPath[0] >= 'a' && destPath[0] <= 'z' {
+		return fmt.Errorf("invalid destination path: %s (absolute paths are not allowed)", destPath)
+	}
+
+	// Check if path is absolute (security risk) - handles platform-specific absolute paths
 	if filepath.IsAbs(cleaned) {
 		return fmt.Errorf("invalid destination path: %s (absolute paths are not allowed)", destPath)
 	}

@@ -174,6 +174,20 @@ Git operations use the `GitClient` interface (git_operations.go):
 
 ## Development Notes
 
+### Development Practices
+
+- Follows Go conventions with proper package structure
+- Uses Go modules for dependency management
+- Comprehensive unit tests with mocks for all interfaces
+- Clear separation of concerns for maintainability
+- Uses context with timeouts for external operations
+- Proper error propagation and handling
+- Consistent naming conventions and code style
+- Modular functions with single responsibility
+- Extensive comments and documentation
+- Meaningful commit messages, use Conventional Commits format
+- Logical branching strategy for features and fixes
+
 ### Test Coverage
 
 The codebase has **63.9% test coverage** with comprehensive tests:
