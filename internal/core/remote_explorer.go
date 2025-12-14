@@ -1,0 +1,58 @@
+package core
+
+// RemoteExplorer handles remote repository browsing and URL parsing
+type RemoteExplorer struct {
+	gitClient GitClient
+	fs        FileSystem
+}
+
+// NewRemoteExplorer creates a new RemoteExplorer
+func NewRemoteExplorer(gitClient GitClient, fs FileSystem) *RemoteExplorer {
+	return &RemoteExplorer{
+		gitClient: gitClient,
+		fs:        fs,
+	}
+}
+
+// FetchRepoDir fetches directory listing from remote repository
+func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error) {
+	tempDir, err := e.fs.CreateTemp("", "git-vendor-index-*")
+	if err != nil {
+		return nil, err
+	}
+	defer e.fs.RemoveAll(tempDir)
+
+	// Clone with filter=blob:none to avoid downloading file contents
+	opts := &CloneOptions{
+		Filter:     "blob:none",
+		NoCheckout: true,
+		Depth:      1,
+	}
+
+	if err := e.gitClient.Clone(tempDir, url, opts); err != nil {
+		return nil, err
+	}
+
+	// Fetch specific ref if needed
+	if ref != "" && ref != "HEAD" {
+		e.gitClient.Fetch(tempDir, 0, ref)
+	}
+
+	// Determine target ref
+	target := ref
+	if target == "" {
+		target = "HEAD"
+	}
+
+	return e.gitClient.ListTree(tempDir, target, subdir)
+}
+
+// ListLocalDir lists local directory contents
+func (e *RemoteExplorer) ListLocalDir(path string) ([]string, error) {
+	return e.fs.ReadDir(path)
+}
+
+// ParseSmartURL parses GitHub URLs and extracts repository, ref, and path
+func (e *RemoteExplorer) ParseSmartURL(rawURL string) (string, string, string) {
+	return ParseSmartURL(rawURL)
+}
