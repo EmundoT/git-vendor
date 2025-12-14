@@ -23,6 +23,7 @@ func main() {
 	}
 
 	manager := core.NewManager()
+	manager.SetUICallback(tui.NewTUICallback()) // Set TUI for user interaction
 	command := os.Args[1]
 
 	switch command {
