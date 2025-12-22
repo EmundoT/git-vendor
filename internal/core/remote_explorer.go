@@ -1,5 +1,7 @@
 package core
 
+import "git-vendor/internal/types"
+
 // RemoteExplorer handles remote repository browsing and URL parsing
 type RemoteExplorer struct {
 	gitClient GitClient
@@ -23,7 +25,7 @@ func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error)
 	defer e.fs.RemoveAll(tempDir)
 
 	// Clone with filter=blob:none to avoid downloading file contents
-	opts := &CloneOptions{
+	opts := &types.CloneOptions{
 		Filter:     "blob:none",
 		NoCheckout: true,
 		Depth:      1,
