@@ -42,3 +42,10 @@ type PathConflict struct {
 	Mapping1 PathMapping
 	Mapping2 PathMapping
 }
+
+// CloneOptions holds options for git clone operations
+type CloneOptions struct {
+	Filter     string // e.g., "blob:none"
+	NoCheckout bool
+	Depth      int
+}

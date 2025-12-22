@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"git-vendor/internal/types"
 )
 
 // GitClient handles git command operations
@@ -19,15 +21,8 @@ type GitClient interface {
 	FetchAll(dir string) error
 	Checkout(dir, ref string) error
 	GetHeadHash(dir string) (string, error)
-	Clone(dir, url string, opts *CloneOptions) error
+	Clone(dir, url string, opts *types.CloneOptions) error
 	ListTree(dir, ref, subdir string) ([]string, error)
-}
-
-// CloneOptions configures git clone behavior
-type CloneOptions struct {
-	Filter     string // e.g., "blob:none"
-	NoCheckout bool
-	Depth      int
 }
 
 // SystemGitClient implements GitClient using system git commands
@@ -82,7 +77,7 @@ func (g *SystemGitClient) GetHeadHash(dir string) (string, error) {
 }
 
 // Clone clones a repository with options
-func (g *SystemGitClient) Clone(dir, url string, opts *CloneOptions) error {
+func (g *SystemGitClient) Clone(dir, url string, opts *types.CloneOptions) error {
 	args := []string{"clone"}
 
 	if opts != nil {

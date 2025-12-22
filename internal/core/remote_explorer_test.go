@@ -158,7 +158,7 @@ func TestFetchRepoDir_HappyPath(t *testing.T) {
 	git, fs, config, lock, license := setupMocks()
 
 	// Mock: Clone succeeds
-	git.CloneFunc = func(dir, url string, opts *CloneOptions) error {
+	git.CloneFunc = func(dir, url string, opts *types.CloneOptions) error {
 		return nil
 	}
 
@@ -189,7 +189,7 @@ func TestFetchRepoDir_CloneFails(t *testing.T) {
 	git, fs, config, lock, license := setupMocks()
 
 	// Mock: Clone fails
-	git.CloneFunc = func(dir, url string, opts *CloneOptions) error {
+	git.CloneFunc = func(dir, url string, opts *types.CloneOptions) error {
 		return fmt.Errorf("network timeout")
 	}
 
@@ -209,7 +209,7 @@ func TestFetchRepoDir_SpecificRef(t *testing.T) {
 	git, fs, config, lock, license := setupMocks()
 
 	// Mock: Clone succeeds
-	git.CloneFunc = func(dir, url string, opts *CloneOptions) error {
+	git.CloneFunc = func(dir, url string, opts *types.CloneOptions) error {
 		return nil
 	}
 
@@ -247,7 +247,7 @@ func TestFetchRepoDir_ListTreeFails(t *testing.T) {
 	git, fs, config, lock, license := setupMocks()
 
 	// Mock: Clone succeeds
-	git.CloneFunc = func(dir, url string, opts *CloneOptions) error {
+	git.CloneFunc = func(dir, url string, opts *types.CloneOptions) error {
 		return nil
 	}
 

@@ -5,6 +5,7 @@ go 1.23
 require (
 	github.com/charmbracelet/huh v0.3.0
 	github.com/charmbracelet/lipgloss v0.10.0
+	github.com/golang/mock v1.6.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
