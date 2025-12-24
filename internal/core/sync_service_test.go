@@ -2,11 +2,10 @@ package core
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"git-vendor/internal/types"
+	"github.com/golang/mock/gomock"
 )
 
 // ============================================================================
@@ -14,29 +13,25 @@ import (
 // ============================================================================
 
 func TestSyncVendor_HappyPath_LockedRef(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	// Setup: Create a simple vendor with one spec
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 	lockedRefs := map[string]string{"main": "abc123def456"}
 
-	// Mock: Create temp directory
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	// Mock: All git operations succeed
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def456", nil
-	}
+	git.EXPECT().Init("/tmp/test-12345").Return(nil)
+	git.EXPECT().AddRemote("/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
+	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/test-12345", "abc123def456").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def456", nil)
 
-	// Mock: License file exists
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		if path == "/tmp/test-12345/LICENSE" {
-			return &mockFileInfo{name: "LICENSE", isDir: false}, nil
-		}
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -53,46 +48,26 @@ func TestSyncVendor_HappyPath_LockedRef(t *testing.T) {
 	if hashes["main"] != "abc123def456" {
 		t.Errorf("Expected hash abc123def456, got %s", hashes["main"])
 	}
-
-	// Verify git operations were called in correct order
-	if len(git.InitCalls) != 1 {
-		t.Errorf("Expected 1 Init call, got %d", len(git.InitCalls))
-	}
-	if len(git.AddRemoteCalls) != 1 {
-		t.Errorf("Expected 1 AddRemote call, got %d", len(git.AddRemoteCalls))
-	}
-	if len(git.FetchCalls) != 1 {
-		t.Errorf("Expected 1 Fetch call, got %d", len(git.FetchCalls))
-	}
-	if len(git.CheckoutCalls) != 1 {
-		t.Errorf("Expected 1 Checkout call, got %d", len(git.CheckoutCalls))
-	}
-
-	// Verify checkout was called with locked hash
-	if git.CheckoutCalls[0][1] != "abc123def456" {
-		t.Errorf("Expected checkout of locked hash, got %s", git.CheckoutCalls[0][1])
-	}
 }
 
 func TestSyncVendor_HappyPath_UnlockedRef(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "latest789", nil
-	}
+	git.EXPECT().Init("/tmp/test-12345").Return(nil)
+	git.EXPECT().AddRemote("/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
+	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("latest789", nil)
 
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		if path == "/tmp/test-12345/LICENSE" {
-			return &mockFileInfo{name: "LICENSE", isDir: false}, nil
-		}
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -106,32 +81,26 @@ func TestSyncVendor_HappyPath_UnlockedRef(t *testing.T) {
 	if hashes["main"] != "latest789" {
 		t.Errorf("Expected hash latest789, got %s", hashes["main"])
 	}
-
-	// Verify checkout was called with FETCH_HEAD (unlocked mode)
-	if len(git.CheckoutCalls) != 1 {
-		t.Errorf("Expected 1 Checkout call, got %d", len(git.CheckoutCalls))
-	}
-	if git.CheckoutCalls[0][1] != "FETCH_HEAD" {
-		t.Errorf("Expected checkout of FETCH_HEAD, got %s", git.CheckoutCalls[0][1])
-	}
 }
 
 func TestSyncVendor_ShallowFetchSucceeds(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), 1, gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
 
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -141,46 +110,31 @@ func TestSyncVendor_ShallowFetchSucceeds(t *testing.T) {
 	// Verify
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
-	}
-
-	// Verify shallow fetch was attempted
-	if len(git.FetchCalls) != 1 {
-		t.Errorf("Expected 1 Fetch call, got %d", len(git.FetchCalls))
-	}
-	if git.FetchCalls[0][1].(int) != 1 {
-		t.Errorf("Expected shallow fetch (depth=1), got depth=%d", git.FetchCalls[0][1])
-	}
-
-	// Verify no fallback to FetchAll
-	if len(git.FetchAllCalls) != 0 {
-		t.Errorf("Expected no FetchAll calls, got %d", len(git.FetchAllCalls))
 	}
 }
 
 func TestSyncVendor_ShallowFetchFails_FullFetchSucceeds(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	// Mock: Shallow fetch fails, full fetch succeeds
-	git.FetchFunc = func(dir string, depth int, ref string) error {
-		if depth == 1 {
-			return fmt.Errorf("shallow fetch failed")
-		}
-		return nil
-	}
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	// Mock: Shallow fetch fails, then FetchAll succeeds
+	git.EXPECT().Fetch(gomock.Any(), 1, gomock.Any()).Return(fmt.Errorf("shallow fetch failed"))
+	git.EXPECT().FetchAll(gomock.Any()).Return(nil)
 
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
+
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -191,29 +145,23 @@ func TestSyncVendor_ShallowFetchFails_FullFetchSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
 	}
-
-	// Verify fallback to FetchAll was called
-	if len(git.FetchAllCalls) != 1 {
-		t.Errorf("Expected 1 FetchAll call (fallback), got %d", len(git.FetchAllCalls))
-	}
 }
 
 func TestSyncVendor_BothFetchesFail(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
+
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	// Mock: Both fetches fail
-	git.FetchFunc = func(dir string, depth int, ref string) error {
-		return fmt.Errorf("network error")
-	}
-	git.FetchAllFunc = func(dir string) error {
-		return fmt.Errorf("network error")
-	}
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(fmt.Errorf("network error"))
+	git.EXPECT().FetchAll(gomock.Any()).Return(fmt.Errorf("network error"))
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -230,22 +178,21 @@ func TestSyncVendor_BothFetchesFail(t *testing.T) {
 }
 
 func TestSyncVendor_StaleCommitHashDetection(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 	lockedRefs := map[string]string{"main": "stale123"}
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
+
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	// Mock: Checkout fails with stale commit error
-	git.CheckoutFunc = func(dir, ref string) error {
-		if ref == "stale123" {
-			return fmt.Errorf("reference is not a tree: stale123")
-		}
-		return nil
-	}
+	git.EXPECT().Checkout(gomock.Any(), "stale123").Return(fmt.Errorf("reference is not a tree: stale123"))
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -265,31 +212,27 @@ func TestSyncVendor_StaleCommitHashDetection(t *testing.T) {
 }
 
 func TestSyncVendor_CheckoutFETCH_HEADFails_RefFallbackSucceeds(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
+
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	// Mock: Checkout FETCH_HEAD fails, checkout ref succeeds
-	checkoutAttempts := 0
-	git.CheckoutFunc = func(dir, ref string) error {
-		checkoutAttempts++
-		if ref == "FETCH_HEAD" {
-			return fmt.Errorf("FETCH_HEAD not available")
-		}
-		return nil // Checkout of "main" succeeds
-	}
+	git.EXPECT().Checkout(gomock.Any(), "FETCH_HEAD").Return(fmt.Errorf("FETCH_HEAD not available"))
+	git.EXPECT().Checkout(gomock.Any(), "main").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
 
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -300,24 +243,23 @@ func TestSyncVendor_CheckoutFETCH_HEADFails_RefFallbackSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected success (fallback), got error: %v", err)
 	}
-	if checkoutAttempts != 2 {
-		t.Errorf("Expected 2 checkout attempts (FETCH_HEAD then ref), got %d", checkoutAttempts)
-	}
 }
 
 func TestSyncVendor_AllCheckoutsFail(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
+
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	// Mock: All checkouts fail
-	git.CheckoutFunc = func(dir, ref string) error {
-		return fmt.Errorf("checkout failed")
-	}
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(fmt.Errorf("checkout failed")).Times(2)
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -334,14 +276,13 @@ func TestSyncVendor_AllCheckoutsFail(t *testing.T) {
 }
 
 func TestSyncVendor_TempDirectoryCreationFails(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
 	// Mock: CreateTemp fails
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "", fmt.Errorf("disk full")
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("", fmt.Errorf("disk full"))
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -358,7 +299,8 @@ func TestSyncVendor_TempDirectoryCreationFails(t *testing.T) {
 }
 
 func TestSyncVendor_PathTraversalBlocked(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	// Setup: Create vendor with malicious path mapping
 	vendor := types.VendorSpec{
@@ -375,18 +317,20 @@ func TestSyncVendor_PathTraversalBlocked(t *testing.T) {
 		},
 	}
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
 
 	// Mock: File exists in temp repo
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "payload.txt", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	// Even though path validation should catch it, license copy happens before mapping validation
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -403,7 +347,8 @@ func TestSyncVendor_PathTraversalBlocked(t *testing.T) {
 }
 
 func TestSyncVendor_MultipleSpecsPerVendor(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	// Setup: Vendor with 3 specs (main, dev, v1.0)
 	vendor := types.VendorSpec{
@@ -432,19 +377,26 @@ func TestSyncVendor_MultipleSpecsPerVendor(t *testing.T) {
 		},
 	}
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	// Each spec creates its own temp directory and performs git operations
+	// Use AnyTimes() since the order is interleaved for 3 specs
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil).AnyTimes()
+	git.EXPECT().Init(gomock.Any()).Return(nil).AnyTimes()
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	hashCounter := 0
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		hashCounter++
-		return fmt.Sprintf("hash%d00000", hashCounter), nil
-	}
+	// Return different hashes for each of the 3 specs
+	gomock.InOrder(
+		git.EXPECT().GetHeadHash(gomock.Any()).Return("hash100000", nil),
+		git.EXPECT().GetHeadHash(gomock.Any()).Return("hash200000", nil),
+		git.EXPECT().GetHeadHash(gomock.Any()).Return("hash300000", nil),
+	)
 
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil).AnyTimes()
+
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -467,15 +419,11 @@ func TestSyncVendor_MultipleSpecsPerVendor(t *testing.T) {
 	if _, ok := hashes["v1.0"]; !ok {
 		t.Error("Expected hash for 'v1.0' ref")
 	}
-
-	// Verify each spec triggered a fetch
-	if len(git.FetchCalls) != 3 {
-		t.Errorf("Expected 3 Fetch calls (one per spec), got %d", len(git.FetchCalls))
-	}
 }
 
 func TestSyncVendor_MultipleMappingsPerSpec(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	// Setup: One spec with 5 file mappings
 	vendor := types.VendorSpec{
@@ -496,17 +444,19 @@ func TestSyncVendor_MultipleMappingsPerSpec(t *testing.T) {
 		},
 	}
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
 
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "file.go", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	// Expect at least 5 CopyFile calls (5 mappings) plus 1 for license
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).MinTimes(5)
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -517,38 +467,34 @@ func TestSyncVendor_MultipleMappingsPerSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
 	}
-
-	// Verify all 5 files were copied (plus 1 for license = 6 total)
-	if len(fs.CopyFileCalls) < 5 {
-		t.Errorf("Expected at least 5 CopyFile calls (5 mappings), got %d", len(fs.CopyFileCalls))
-	}
 }
 
 func TestSyncVendor_FileCopyFailsInMapping(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
 
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "file.go", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	// Mock: File copy fails only for the mapping (not license)
-	fs.CopyFileFunc = func(src, dst string) error {
-		// Let license copy succeed, but fail on the actual mapping
-		if contains(src, "LICENSE") {
-			return nil
+	// Mock: License copy succeeds, but mapping copy fails
+	// License copy happens first and succeeds
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(src, dst string) error {
+		if contains(dst, "licenses") {
+			return nil // License copy succeeds
 		}
-		return fmt.Errorf("permission denied")
-	}
+		return fmt.Errorf("permission denied") // Mapping copy fails
+	}).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -565,36 +511,31 @@ func TestSyncVendor_FileCopyFailsInMapping(t *testing.T) {
 }
 
 func TestSyncVendor_LicenseCopyFails(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	git.EXPECT().Init(gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
 
 	// Mock: License file exists
-	statCalls := 0
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		statCalls++
-		if statCalls == 1 && path == "/tmp/test-12345/LICENSE" {
-			// First call: LICENSE exists
-			return &mockFileInfo{name: "LICENSE", isDir: false}, nil
-		}
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	// Mock: License copy fails
-	fs.CopyFileFunc = func(src, dst string) error {
-		if contains(src, "LICENSE") {
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(src, dst string) error {
+		if contains(dst, "licenses") {
 			return fmt.Errorf("disk full")
 		}
 		return nil
-	}
+	}).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 

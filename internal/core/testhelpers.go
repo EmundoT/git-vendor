@@ -28,6 +28,27 @@ func createTestVendorSpec(name, url, ref string) types.VendorSpec {
 	}
 }
 
+// createTestConfig creates a vendor config with the given vendors
+func createTestConfig(vendors ...types.VendorSpec) types.VendorConfig {
+	return types.VendorConfig{Vendors: vendors}
+}
+
+// createTestLock creates a vendor lock with the given entries
+func createTestLock(entries ...types.LockDetails) types.VendorLock {
+	return types.VendorLock{Vendors: entries}
+}
+
+// createTestLockEntry creates a lock entry for testing
+func createTestLockEntry(name, ref, hash string) types.LockDetails {
+	return types.LockDetails{
+		Name:        name,
+		Ref:         ref,
+		CommitHash:  hash,
+		Updated:     time.Now().Format(time.RFC3339),
+		LicensePath: "",
+	}
+}
+
 // mockFileInfo implements os.FileInfo for testing
 type mockFileInfo struct {
 	name  string
@@ -58,4 +79,39 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// ============================================================================
+// Test Assertion Helpers
+// ============================================================================
+
+// assertNoError fails the test if err is not nil
+func assertNoError(t interface{ Fatalf(format string, args ...interface{}) }, err error, msg string) {
+	if err != nil {
+		t.Fatalf("%s: expected no error, got: %v", msg, err)
+	}
+}
+
+// assertError fails the test if err is nil
+func assertError(t interface{ Fatalf(format string, args ...interface{}) }, err error, msg string) {
+	if err == nil {
+		t.Fatalf("%s: expected error, got nil", msg)
+	}
+}
+
+// ============================================================================
+// Manager Test Helpers
+// ============================================================================
+
+// newTestManager creates a Manager with real implementations for integration testing
+func newTestManager(vendorDir string) *Manager {
+	config := NewFileConfigStore(vendorDir)
+	lock := NewFileLockStore(vendorDir)
+	git := NewSystemGitClient(false) // not verbose
+	fs := NewOSFileSystem()
+	license := NewGitHubLicenseChecker(nil, AllowedLicenses)
+	ui := &SilentUICallback{}
+
+	syncer := NewVendorSyncer(config, lock, git, fs, license, vendorDir, ui)
+	return NewManagerWithSyncer(syncer)
 }

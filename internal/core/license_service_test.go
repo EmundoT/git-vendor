@@ -43,7 +43,11 @@ func TestIsLicenseAllowed(t *testing.T) {
 // ============================================================================
 
 func TestCheckGitHubLicense(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	// Mock: License checker returns MIT
+	license.EXPECT().CheckLicense("https://github.com/owner/repo").Return("MIT", nil)
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -55,6 +59,6 @@ func TestCheckGitHubLicense(t *testing.T) {
 		t.Fatalf("Expected success, got error: %v", err)
 	}
 	if detectedLicense != "MIT" {
-		t.Errorf("Expected MIT license (mock default), got '%s'", detectedLicense)
+		t.Errorf("Expected MIT license, got '%s'", detectedLicense)
 	}
 }
