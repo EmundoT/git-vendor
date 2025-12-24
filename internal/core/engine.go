@@ -78,7 +78,7 @@ func (m *Manager) SetUICallback(ui UICallback) {
 // NewManagerWithSyncer creates a Manager with a custom VendorSyncer (useful for testing)
 func NewManagerWithSyncer(syncer *VendorSyncer) *Manager {
 	return &Manager{
-		RootDir: VendorDir,
+		RootDir: syncer.rootDir,
 		syncer:  syncer,
 	}
 }

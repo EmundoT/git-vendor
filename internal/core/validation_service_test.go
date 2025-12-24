@@ -350,7 +350,8 @@ func TestValidateConfig(t *testing.T) {
 			tempDir := t.TempDir()
 			vendorDir := filepath.Join(tempDir, "vendor")
 			m := newTestManager(vendorDir)
-			os.MkdirAll(m.RootDir, 0755)
+			// Create vendor directory before saving config
+			os.MkdirAll(vendorDir, 0755)
 
 			// Save the test config
 			if err := m.saveConfig(tt.config); err != nil {
@@ -505,7 +506,8 @@ func TestDetectConflicts_Comprehensive(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		// Create vendor directory before saving config
+		os.MkdirAll(vendorDir, 0755)
 
 		config := types.VendorConfig{
 			Vendors: []types.VendorSpec{
@@ -554,7 +556,8 @@ func TestDetectConflicts_Comprehensive(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		// Create vendor directory before saving config
+		os.MkdirAll(vendorDir, 0755)
 
 		config := types.VendorConfig{
 			Vendors: []types.VendorSpec{

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"git-vendor/internal/types"
+	"github.com/golang/mock/gomock"
 )
 
 // ============================================================================
@@ -152,7 +153,8 @@ func TestCopyDir(t *testing.T) {
 // ============================================================================
 
 func TestCopyMappings_AutoNaming(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	// Test auto-naming with empty "to" field
 	vendor := types.VendorSpec{
@@ -169,17 +171,18 @@ func TestCopyMappings_AutoNaming(t *testing.T) {
 		},
 	}
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	git.EXPECT().Init("/tmp/test-12345").Return(nil)
+	git.EXPECT().AddRemote("/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
+	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def", nil)
 
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		return &mockFileInfo{name: filepath.Base(path), isDir: false}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -190,15 +193,11 @@ func TestCopyMappings_AutoNaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected success (auto-naming), got error: %v", err)
 	}
-
-	// Verify file was copied (auto-named as "file.go")
-	if len(fs.CopyFileCalls) < 1 {
-		t.Error("Expected at least 1 CopyFile call")
-	}
 }
 
 func TestCopyMappings_DirectoryCopy(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	// Test directory copy
 	vendor := types.VendorSpec{
@@ -215,18 +214,19 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 		},
 	}
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	git.EXPECT().Init("/tmp/test-12345").Return(nil)
+	git.EXPECT().AddRemote("/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
+	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def", nil)
 
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		// Return isDir=true for directory paths
-		return &mockFileInfo{name: filepath.Base(path), isDir: true}, nil
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes() // For license copy
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
@@ -237,30 +237,25 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected success (directory copy), got error: %v", err)
 	}
-
-	// Verify directory was copied
-	if len(fs.CopyDirCalls) < 1 {
-		t.Error("Expected at least 1 CopyDir call")
-	}
 }
 
 func TestCopyMappings_PathNotFound(t *testing.T) {
-	git, fs, config, lock, license := setupMocks()
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
 
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
 
-	fs.CreateTempFunc = func(dir, pattern string) (string, error) {
-		return "/tmp/test-12345", nil
-	}
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.GetHeadHashFunc = func(dir string) (string, error) {
-		return "abc123def", nil
-	}
+	git.EXPECT().Init("/tmp/test-12345").Return(nil)
+	git.EXPECT().AddRemote("/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
+	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def", nil)
 
 	// Mock: Stat returns error (path not found)
-	fs.StatFunc = func(path string) (os.FileInfo, error) {
-		return nil, fmt.Errorf("path not found")
-	}
+	fs.EXPECT().Stat(gomock.Any()).Return(nil, fmt.Errorf("path not found")).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 

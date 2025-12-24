@@ -194,8 +194,10 @@ The codebase has **63.9% test coverage** with comprehensive tests:
 
 **Test Infrastructure:**
 
-- `mocks_test.go`: Mock implementations for all interfaces (MockConfigStore, MockLockStore, MockGitClient, MockFileSystem, MockLicenseChecker)
-- `engine_test.go`: Comprehensive tests for all business logic
+- Auto-generated mocks using MockGen (gomock framework)
+- Test files organized by service (9 focused test files)
+- `testhelpers_gomock_test.go`: Gomock setup helpers
+- `testhelpers.go`: Common test utilities
 
 **Well-Tested Areas:**
 
@@ -210,22 +212,42 @@ The codebase has **63.9% test coverage** with comprehensive tests:
 
 **Running Tests:**
 
+Tests use auto-generated mocks via MockGen. The mocks are automatically generated and should not be committed to git.
+
 ```bash
-# All tests
+# Generate mocks (required on first run or after interface changes)
+# On Unix/Mac/Linux:
+make mocks
+
+# On Windows (or if make is not available):
+go install github.com/golang/mock/mockgen@latest
+go run -exec "$(go env GOPATH)/bin/mockgen" -source=internal/core/git_operations.go -destination=internal/core/git_client_mock_test.go -package=core
+go run -exec "$(go env GOPATH)/bin/mockgen" -source=internal/core/filesystem.go -destination=internal/core/filesystem_mock_test.go -package=core
+go run -exec "$(go env GOPATH)/bin/mockgen" -source=internal/core/config_store.go -destination=internal/core/config_store_mock_test.go -package=core
+go run -exec "$(go env GOPATH)/bin/mockgen" -source=internal/core/lock_store.go -destination=internal/core/lock_store_mock_test.go -package=core
+go run -exec "$(go env GOPATH)/bin/mockgen" -source=internal/core/github_client.go -destination=internal/core/license_checker_mock_test.go -package=core
+
+# Run all tests
 go test ./...
 
-# With coverage
+# Run tests with coverage
 go test -cover ./internal/core
 
-# Verbose
+# Run tests verbosely
 go test -v ./...
 ```
 
+**Note:** Mock files (`*_mock_test.go`) are auto-generated and git-ignored. Generate them locally before running tests.
+
 ### Dependencies
 
+**Runtime:**
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
+
+**Testing:**
+- `github.com/golang/mock` - Mock generation (gomock/mockgen)
 
 ### Concurrency Considerations
 

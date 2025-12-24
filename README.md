@@ -643,7 +643,18 @@ See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for common issues and solutions.
 
 ### Running Tests
 
+Tests require auto-generated mocks. Generate them before running tests:
+
 ```bash
+# Generate mocks (required on first run or after interface changes)
+# On Unix/Mac/Linux:
+make mocks
+
+# On Windows (or if make is not available), run mockgen directly:
+# First install mockgen:
+go install github.com/golang/mock/mockgen@latest
+# Then generate each mock file individually (see Makefile for commands)
+
 # Run all tests
 go test ./...
 
@@ -653,6 +664,8 @@ go test -cover ./internal/core
 # Run with verbose output
 go test -v ./...
 ```
+
+**Note:** Mock files are auto-generated and git-ignored. You must generate them locally.
 
 Current test coverage: **63.9%** of statements
 
@@ -704,8 +717,9 @@ Contributions are welcome! Here's how to contribute:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Write tests for new functionality (maintain >60% coverage)
-4. Ensure all tests pass (`go test ./...`)
+3. If you modify interfaces, regenerate mocks (`make mocks`)
+4. Write tests for new functionality (maintain >60% coverage)
+5. Ensure all tests pass (`go test ./...`)
 5. Update documentation (README, TROUBLESHOOTING, etc.)
 6. Commit with clear messages
 7. Push to your fork
