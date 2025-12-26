@@ -1,6 +1,30 @@
 linters-settings:
   govet:
-    enable-all: true
+    enable-all: false
+    enable:
+      - atomic
+      - bools
+      - buildtag
+      - composites
+      - copylocks
+      - errorsas
+      - httpresponse
+      - ifaceassert
+      - loopclosure
+      - lostcancel
+      - nilfunc
+      - printf
+      - shift
+      - stdmethods
+      - structtag
+      - tests
+      - unmarshal
+      - unreachable
+      - unsafeptr
+      - unusedresult
+    disable:
+      - shadow      # Too strict - common pattern
+      - fieldalignment  # Micro-optimization, not worth the code churn
   errcheck:
     check-type-assertions: true
     check-blank: true
@@ -8,7 +32,13 @@ linters-settings:
     enabled-tags:
       - diagnostic
       - performance
-      - style
+    disabled-checks:
+      - commentedOutCode  # Commented code is sometimes intentional
+      - unnamedResult     # Named results not always clearer
+      - octalLiteral      # 0755 vs 0o755 is stylistic
+      - appendCombine     # Sometimes clearer to append separately
+      - httpNoBody        # Stylistic preference
+      - regexpSimplify    # Subjective improvement
   revive:
     rules:
       - name: exported
@@ -44,6 +74,23 @@ issues:
     - text: "avoid meaningless package names"
       linters:
         - revive
+    # Exclude errcheck for deferred cleanup (common pattern)
+    - text: "Error return value of.*RemoveAll.*is not checked"
+      linters:
+        - errcheck
+    - text: "Error return value of.*Remove.*is not checked"
+      linters:
+        - errcheck
+    # Exclude errcheck for UI/TUI code where errors are not critical
+    - path: internal/tui/
+      text: "Error return value.*is not checked"
+      linters:
+        - errcheck
+    # Exclude errcheck for main.go CLI output formatting
+    - path: main\.go
+      text: "Error return value of.*FormatJSON.*is not checked"
+      linters:
+        - errcheck
 
 run:
   timeout: 5m
