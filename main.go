@@ -244,8 +244,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Check for conflicts
-		conflicts, _ := manager.DetectConflicts()
+		// Check for conflicts (best-effort, don't fail list command if detection fails)
+		conflicts, _ := manager.DetectConflicts() //nolint:errcheck
 		conflictMap := make(map[string]bool)
 		if len(conflicts) > 0 {
 			for _, c := range conflicts {
