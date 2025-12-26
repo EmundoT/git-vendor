@@ -27,8 +27,20 @@ jobs:
     - name: Install mockgen
       run: go install github.com/golang/mock/mockgen@latest
 
-    - name: Generate mocks
+    - name: Generate mocks (Unix)
+      if: runner.os != 'Windows'
       run: make mocks
+
+    - name: Generate mocks (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        MOCKGEN="$(go env GOPATH)/bin/mockgen"
+        $MOCKGEN -source=internal/core/git_operations.go -destination=internal/core/git_client_mock_test.go -package=core
+        $MOCKGEN -source=internal/core/filesystem.go -destination=internal/core/filesystem_mock_test.go -package=core
+        $MOCKGEN -source=internal/core/config_store.go -destination=internal/core/config_store_mock_test.go -package=core
+        $MOCKGEN -source=internal/core/lock_store.go -destination=internal/core/lock_store_mock_test.go -package=core
+        $MOCKGEN -source=internal/core/github_client.go -destination=internal/core/license_checker_mock_test.go -package=core
 
     - name: Run tests
       run: go test -mod=mod -v -race -coverprofile=coverage.txt -covermode=atomic ./...

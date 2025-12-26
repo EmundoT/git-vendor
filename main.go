@@ -53,6 +53,14 @@ func main() {
 		os.Exit(0)
 	}
 
+	command := os.Args[1]
+
+	// Handle help flags
+	if command == "--help" || command == "-h" || command == "help" {
+		tui.PrintHelp()
+		os.Exit(0)
+	}
+
 	if !core.IsGitInstalled() {
 		tui.PrintError("Error", "git not found.")
 		os.Exit(1)
@@ -60,7 +68,6 @@ func main() {
 
 	manager := core.NewManager()
 	manager.SetUICallback(tui.NewTUICallback()) // Set TUI for user interaction
-	command := os.Args[1]
 
 	switch command {
 	case "init":
