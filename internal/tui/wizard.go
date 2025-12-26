@@ -277,6 +277,7 @@ func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 	var mode string
 	huh.NewSelect[string]().
 		Title("Remote Path").
+		Description("Browse: interactively select files/dirs | Manual: type path (e.g. src/components)").
 		Options(
 			huh.NewOption("Browse Remote Files", "browse"),
 			huh.NewOption("Enter Manually", "manual"),
@@ -436,6 +437,7 @@ func AskToOverrideCompliance(license string) bool {
 }
 func PrintHelp() {
 	fmt.Println(styleTitle.Render("git-vendor v5.0"))
+	fmt.Println("Vendor specific files/directories from Git repositories with deterministic locking")
 	fmt.Println("\nCommands:")
 	fmt.Println("  init                Initialize vendor directory")
 	fmt.Println("  add                 Add a new vendor dependency (interactive wizard)")

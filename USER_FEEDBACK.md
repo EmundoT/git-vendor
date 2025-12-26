@@ -46,6 +46,45 @@
 
 ---
 
+## 🎯 Implementation Plan
+
+### Phase 1: Polish & Messaging ⭐ NEXT
+*Low-hanging fruit that significantly improves UX*
+
+**Complexity:** LOW | **Impact:** HIGH | **Time:** 1-2 hours
+
+**Tasks:**
+1. Add tool description to help text (`internal/tui/wizard.go`)
+2. Show "Next steps" after add (`main.go` - after add command)
+3. Add helper text for browse vs manual (`internal/tui/wizard.go`)
+4. Improve "No lockfile found" messaging (`internal/core/vendor_syncer.go`)
+5. Add "(remote) → (local)" to path notation (`main.go` list command)
+6. Expand validation success message (`main.go` validate command)
+
+### Phase 2: Enhanced Output
+*Better feedback about what happened*
+
+**Complexity:** MEDIUM | **Impact:** MEDIUM-HIGH | **Time:** 2-3 hours
+
+**Tasks:**
+1. Show sync summary with file details - track files copied in sync operations
+2. Show file details in sync output - display "(X files)" after each path mapping
+
+### Phase 3: New Features
+*Significant new functionality*
+
+**Complexity:** HIGH | **Impact:** HIGH | **Time:** 6-8 hours
+
+**Priority Order:**
+- **3a.** Non-interactive flags (`--yes`, `--quiet`, `--json`)
+- **3b.** Status command (check sync state)
+- **3c.** Progress during clone (UX improvement)
+- **3d.** Update confirmation with diff preview
+
+**Recommended Approach:** Implement Phase 1 first for immediate UX gains, then reassess priorities based on user needs (DevOps automation vs. general UX).
+
+---
+
 ## Executive Summary
 
 git-vendor is a solid tool with intuitive core functionality. The interactive wizards are generally well-designed, but several rough edges in error handling, messaging clarity, and edge cases could confuse users. This feedback focuses on making the tool feel polished and professional.
