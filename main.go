@@ -7,9 +7,33 @@ import (
 	"git-vendor/internal/types"
 	"os"
 	"strings"
-
-	"github.com/charmbracelet/huh"
 )
+
+// parseCommonFlags extracts common non-interactive flags from args
+// Returns: flags, remainingArgs, error
+func parseCommonFlags(args []string) (core.NonInteractiveFlags, []string, error) {
+	flags := core.NonInteractiveFlags{}
+	var remaining []string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--yes", "-y":
+			flags.Yes = true
+		case "--quiet", "-q":
+			flags.Mode = core.OutputQuiet
+		case "--json":
+			flags.Mode = core.OutputJSON
+		case "--verbose", "-v":
+			// Handle verbose separately (backward compat)
+			remaining = append(remaining, arg)
+		default:
+			remaining = append(remaining, arg)
+		}
+	}
+
+	return flags, remaining, nil
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -100,22 +124,39 @@ func main() {
 		}
 
 	case "remove":
-		if len(os.Args) < 3 {
-			tui.PrintError("Usage", "git vendor remove <name>")
-			return
+		// Parse common flags
+		flags, args, err := parseCommonFlags(os.Args[2:])
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
 		}
-		name := os.Args[2]
+
+		// Get vendor name from remaining args
+		if len(args) < 1 {
+			tui.PrintError("Usage", "git-vendor remove <name>")
+			os.Exit(1)
+		}
+		name := args[0]
 
 		if !core.IsVendorInitialized() {
 			tui.PrintError("Not Initialized", core.ErrNotInitialized)
 			os.Exit(1)
 		}
 
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
 		// Check if vendor exists BEFORE showing confirmation
 		cfg, err := manager.GetConfig()
 		if err != nil {
-			tui.PrintError("Error", err.Error())
-			return
+			callback.ShowError("Error", err.Error())
+			os.Exit(1)
 		}
 
 		found := false
@@ -127,60 +168,108 @@ func main() {
 		}
 
 		if !found {
-			tui.PrintError("Error", fmt.Sprintf("vendor '%s' not found", name))
-			return
+			callback.ShowError("Error", fmt.Sprintf("vendor '%s' not found", name))
+			os.Exit(1)
 		}
 
-		// NOW show confirmation since vendor exists
-		confirmed := false
-		err = huh.NewConfirm().
-			Title(fmt.Sprintf("Remove vendor '%s'?", name)).
-			Description("This will delete the config entry and license file.").
-			Value(&confirmed).
-			Affirmative("Yes").
-			Negative("No").
-			Run()
-
-		if err != nil {
-			tui.PrintError("Error", err.Error())
-			return
-		}
+		// Show confirmation via callback
+		confirmed := callback.AskConfirmation(
+			fmt.Sprintf("Remove vendor '%s'?", name),
+			"This will delete the config entry and license file.",
+		)
 
 		if !confirmed {
-			fmt.Println("Cancelled.")
-			return
+			if flags.Mode != core.OutputQuiet {
+				fmt.Println("Cancelled.")
+			}
+			os.Exit(1)
 		}
 
 		if err := manager.RemoveVendor(name); err != nil {
-			tui.PrintError("Error", err.Error())
-		} else {
-			tui.PrintSuccess("Removed " + name)
+			callback.ShowError("Error", err.Error())
+			os.Exit(1)
 		}
+		callback.ShowSuccess("Removed " + name)
 
 	case "list":
+		// Parse common flags
+		flags, _, err := parseCommonFlags(os.Args[2:])
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
+		}
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized)
 			os.Exit(1)
 		}
 
 		cfg, err := manager.GetConfig()
 		if err != nil {
-			tui.PrintError("Error", err.Error())
+			callback.ShowError("Error", err.Error())
 			os.Exit(1)
 		}
-		if len(cfg.Vendors) == 0 {
-			fmt.Println("No vendors configured.")
-		} else {
-			// Check for conflicts
-			conflicts, _ := manager.DetectConflicts()
-			conflictMap := make(map[string]bool)
-			if len(conflicts) > 0 {
-				for _, c := range conflicts {
-					conflictMap[c.Vendor1] = true
-					conflictMap[c.Vendor2] = true
+
+		// Check for conflicts
+		conflicts, _ := manager.DetectConflicts()
+		conflictMap := make(map[string]bool)
+		if len(conflicts) > 0 {
+			for _, c := range conflicts {
+				conflictMap[c.Vendor1] = true
+				conflictMap[c.Vendor2] = true
+			}
+		}
+
+		if flags.Mode == core.OutputJSON {
+			// JSON output mode
+			vendorData := make([]map[string]interface{}, 0, len(cfg.Vendors))
+			for _, v := range cfg.Vendors {
+				specsData := make([]map[string]interface{}, 0, len(v.Specs))
+				for _, s := range v.Specs {
+					mappingsData := make([]map[string]interface{}, 0, len(s.Mapping))
+					for _, m := range s.Mapping {
+						mappingsData = append(mappingsData, map[string]interface{}{
+							"from": m.From,
+							"to":   m.To,
+						})
+					}
+					specsData = append(specsData, map[string]interface{}{
+						"ref":      s.Ref,
+						"mappings": mappingsData,
+					})
 				}
+				vendorData = append(vendorData, map[string]interface{}{
+					"name":         v.Name,
+					"url":          v.URL,
+					"license":      v.License,
+					"specs":        specsData,
+					"has_conflict": conflictMap[v.Name],
+				})
 			}
 
+			callback.FormatJSON(core.JSONOutput{
+				Status: "success",
+				Data: map[string]interface{}{
+					"vendors":        vendorData,
+					"vendor_count":   len(cfg.Vendors),
+					"conflict_count": len(conflicts),
+				},
+			})
+		} else if len(cfg.Vendors) == 0 {
+			if flags.Mode != core.OutputQuiet {
+				fmt.Println("No vendors configured.")
+			}
+		} else {
+			// Normal output mode
 			fmt.Println(tui.StyleTitle("Configured Vendors:"))
 			fmt.Println()
 
@@ -221,13 +310,28 @@ func main() {
 		}
 
 	case "sync":
-		// Parse flags and arguments
+		// Parse common flags
+		flags, args, err := parseCommonFlags(os.Args[2:])
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
+		}
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		// Parse command-specific flags
 		dryRun := false
 		force := false
 		vendorName := ""
 
-		for i := 2; i < len(os.Args); i++ {
-			arg := os.Args[i]
+		for _, arg := range args {
 			if arg == "--dry-run" {
 				dryRun = true
 			} else if arg == "--force" {
@@ -241,29 +345,46 @@ func main() {
 		}
 
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized)
 			os.Exit(1)
 		}
 
 		if dryRun {
 			if err := manager.SyncDryRun(); err != nil {
-				tui.PrintError("Preview Failed", err.Error())
+				callback.ShowError("Preview Failed", err.Error())
 				os.Exit(1)
 			}
-			fmt.Println("This is a dry-run. No files were modified.")
-			fmt.Println("Run 'git-vendor sync' to apply changes.")
+			if flags.Mode != core.OutputQuiet {
+				fmt.Println("This is a dry-run. No files were modified.")
+				fmt.Println("Run 'git-vendor sync' to apply changes.")
+			}
 		} else {
 			if err := manager.SyncWithOptions(vendorName, force); err != nil {
-				tui.PrintError("Sync Failed", err.Error())
+				callback.ShowError("Sync Failed", err.Error())
 				os.Exit(1)
 			}
-			tui.PrintSuccess("Synced.")
+			callback.ShowSuccess("Synced.")
 		}
 
 	case "update":
-		// Parse flags
-		for i := 2; i < len(os.Args); i++ {
-			arg := os.Args[i]
+		// Parse common flags
+		flags, args, err := parseCommonFlags(os.Args[2:])
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
+		}
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		// Parse command-specific flags
+		for _, arg := range args {
 			if arg == "--verbose" || arg == "-v" {
 				core.Verbose = true
 				manager.UpdateVerboseMode(true)
@@ -271,58 +392,120 @@ func main() {
 		}
 
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized)
 			os.Exit(1)
 		}
 
 		if err := manager.UpdateAll(); err != nil {
-			tui.PrintError("Update Failed", err.Error())
+			callback.ShowError("Update Failed", err.Error())
 			os.Exit(1)
 		}
-		tui.PrintSuccess("Updated all vendors.")
+		callback.ShowSuccess("Updated all vendors.")
 
 	case "validate":
+		// Parse common flags
+		flags, _, err := parseCommonFlags(os.Args[2:])
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
+		}
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized)
 			os.Exit(1)
 		}
 
 		// Get config for summary
 		cfg, err := manager.GetConfig()
 		if err != nil {
-			tui.PrintError("Error", err.Error())
+			callback.ShowError("Error", err.Error())
 			os.Exit(1)
 		}
 
 		// Perform config validation
 		if err := manager.ValidateConfig(); err != nil {
-			tui.PrintError("Validation Failed", err.Error())
+			callback.ShowError("Validation Failed", err.Error())
 			os.Exit(1)
 		}
 
 		// Check for conflicts
 		conflicts, err := manager.DetectConflicts()
 		if err != nil {
-			tui.PrintError("Conflict Detection Failed", err.Error())
+			callback.ShowError("Conflict Detection Failed", err.Error())
 			os.Exit(1)
 		}
 
-		if len(conflicts) > 0 {
-			tui.PrintWarning("Path Conflicts Detected", fmt.Sprintf("Found %s", core.Pluralize(len(conflicts), "conflict", "conflicts")))
-			fmt.Println()
+		if flags.Mode == core.OutputJSON {
+			// JSON output mode
+			conflictsData := make([]map[string]interface{}, 0, len(conflicts))
 			for _, conflict := range conflicts {
-				fmt.Printf("⚠ Conflict: %s\n", conflict.Path)
-				fmt.Printf("  • %s: %s (remote) → %s (local)\n", conflict.Vendor1, conflict.Mapping1.From, conflict.Mapping1.To)
-				fmt.Printf("  • %s: %s (remote) → %s (local)\n", conflict.Vendor2, conflict.Mapping2.From, conflict.Mapping2.To)
-				fmt.Println()
+				conflictsData = append(conflictsData, map[string]interface{}{
+					"path":    conflict.Path,
+					"vendor1": conflict.Vendor1,
+					"vendor2": conflict.Vendor2,
+					"mapping1": map[string]interface{}{
+						"from": conflict.Mapping1.From,
+						"to":   conflict.Mapping1.To,
+					},
+					"mapping2": map[string]interface{}{
+						"from": conflict.Mapping2.From,
+						"to":   conflict.Mapping2.To,
+					},
+				})
 			}
-			os.Exit(1)
-		}
 
-		tui.PrintSuccess("Validation passed")
-		fmt.Println("• Config syntax: OK")
-		fmt.Println("• Path conflicts: None")
-		fmt.Printf("• Vendors: %s\n", core.Pluralize(len(cfg.Vendors), "vendor", "vendors"))
+			if len(conflicts) > 0 {
+				callback.FormatJSON(core.JSONOutput{
+					Status:  "error",
+					Message: fmt.Sprintf("Found %s", core.Pluralize(len(conflicts), "conflict", "conflicts")),
+					Data: map[string]interface{}{
+						"config_valid":   true,
+						"conflicts":      conflictsData,
+						"conflict_count": len(conflicts),
+						"vendor_count":   len(cfg.Vendors),
+					},
+				})
+				os.Exit(1)
+			} else {
+				callback.FormatJSON(core.JSONOutput{
+					Status:  "success",
+					Message: "Validation passed",
+					Data: map[string]interface{}{
+						"config_valid":   true,
+						"conflicts":      []map[string]interface{}{},
+						"conflict_count": 0,
+						"vendor_count":   len(cfg.Vendors),
+					},
+				})
+			}
+		} else {
+			// Normal output mode
+			if len(conflicts) > 0 {
+				tui.PrintWarning("Path Conflicts Detected", fmt.Sprintf("Found %s", core.Pluralize(len(conflicts), "conflict", "conflicts")))
+				fmt.Println()
+				for _, conflict := range conflicts {
+					fmt.Printf("⚠ Conflict: %s\n", conflict.Path)
+					fmt.Printf("  • %s: %s (remote) → %s (local)\n", conflict.Vendor1, conflict.Mapping1.From, conflict.Mapping1.To)
+					fmt.Printf("  • %s: %s (remote) → %s (local)\n", conflict.Vendor2, conflict.Mapping2.From, conflict.Mapping2.To)
+					fmt.Println()
+				}
+				os.Exit(1)
+			}
+
+			tui.PrintSuccess("Validation passed")
+			fmt.Println("• Config syntax: OK")
+			fmt.Println("• Path conflicts: None")
+			fmt.Printf("• Vendors: %s\n", core.Pluralize(len(cfg.Vendors), "vendor", "vendors"))
+		}
 
 	default:
 		tui.PrintError("Unknown Command", fmt.Sprintf("'%s' is not a valid git-vendor command", command))

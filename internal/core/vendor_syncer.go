@@ -15,6 +15,11 @@ type UICallback interface {
 	AskConfirmation(title, message string) bool
 	ShowLicenseCompliance(license string)
 	StyleTitle(title string) string
+
+	// New methods for non-interactive mode
+	GetOutputMode() OutputMode
+	IsAutoApprove() bool
+	FormatJSON(output JSONOutput) error
 }
 
 // SilentUICallback is a no-op implementation (for testing/CI)
@@ -26,6 +31,9 @@ func (s *SilentUICallback) ShowWarning(title, message string)          {}
 func (s *SilentUICallback) AskConfirmation(title, msg string) bool     { return false }
 func (s *SilentUICallback) ShowLicenseCompliance(license string)       {}
 func (s *SilentUICallback) StyleTitle(title string) string             { return title }
+func (s *SilentUICallback) GetOutputMode() OutputMode                  { return OutputNormal }
+func (s *SilentUICallback) IsAutoApprove() bool                        { return false }
+func (s *SilentUICallback) FormatJSON(output JSONOutput) error         { return nil }
 
 // VendorSyncer orchestrates vendor operations using domain services
 type VendorSyncer struct {
