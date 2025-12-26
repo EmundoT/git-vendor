@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"git-vendor/internal/core"
 	"git-vendor/internal/types"
 	"os"
 	"path"
@@ -483,7 +484,7 @@ func ShowConflictWarnings(mgr VendorManager, vendorName string) {
 
 	if len(vendorConflicts) > 0 {
 		fmt.Println()
-		PrintWarning("Path Conflicts Detected", fmt.Sprintf("Found %d conflict(s) with this vendor", len(vendorConflicts)))
+		PrintWarning("Path Conflicts Detected", fmt.Sprintf("Found %s with this vendor", core.Pluralize(len(vendorConflicts), "conflict", "conflicts")))
 		for _, c := range vendorConflicts {
 			fmt.Printf("  ⚠ %s\n", c.Path)
 			other := c.Vendor2

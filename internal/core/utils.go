@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"git-vendor/internal/types"
@@ -79,4 +80,16 @@ func ComputeAutoPath(sourcePath, defaultTarget, fallbackName string) string {
 	}
 
 	return autoName
+}
+
+// Pluralize returns the singular or plural form based on count.
+// Examples:
+//   Pluralize(1, "vendor", "vendors") => "1 vendor"
+//   Pluralize(2, "vendor", "vendors") => "2 vendors"
+//   Pluralize(0, "vendor", "vendors") => "0 vendors"
+func Pluralize(count int, singular, plural string) string {
+	if count == 1 {
+		return fmt.Sprintf("%d %s", count, singular)
+	}
+	return fmt.Sprintf("%d %s", count, plural)
 }

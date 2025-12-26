@@ -1,6 +1,7 @@
 package core
 
 import (
+	"os"
 	"os/exec"
 
 	"git-vendor/internal/types"
@@ -103,6 +104,18 @@ func IsGitInstalled() bool {
 	_, err := exec.LookPath("git")
 	return err == nil
 }
+
+// IsVendorInitialized checks if the vendor directory structure exists
+func IsVendorInitialized() bool {
+	info, err := os.Stat(VendorDir)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
+}
+
+// ErrNotInitialized is returned when vendor directory doesn't exist
+const ErrNotInitialized = "vendor directory not found. Run 'git-vendor init' first"
 
 // Init initializes the vendor directory structure
 func (m *Manager) Init() {

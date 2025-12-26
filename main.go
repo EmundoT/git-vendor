@@ -32,6 +32,11 @@ func main() {
     tui.PrintSuccess("Initialized in ./vendor/")
 
 	case "add":
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
 		cfg, err := manager.GetConfig()
 		if err != nil {
 			tui.PrintError("Error", err.Error())
@@ -53,6 +58,11 @@ func main() {
 		tui.ShowConflictWarnings(manager, spec.Name)
 
 	case "edit":
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
 		cfg, err := manager.GetConfig()
 		if err != nil {
 			tui.PrintError("Error", err.Error())
@@ -90,6 +100,11 @@ func main() {
 		}
 		name := os.Args[2]
 
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
 		// Check if vendor exists BEFORE showing confirmation
 		cfg, err := manager.GetConfig()
 		if err != nil {
@@ -116,6 +131,8 @@ func main() {
 			Title(fmt.Sprintf("Remove vendor '%s'?", name)).
 			Description("This will delete the config entry and license file.").
 			Value(&confirmed).
+			Affirmative("Yes").
+			Negative("No").
 			Run()
 
 		if err != nil {
@@ -135,6 +152,11 @@ func main() {
 		}
 
 	case "list":
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
 		cfg, err := manager.GetConfig()
 		if err != nil {
 			tui.PrintError("Error", err.Error())
@@ -188,7 +210,7 @@ func main() {
 
 			// Show conflict summary
 			if len(conflicts) > 0 {
-				tui.PrintWarning("Conflicts Detected", fmt.Sprintf("%d path conflict(s) found. Run 'git-vendor validate' for details.", len(conflicts)))
+				tui.PrintWarning("Conflicts Detected", fmt.Sprintf("%s found. Run 'git-vendor validate' for details.", core.Pluralize(len(conflicts), "path conflict", "path conflicts")))
 			}
 		}
 
@@ -210,6 +232,11 @@ func main() {
 			} else if !strings.HasPrefix(arg, "--") {
 				vendorName = arg
 			}
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
 		}
 
 		if dryRun {
@@ -237,6 +264,11 @@ func main() {
 			}
 		}
 
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
 		if err := manager.UpdateAll(); err != nil {
 			tui.PrintError("Update Failed", err.Error())
 			os.Exit(1)
@@ -244,6 +276,11 @@ func main() {
 		tui.PrintSuccess("Updated all vendors.")
 
 	case "validate":
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
 		// Perform config validation
 		if err := manager.ValidateConfig(); err != nil {
 			tui.PrintError("Validation Failed", err.Error())
@@ -258,7 +295,7 @@ func main() {
 		}
 
 		if len(conflicts) > 0 {
-			tui.PrintWarning("Path Conflicts Detected", fmt.Sprintf("Found %d conflict(s)", len(conflicts)))
+			tui.PrintWarning("Path Conflicts Detected", fmt.Sprintf("Found %s", core.Pluralize(len(conflicts), "conflict", "conflicts")))
 			fmt.Println()
 			for _, conflict := range conflicts {
 				fmt.Printf("⚠ Conflict: %s\n", conflict.Path)
@@ -272,6 +309,9 @@ func main() {
 		tui.PrintSuccess("Validation passed. No issues found.")
 
 	default:
+		tui.PrintError("Unknown Command", fmt.Sprintf("'%s' is not a valid git-vendor command", command))
+		fmt.Println()
 		tui.PrintHelp()
+		os.Exit(1)
 	}
 }
