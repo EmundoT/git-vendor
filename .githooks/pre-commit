@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure Go binaries are in PATH
+export PATH="/home/emt/go/bin:/usr/local/go/bin:$PATH"
+
 echo "🔍 Running pre-commit checks..."
 
 # 1. Format check
