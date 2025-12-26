@@ -240,6 +240,6 @@ func (s *VendorSyncer) CheckGitHubLicense(url string) (string, error) {
 }
 
 // syncVendor is exposed for testing - delegates to sync service
-func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (map[string]string, error) {
+func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (map[string]string, CopyStats, error) {
 	return s.sync.syncVendor(v, lockedRefs)
 }

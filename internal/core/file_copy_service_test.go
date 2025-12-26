@@ -30,7 +30,7 @@ func TestCopyFile(t *testing.T) {
 		}
 
 		// Copy file
-		if err := fs.CopyFile(srcFile, dstFile); err != nil {
+		if _, err := fs.CopyFile(srcFile, dstFile); err != nil {
 			t.Fatalf("CopyFile() error = %v", err)
 		}
 
@@ -49,7 +49,7 @@ func TestCopyFile(t *testing.T) {
 		srcFile := filepath.Join(tempDir, "nonexistent.txt")
 		dstFile := filepath.Join(tempDir, "dest.txt")
 
-		err := fs.CopyFile(srcFile, dstFile)
+		_, err := fs.CopyFile(srcFile, dstFile)
 		if err == nil {
 			t.Error("CopyFile() expected error for nonexistent source, got nil")
 		}
@@ -65,7 +65,7 @@ func TestCopyFile(t *testing.T) {
 			t.Fatalf("Failed to create source file: %v", err)
 		}
 
-		err := fs.CopyFile(srcFile, dstFile)
+		_, err := fs.CopyFile(srcFile, dstFile)
 		if err == nil {
 			t.Error("CopyFile() expected error for nonexistent destination directory, got nil")
 		}
@@ -91,7 +91,7 @@ func TestCopyDir(t *testing.T) {
 		os.WriteFile(filepath.Join(srcDir, "subdir", "file2.txt"), []byte("content2"), 0644)
 
 		// Copy directory
-		if err := fs.CopyDir(srcDir, dstDir); err != nil {
+		if _, err := fs.CopyDir(srcDir, dstDir); err != nil {
 			t.Fatalf("CopyDir() error = %v", err)
 		}
 
@@ -121,7 +121,7 @@ func TestCopyDir(t *testing.T) {
 		os.WriteFile(filepath.Join(srcDir, ".git", "config"), []byte("gitconfig"), 0644)
 
 		// Copy directory
-		if err := fs.CopyDir(srcDir, dstDir); err != nil {
+		if _, err := fs.CopyDir(srcDir, dstDir); err != nil {
 			t.Fatalf("CopyDir() error = %v", err)
 		}
 
@@ -141,7 +141,7 @@ func TestCopyDir(t *testing.T) {
 		srcDir := filepath.Join(tempDir, "nonexistent")
 		dstDir := filepath.Join(tempDir, "dest")
 
-		err := fs.CopyDir(srcDir, dstDir)
+		_, err := fs.CopyDir(srcDir, dstDir)
 		if err == nil {
 			t.Error("CopyDir() expected error for nonexistent source, got nil")
 		}
@@ -181,13 +181,13 @@ func TestCopyMappings_AutoNaming(t *testing.T) {
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def", nil)
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err != nil {
@@ -224,14 +224,14 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def", nil)
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
-	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes() // For license copy
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 3, ByteCount: 300}, nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes() // For license copy
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err != nil {
@@ -260,7 +260,7 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err == nil {

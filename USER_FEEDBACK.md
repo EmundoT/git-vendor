@@ -8,7 +8,7 @@
 
 ## Implementation Status
 
-**Last Updated:** December 25, 2025 (after Quick Wins implementation)
+**Last Updated:** December 25, 2025 (after Phase 2 implementation)
 
 ### ✅ Completed (Quick Wins)
 1. ✅ Fixed "no such file or directory" error → Shows "Run 'git-vendor init' first"
@@ -19,24 +19,42 @@
 
 **Commit:** `99b1dfd` - "fix: polish UX with better error messages and proper pluralization (Quick Wins)"
 
+### ✅ Completed (Phase 1: Polish & Messaging)
+1. ✅ Add tool description to help text
+2. ✅ Show "Next steps" after add command
+3. ✅ Add helper text for browse vs manual
+4. ✅ Improve "No lockfile found" messaging
+5. ✅ Add "(remote) → (local)" to path notation
+6. ✅ Expand validation success message
+
+**Commit:** `3d9345f` - "feat: Phase 1 - polish messaging and UX clarity improvements"
+
+### ✅ Completed (Phase 2: Enhanced Output)
+1. ✅ Show sync summary with file details - track files copied in sync operations
+2. ✅ Show file details in sync output - display "(X files)" after each path mapping
+
+**Output Examples:**
+- Per-vendor: `✓ claude-code-tools @ main (synced 1 path: 32 files)`
+- Summary: `Summary: Synced 32 files across all vendors`
+
+**Files Modified:**
+- `internal/core/filesystem.go` - Added CopyStats type, updated interface
+- `internal/core/file_copy_service.go` - Aggregate stats through mappings
+- `internal/core/sync_service.go` - Display stats and summary
+- `internal/core/license_service.go` - Handle new return value
+- `internal/core/update_service.go` - Handle new return value
+- `internal/core/vendor_syncer.go` - Update delegate signature
+- All test files - Updated mock expectations
+
+**Commit:** (pending)
+
 ### 🔄 Remaining Work
 
-**Medium Effort (6-10):**
+**Phase 3: New Features**
 - [ ] Add status/check command
 - [ ] Add `--yes`, `--quiet`, `--json` flags
-- [ ] Show sync summary (which files, where)
 - [ ] Add progress indication during clone
 - [ ] Show diff/summary before update
-
-**Additional High-Priority Items:**
-- [ ] Add brief tool description to help text
-- [ ] Show "Next steps" after adding vendor
-- [ ] Add helper text for "Browse Remote Files" vs "Enter Manually"
-- [ ] Improve "No lockfile found" messaging
-- [ ] Make path arrow notation clearer
-- [ ] Add update confirmation with summary
-- [ ] Expand validation success message
-- [ ] Show file details in sync output
 
 **Long Term:**
 - [ ] Interactive path preview in wizard
@@ -48,29 +66,28 @@
 
 ## 🎯 Implementation Plan
 
-### Phase 1: Polish & Messaging ⭐ NEXT
+### Phase 1: Polish & Messaging ✅ COMPLETED
 *Low-hanging fruit that significantly improves UX*
 
 **Complexity:** LOW | **Impact:** HIGH | **Time:** 1-2 hours
 
-**Tasks:**
-1. Add tool description to help text (`internal/tui/wizard.go`)
-2. Show "Next steps" after add (`main.go` - after add command)
-3. Add helper text for browse vs manual (`internal/tui/wizard.go`)
-4. Improve "No lockfile found" messaging (`internal/core/vendor_syncer.go`)
-5. Add "(remote) → (local)" to path notation (`main.go` list command)
-6. Expand validation success message (`main.go` validate command)
+**Status:** ✅ All 6 tasks completed (Commit: `3d9345f`)
 
-### Phase 2: Enhanced Output
+### Phase 2: Enhanced Output ✅ COMPLETED
 *Better feedback about what happened*
 
 **Complexity:** MEDIUM | **Impact:** MEDIUM-HIGH | **Time:** 2-3 hours
 
-**Tasks:**
-1. Show sync summary with file details - track files copied in sync operations
-2. Show file details in sync output - display "(X files)" after each path mapping
+**Status:** ✅ All 2 tasks completed (Commit: pending)
 
-### Phase 3: New Features
+**Implementation Details:**
+- Added `CopyStats` type to track file counts and bytes
+- Updated `FileSystem` interface to return statistics
+- Propagated stats through `FileCopyService` → `SyncService`
+- Display format: `✓ vendor @ ref (synced X paths: Y files)`
+- Summary: `Summary: Synced Y files across all vendors`
+
+### Phase 3: New Features ⭐ NEXT
 *Significant new functionality*
 
 **Complexity:** HIGH | **Impact:** HIGH | **Time:** 6-8 hours

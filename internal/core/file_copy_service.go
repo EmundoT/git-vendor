@@ -21,17 +21,22 @@ func NewFileCopyService(fs FileSystem) *FileCopyService {
 }
 
 // CopyMappings copies all files according to path mappings for a vendor spec
-func (s *FileCopyService) CopyMappings(tempDir string, vendor types.VendorSpec, spec types.BranchSpec) error {
+func (s *FileCopyService) CopyMappings(tempDir string, vendor types.VendorSpec, spec types.BranchSpec) (CopyStats, error) {
+	var totalStats CopyStats
+
 	for _, mapping := range spec.Mapping {
-		if err := s.copyMapping(tempDir, vendor, spec, mapping); err != nil {
-			return err
+		stats, err := s.copyMapping(tempDir, vendor, spec, mapping)
+		if err != nil {
+			return totalStats, err
 		}
+		totalStats.Add(stats)
 	}
-	return nil
+
+	return totalStats, nil
 }
 
 // copyMapping copies a single path mapping
-func (s *FileCopyService) copyMapping(tempDir string, vendor types.VendorSpec, spec types.BranchSpec, mapping types.PathMapping) error {
+func (s *FileCopyService) copyMapping(tempDir string, vendor types.VendorSpec, spec types.BranchSpec, mapping types.PathMapping) (CopyStats, error) {
 	// Clean the source path (remove blob/tree prefixes)
 	srcClean := s.cleanSourcePath(mapping.From, spec.Ref)
 	srcPath := filepath.Join(tempDir, srcClean)
@@ -41,33 +46,35 @@ func (s *FileCopyService) copyMapping(tempDir string, vendor types.VendorSpec, s
 
 	// Validate destination path to prevent path traversal attacks
 	if err := ValidateDestPath(destPath); err != nil {
-		return err
+		return CopyStats{}, err
 	}
 
 	// Check if source exists
 	info, err := s.fs.Stat(srcPath)
 	if err != nil {
-		return fmt.Errorf(ErrPathNotFound, srcClean)
+		return CopyStats{}, fmt.Errorf(ErrPathNotFound, srcClean)
 	}
 
 	// Copy directory or file
 	if info.IsDir() {
 		if err := s.fs.MkdirAll(destPath, 0755); err != nil {
-			return err
+			return CopyStats{}, err
 		}
-		if err := s.fs.CopyDir(srcPath, destPath); err != nil {
-			return fmt.Errorf("failed to copy directory %s to %s: %w", srcPath, destPath, err)
+		stats, err := s.fs.CopyDir(srcPath, destPath)
+		if err != nil {
+			return CopyStats{}, fmt.Errorf("failed to copy directory %s to %s: %w", srcPath, destPath, err)
 		}
+		return stats, nil
 	} else {
 		if err := s.fs.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			return err
+			return CopyStats{}, err
 		}
-		if err := s.fs.CopyFile(srcPath, destPath); err != nil {
-			return fmt.Errorf("failed to copy file %s to %s: %w", srcPath, destPath, err)
+		stats, err := s.fs.CopyFile(srcPath, destPath)
+		if err != nil {
+			return CopyStats{}, fmt.Errorf("failed to copy file %s to %s: %w", srcPath, destPath, err)
 		}
+		return stats, nil
 	}
-
-	return nil
 }
 
 // cleanSourcePath removes blob/tree prefixes from source path
