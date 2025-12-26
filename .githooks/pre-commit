@@ -8,7 +8,7 @@ echo "🔍 Running pre-commit checks..."
 
 # 1. Format check (exclude vendor/)
 echo "  → Checking formatting..."
-UNFORMATTED=$(gofmt -l . | grep -v "^vendor/")
+UNFORMATTED=$(gofmt -l . | grep -v "^vendor/" || true)
 if [ -n "$UNFORMATTED" ]; then
   echo "❌ Code is not formatted. Run: gofmt -w ."
   echo "$UNFORMATTED"
