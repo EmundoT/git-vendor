@@ -140,7 +140,7 @@ func (s *SyncService) printSyncHeader(config types.VendorConfig, vendorName stri
 		}
 	}
 	if vendorCount > 0 {
-		fmt.Printf("Syncing %d vendor(s)...\n", vendorCount)
+		fmt.Printf("Syncing %s...\n", Pluralize(vendorCount, "vendor", "vendors"))
 	}
 }
 
@@ -187,10 +187,10 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 
 	// Initialize git repo
 	if err := s.gitClient.Init(tempDir); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to initialize git repository for %s: %w", v.Name, err)
 	}
 	if err := s.gitClient.AddRemote(tempDir, "origin", v.URL); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, v.URL, err)
 	}
 
 	results := make(map[string]string)
@@ -203,7 +203,7 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 		}
 		results[spec.Ref] = hash
 
-		fmt.Printf("  ✓ %s @ %s (synced %d path(s))\n", v.Name, spec.Ref, len(spec.Mapping))
+		fmt.Printf("  ✓ %s @ %s (synced %s)\n", v.Name, spec.Ref, Pluralize(len(spec.Mapping), "path", "paths"))
 	}
 
 	return results, nil
@@ -251,7 +251,7 @@ func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.Bra
 	// Get current commit hash
 	hash, err := s.gitClient.GetHeadHash(tempDir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get commit hash for %s @ %s: %w", v.Name, spec.Ref, err)
 	}
 
 	// Copy license file
