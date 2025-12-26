@@ -1,6 +1,10 @@
 package core
 
-import "git-vendor/internal/types"
+import (
+	"fmt"
+
+	"git-vendor/internal/types"
+)
 
 // RemoteExplorer handles remote repository browsing and URL parsing
 type RemoteExplorer struct {
@@ -18,6 +22,9 @@ func NewRemoteExplorer(gitClient GitClient, fs FileSystem) *RemoteExplorer {
 
 // FetchRepoDir fetches directory listing from remote repository
 func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error) {
+	// Show progress indication to user
+	fmt.Println("⠿ Cloning repository...")
+
 	tempDir, err := e.fs.CreateTemp("", "git-vendor-index-*")
 	if err != nil {
 		return nil, err

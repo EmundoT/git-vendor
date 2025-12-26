@@ -240,6 +240,7 @@ func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.Bra
 	}
 
 	// Fetch and checkout
+	fmt.Printf("  ⠿ Fetching ref '%s'...\n", spec.Ref)
 	if isLocked {
 		// Locked sync - checkout specific commit
 		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
@@ -277,6 +278,7 @@ func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.Bra
 	}
 
 	// Copy files according to mappings and collect stats
+	fmt.Printf("  ⠿ Copying files...\n")
 	stats, err := s.fileCopy.CopyMappings(tempDir, v, spec)
 	if err != nil {
 		return "", CopyStats{}, err
