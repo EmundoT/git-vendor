@@ -1,9 +1,8 @@
-version: 2
+version: 1
 
 before:
   hooks:
     - go mod tidy
-    - go generate ./...
 
 builds:
   - env:
@@ -15,6 +14,8 @@ builds:
     goarch:
       - amd64
       - arm64
+    flags:
+      - -mod=mod
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -33,7 +34,6 @@ archives:
       - goos: windows
         format: zip
     files:
-      - LICENSE
       - README.md
       - TROUBLESHOOTING.md
 
