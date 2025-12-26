@@ -22,3 +22,32 @@ coverage:
 .PHONY: test-core
 test-core:
 	go test -v ./internal/core/...
+
+.PHONY: lint
+lint:
+	@echo "Running golangci-lint..."
+	golangci-lint run ./...
+
+.PHONY: fmt
+fmt:
+	@echo "Formatting code..."
+	gofmt -w .
+
+.PHONY: install-hooks
+install-hooks:
+	@echo "Installing git hooks..."
+	git config core.hooksPath .githooks
+	chmod +x .githooks/pre-commit
+	@echo "Done! Hooks installed."
+
+.PHONY: ci
+ci: mocks lint test
+	@echo "All CI checks passed!"
+
+.PHONY: clean
+clean:
+	@echo "Cleaning..."
+	rm -f git-vendor git-vendor.exe
+	rm -f coverage.out coverage.txt
+	rm -f internal/core/*_mock_test.go
+	@echo "Done!"

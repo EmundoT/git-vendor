@@ -1,5 +1,10 @@
 # git-vendor
 
+[![Tests](https://github.com/EmundoT/git-vendor/workflows/Tests/badge.svg)](https://github.com/EmundoT/git-vendor/actions)
+[![codecov](https://codecov.io/gh/EmundoT/git-vendor/branch/main/graph/badge.svg)](https://codecov.io/gh/EmundoT/git-vendor)
+[![Go Report Card](https://goreportcard.com/badge/github.com/EmundoT/git-vendor)](https://goreportcard.com/report/github.com/EmundoT/git-vendor)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A lightweight CLI tool for managing vendored dependencies from Git repositories with granular path control.
 
 ## Features
@@ -17,7 +22,7 @@ A lightweight CLI tool for managing vendored dependencies from Git repositories 
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/git-vendor
+git clone https://github.com/EmundoT/git-vendor
 cd git-vendor
 go build -o git-vendor
 ```
@@ -389,7 +394,7 @@ jobs:
 
       - name: Install git-vendor
         run: |
-          curl -L https://github.com/yourusername/git-vendor/releases/latest/download/git-vendor-linux-amd64 -o /usr/local/bin/git-vendor
+          curl -L https://github.com/EmundoT/git-vendor/releases/latest/download/git-vendor-linux-amd64 -o /usr/local/bin/git-vendor
           chmod +x /usr/local/bin/git-vendor
 
       - name: Sync vendored dependencies
@@ -641,65 +646,14 @@ See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for common issues and solutions.
 
 ## Development
 
-### Running Tests
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
-Tests require auto-generated mocks. Generate them before running tests:
-
+**Quick Start:**
 ```bash
-# Generate mocks (required on first run or after interface changes)
-# On Unix/Mac/Linux:
-make mocks
-
-# On Windows (or if make is not available), run mockgen directly:
-# First install mockgen:
-go install github.com/golang/mock/mockgen@latest
-# Then generate each mock file individually (see Makefile for commands)
-
-# Run all tests
-go test ./...
-
-# Run with coverage
-go test -cover ./internal/core
-
-# Run with verbose output
-go test -v ./...
-```
-
-**Note:** Mock files are auto-generated and git-ignored. You must generate them locally.
-
-Current test coverage: **63.9%** of statements
-
-### Building from Source
-
-```bash
-# Build for your platform
-go build -o git-vendor
-
-# Build for specific platform
-GOOS=linux GOARCH=amd64 go build -o git-vendor-linux
-GOOS=darwin GOARCH=arm64 go build -o git-vendor-macos
-GOOS=windows GOARCH=amd64 go build -o git-vendor.exe
-```
-
-### Project Structure
-
-```text
-git-vendor/
-├── main.go                    # CLI entry point and command dispatcher
-├── internal/
-│   ├── core/                  # Business logic
-│   │   ├── engine.go          # Manager facade
-│   │   ├── vendor_syncer.go   # Core sync logic
-│   │   ├── git_operations.go  # Git client
-│   │   ├── filesystem.go      # File operations
-│   │   ├── github_client.go   # License checking
-│   │   ├── config_store.go    # Config I/O
-│   │   └── lock_store.go      # Lock I/O
-│   ├── tui/                   # Terminal UI
-│   │   └── wizard.go          # Interactive wizards
-│   └── types/                 # Data models
-│       └── types.go
-└── vendor/                    # Vendored dependencies
+make mocks    # Generate mocks
+make test     # Run tests
+make lint     # Run linter
+make ci       # Run all CI checks
 ```
 
 ## Contributing
