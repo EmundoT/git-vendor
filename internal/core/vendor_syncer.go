@@ -25,15 +25,32 @@ type UICallback interface {
 // SilentUICallback is a no-op implementation (for testing/CI)
 type SilentUICallback struct{}
 
-func (s *SilentUICallback) ShowError(title, message string)            {}
-func (s *SilentUICallback) ShowSuccess(message string)                 {}
-func (s *SilentUICallback) ShowWarning(title, message string)          {}
-func (s *SilentUICallback) AskConfirmation(title, msg string) bool     { return false }
-func (s *SilentUICallback) ShowLicenseCompliance(license string)       {}
-func (s *SilentUICallback) StyleTitle(title string) string             { return title }
-func (s *SilentUICallback) GetOutputMode() OutputMode                  { return OutputNormal }
-func (s *SilentUICallback) IsAutoApprove() bool                        { return false }
-func (s *SilentUICallback) FormatJSON(output JSONOutput) error         { return nil }
+// ShowError implements UICallback for silent operation (no output).
+func (s *SilentUICallback) ShowError(_, _ string) {}
+
+// ShowSuccess implements UICallback for silent operation (no output).
+func (s *SilentUICallback) ShowSuccess(_ string) {}
+
+// ShowWarning implements UICallback for silent operation (no output).
+func (s *SilentUICallback) ShowWarning(_, _ string) {}
+
+// AskConfirmation implements UICallback for silent operation (always returns false).
+func (s *SilentUICallback) AskConfirmation(_, _ string) bool { return false }
+
+// ShowLicenseCompliance implements UICallback for silent operation (no output).
+func (s *SilentUICallback) ShowLicenseCompliance(_ string) {}
+
+// StyleTitle implements UICallback for silent operation (returns plain text).
+func (s *SilentUICallback) StyleTitle(title string) string { return title }
+
+// GetOutputMode implements UICallback for silent operation (returns OutputNormal).
+func (s *SilentUICallback) GetOutputMode() OutputMode { return OutputNormal }
+
+// IsAutoApprove implements UICallback for silent operation (returns false).
+func (s *SilentUICallback) IsAutoApprove() bool { return false }
+
+// FormatJSON implements UICallback for silent operation (does nothing).
+func (s *SilentUICallback) FormatJSON(_ JSONOutput) error { return nil }
 
 // VendorSyncer orchestrates vendor operations using domain services
 type VendorSyncer struct {
@@ -141,7 +158,7 @@ func (s *VendorSyncer) RemoveVendor(name string) error {
 
 	// Remove license file
 	licensePath := filepath.Join(s.rootDir, LicenseDir, name+".txt")
-	s.fs.Remove(licensePath)
+	_ = s.fs.Remove(licensePath)
 
 	// Update lockfile
 	return s.update.UpdateAll()

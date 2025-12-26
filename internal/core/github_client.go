@@ -72,7 +72,7 @@ func (c *GitHubLicenseChecker) CheckLicense(rawURL string) (string, error) {
 
 		// Handle rate limiting
 		if resp.StatusCode == 403 || resp.StatusCode == 429 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			lastErr = fmt.Errorf("GitHub API rate limit exceeded. Set GITHUB_TOKEN environment variable to increase rate limit (60/hr → 5000/hr)")
 			if attempt < 2 {
 				continue // Retry with backoff
@@ -81,7 +81,7 @@ func (c *GitHubLicenseChecker) CheckLicense(rawURL string) (string, error) {
 		}
 
 		if resp.StatusCode == 404 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return "NONE", nil
 		}
 
@@ -92,10 +92,10 @@ func (c *GitHubLicenseChecker) CheckLicense(rawURL string) (string, error) {
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return "", err
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if res.License.SpdxID == "" {
 			return "UNKNOWN", nil

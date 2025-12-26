@@ -1,9 +1,14 @@
+// Package types defines data structures for git-vendor configuration and state management.
+//
+//nolint:revive // Package name "types" is standard and appropriate
 package types
 
+// VendorConfig represents the root configuration file (vendor.yml) structure.
 type VendorConfig struct {
 	Vendors []VendorSpec `yaml:"vendors"`
 }
 
+// VendorSpec defines a single vendored dependency with its source repository and mappings.
 type VendorSpec struct {
 	Name    string       `yaml:"name"`
 	URL     string       `yaml:"url"`
@@ -11,21 +16,25 @@ type VendorSpec struct {
 	Specs   []BranchSpec `yaml:"specs"`
 }
 
+// BranchSpec defines mappings for a specific Git ref (branch, tag, or commit).
 type BranchSpec struct {
 	Ref           string        `yaml:"ref"`
 	DefaultTarget string        `yaml:"default_target,omitempty"`
 	Mapping       []PathMapping `yaml:"mapping"`
 }
 
+// PathMapping defines a source-to-destination path mapping for vendoring.
 type PathMapping struct {
 	From string `yaml:"from"`
 	To   string `yaml:"to"`
 }
 
+// VendorLock represents the lock file (vendor.lock) storing resolved commit hashes.
 type VendorLock struct {
 	Vendors []LockDetails `yaml:"vendors"`
 }
 
+// LockDetails contains the locked state for a specific vendor and ref.
 type LockDetails struct {
 	Name        string `yaml:"name"`
 	Ref         string `yaml:"ref"`

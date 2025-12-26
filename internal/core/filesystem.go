@@ -47,13 +47,13 @@ func (fs *OSFileSystem) CopyFile(src, dst string) (CopyStats, error) {
 	if err != nil {
 		return CopyStats{}, err
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 
 	dest, err := os.Create(dst)
 	if err != nil {
 		return CopyStats{}, err
 	}
-	defer dest.Close()
+	defer func() { _ = dest.Close() }()
 
 	bytes, err := io.Copy(dest, source)
 	if err != nil {

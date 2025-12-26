@@ -489,7 +489,7 @@ func TestSyncVendor_FileCopyFailsInMapping(t *testing.T) {
 
 	// Mock: License copy succeeds, but mapping copy fails
 	// License copy happens first and succeeds
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(src, dst string) (CopyStats, error) {
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(_, dst string) (CopyStats, error) {
 		if contains(dst, "licenses") {
 			return CopyStats{FileCount: 1, ByteCount: 100}, nil // License copy succeeds
 		}
@@ -530,7 +530,7 @@ func TestSyncVendor_LicenseCopyFails(t *testing.T) {
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	// Mock: License copy fails
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(src, dst string) (CopyStats, error) {
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(_, dst string) (CopyStats, error) {
 		if contains(dst, "licenses") {
 			return CopyStats{}, fmt.Errorf("disk full")
 		}
@@ -554,4 +554,3 @@ func TestSyncVendor_LicenseCopyFails(t *testing.T) {
 // ============================================================================
 // TestUpdateAll - Comprehensive tests for update orchestration
 // ============================================================================
-

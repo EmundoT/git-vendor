@@ -21,7 +21,7 @@ func NewNonInteractiveTUICallback(flags core.NonInteractiveFlags) *NonInteractiv
 // ShowError displays an error message
 func (n *NonInteractiveTUICallback) ShowError(title, message string) {
 	if n.flags.Mode == core.OutputJSON {
-		n.FormatJSON(core.JSONOutput{
+		_ = n.FormatJSON(core.JSONOutput{
 			Status: "error",
 			Error: &core.JSONError{
 				Title:   title,
@@ -37,7 +37,7 @@ func (n *NonInteractiveTUICallback) ShowError(title, message string) {
 // ShowSuccess displays a success message
 func (n *NonInteractiveTUICallback) ShowSuccess(message string) {
 	if n.flags.Mode == core.OutputJSON {
-		n.FormatJSON(core.JSONOutput{
+		_ = n.FormatJSON(core.JSONOutput{
 			Status:  "success",
 			Message: message,
 		})
@@ -49,7 +49,7 @@ func (n *NonInteractiveTUICallback) ShowSuccess(message string) {
 // ShowWarning displays a warning message
 func (n *NonInteractiveTUICallback) ShowWarning(title, message string) {
 	if n.flags.Mode == core.OutputJSON {
-		n.FormatJSON(core.JSONOutput{
+		_ = n.FormatJSON(core.JSONOutput{
 			Status:  "warning",
 			Message: fmt.Sprintf("%s: %s", title, message),
 		})
@@ -72,7 +72,7 @@ func (n *NonInteractiveTUICallback) AskConfirmation(title, message string) bool 
 // ShowLicenseCompliance displays license compliance information
 func (n *NonInteractiveTUICallback) ShowLicenseCompliance(license string) {
 	if n.flags.Mode == core.OutputJSON {
-		n.FormatJSON(core.JSONOutput{
+		_ = n.FormatJSON(core.JSONOutput{
 			Status:  "success",
 			Message: fmt.Sprintf("License Verified: %s", license),
 			Data: map[string]interface{}{

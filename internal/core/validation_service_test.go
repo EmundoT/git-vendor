@@ -351,7 +351,7 @@ func TestValidateConfig(t *testing.T) {
 			vendorDir := filepath.Join(tempDir, "vendor")
 			m := newTestManager(vendorDir)
 			// Create vendor directory before saving config
-			os.MkdirAll(vendorDir, 0755)
+			_ = os.MkdirAll(vendorDir, 0755)
 
 			// Save the test config
 			if err := m.saveConfig(tt.config); err != nil {
@@ -386,7 +386,7 @@ func TestDetectConflicts_EmptyOwners(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir := t.TempDir()
 	vendorDir := filepath.Join(tempDir, "vendor")
-	os.MkdirAll(vendorDir, 0755)
+	_ = os.MkdirAll(vendorDir, 0755)
 
 	// Create Manager with proper initialization
 	configStore := NewFileConfigStore(vendorDir)
@@ -448,7 +448,7 @@ func TestDetectConflicts_EmptyOwners(t *testing.T) {
 func TestDetectConflicts_NoPanic(t *testing.T) {
 	tempDir := t.TempDir()
 	vendorDir := filepath.Join(tempDir, "vendor")
-	os.MkdirAll(vendorDir, 0755)
+	_ = os.MkdirAll(vendorDir, 0755)
 
 	configStore := NewFileConfigStore(vendorDir)
 	lockStore := NewFileLockStore(vendorDir)
@@ -507,7 +507,7 @@ func TestDetectConflicts_Comprehensive(t *testing.T) {
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
 		// Create vendor directory before saving config
-		os.MkdirAll(vendorDir, 0755)
+		_ = os.MkdirAll(vendorDir, 0755)
 
 		config := types.VendorConfig{
 			Vendors: []types.VendorSpec{
@@ -557,7 +557,7 @@ func TestDetectConflicts_Comprehensive(t *testing.T) {
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
 		// Create vendor directory before saving config
-		os.MkdirAll(vendorDir, 0755)
+		_ = os.MkdirAll(vendorDir, 0755)
 
 		config := types.VendorConfig{
 			Vendors: []types.VendorSpec{

@@ -22,11 +22,11 @@ func TestNonInteractiveTUICallback_ShowError_Quiet(t *testing.T) {
 
 	callback.ShowError("Test Error", "This should not appear")
 
-	w.Close()
+	_ = w.Close()
 	os.Stderr = oldStderr
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	if buf.String() != "" {
 		t.Errorf("Expected no output in quiet mode, got: %s", buf.String())
@@ -45,11 +45,11 @@ func TestNonInteractiveTUICallback_ShowError_JSON(t *testing.T) {
 
 	callback.ShowError("Test Error", "Test message")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	var output core.JSONOutput
 	if err := json.Unmarshal(buf.Bytes(), &output); err != nil {
@@ -85,11 +85,11 @@ func TestNonInteractiveTUICallback_ShowSuccess_Normal(t *testing.T) {
 
 	callback.ShowSuccess("Operation succeeded")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	expected := "Operation succeeded\n"
 	if buf.String() != expected {
@@ -109,11 +109,11 @@ func TestNonInteractiveTUICallback_ShowSuccess_Quiet(t *testing.T) {
 
 	callback.ShowSuccess("This should not appear")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	if buf.String() != "" {
 		t.Errorf("Expected no output in quiet mode, got: %s", buf.String())
@@ -132,11 +132,11 @@ func TestNonInteractiveTUICallback_ShowSuccess_JSON(t *testing.T) {
 
 	callback.ShowSuccess("Operation succeeded")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	var output core.JSONOutput
 	if err := json.Unmarshal(buf.Bytes(), &output); err != nil {
@@ -177,11 +177,11 @@ func TestNonInteractiveTUICallback_AskConfirmation_NoYes(t *testing.T) {
 
 	result := callback.AskConfirmation("Test Confirmation", "Proceed?")
 
-	w.Close()
+	_ = w.Close()
 	os.Stderr = oldStderr
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	if result {
 		t.Error("Expected confirmation to return false without --yes flag")
@@ -216,11 +216,11 @@ func TestNonInteractiveTUICallback_FormatJSON(t *testing.T) {
 		t.Fatalf("FormatJSON failed: %v", err)
 	}
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	var parsed core.JSONOutput
 	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
@@ -304,11 +304,11 @@ func TestNonInteractiveTUICallback_ShowWarning_JSON(t *testing.T) {
 
 	callback.ShowWarning("Test Warning", "Warning message")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	var output core.JSONOutput
 	if err := json.Unmarshal(buf.Bytes(), &output); err != nil {
@@ -336,11 +336,11 @@ func TestNonInteractiveTUICallback_ShowLicenseCompliance_JSON(t *testing.T) {
 
 	callback.ShowLicenseCompliance("MIT")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	var output core.JSONOutput
 	if err := json.Unmarshal(buf.Bytes(), &output); err != nil {

@@ -1,3 +1,4 @@
+// Package main implements the git-vendor CLI tool for managing vendored dependencies from Git repositories.
 package main
 
 import (
@@ -10,8 +11,8 @@ import (
 )
 
 // parseCommonFlags extracts common non-interactive flags from args
-// Returns: flags, remainingArgs, error
-func parseCommonFlags(args []string) (core.NonInteractiveFlags, []string, error) {
+// Returns: flags, remainingArgs
+func parseCommonFlags(args []string) (core.NonInteractiveFlags, []string) {
 	flags := core.NonInteractiveFlags{}
 	var remaining []string
 
@@ -32,7 +33,7 @@ func parseCommonFlags(args []string) (core.NonInteractiveFlags, []string, error)
 		}
 	}
 
-	return flags, remaining, nil
+	return flags, remaining
 }
 
 // countSynced counts how many vendors are synced
@@ -63,8 +64,11 @@ func main() {
 
 	switch command {
 	case "init":
-    manager.Init()
-    tui.PrintSuccess("Initialized in ./vendor/")
+		if err := manager.Init(); err != nil {
+			tui.PrintError("Initialization Failed", err.Error())
+			os.Exit(1)
+		}
+		tui.PrintSuccess("Initialized in ./vendor/")
 
 	case "add":
 		if !core.IsVendorInitialized() {
@@ -78,10 +82,14 @@ func main() {
 			os.Exit(1)
 		}
 		existing := make(map[string]types.VendorSpec)
-		for _, v := range cfg.Vendors { existing[v.URL] = v }
+		for _, v := range cfg.Vendors {
+			existing[v.URL] = v
+		}
 
 		spec := tui.RunAddWizard(manager, existing)
-		if spec == nil { return }
+		if spec == nil {
+			return
+		}
 
 		if err := manager.AddVendor(*spec); err != nil {
 			tui.PrintError("Failed", err.Error())
@@ -110,23 +118,30 @@ func main() {
 			os.Exit(1)
 		}
 		var names []string
-		for _, v := range cfg.Vendors { names = append(names, v.Name) }
-		
+		for _, v := range cfg.Vendors {
+			names = append(names, v.Name)
+		}
+
 		if len(names) == 0 {
 			tui.PrintWarning("Empty", "No vendors found.")
 			return
 		}
 
 		targetName := tui.RunEditWizardName(names)
-		
+
 		var targetVendor types.VendorSpec
 		for _, v := range cfg.Vendors {
-			if v.Name == targetName { targetVendor = v; break }
+			if v.Name == targetName {
+				targetVendor = v
+				break
+			}
 		}
-		
+
 		updatedSpec := tui.RunEditVendorWizard(manager, targetVendor)
-		if updatedSpec == nil { return }
-		
+		if updatedSpec == nil {
+			return
+		}
+
 		if err := manager.SaveVendor(*updatedSpec); err != nil {
 			tui.PrintError("Error", err.Error())
 		} else {
@@ -136,11 +151,7 @@ func main() {
 
 	case "remove":
 		// Parse common flags
-		flags, args, err := parseCommonFlags(os.Args[2:])
-		if err != nil {
-			tui.PrintError("Error", err.Error())
-			os.Exit(1)
-		}
+		flags, args := parseCommonFlags(os.Args[2:])
 
 		// Get vendor name from remaining args
 		if len(args) < 1 {
@@ -204,11 +215,7 @@ func main() {
 
 	case "list":
 		// Parse common flags
-		flags, _, err := parseCommonFlags(os.Args[2:])
-		if err != nil {
-			tui.PrintError("Error", err.Error())
-			os.Exit(1)
-		}
+		flags, _ := parseCommonFlags(os.Args[2:])
 
 		// Create appropriate callback
 		var callback core.UICallback
@@ -240,7 +247,8 @@ func main() {
 			}
 		}
 
-		if flags.Mode == core.OutputJSON {
+		switch {
+		case flags.Mode == core.OutputJSON:
 			// JSON output mode
 			vendorData := make([]map[string]interface{}, 0, len(cfg.Vendors))
 			for _, v := range cfg.Vendors {
@@ -267,7 +275,7 @@ func main() {
 				})
 			}
 
-			callback.FormatJSON(core.JSONOutput{
+			_ = callback.FormatJSON(core.JSONOutput{
 				Status: "success",
 				Data: map[string]interface{}{
 					"vendors":        vendorData,
@@ -275,11 +283,11 @@ func main() {
 					"conflict_count": len(conflicts),
 				},
 			})
-		} else if len(cfg.Vendors) == 0 {
+		case len(cfg.Vendors) == 0:
 			if flags.Mode != core.OutputQuiet {
 				fmt.Println("No vendors configured.")
 			}
-		} else {
+		default:
 			// Normal output mode
 			fmt.Println(tui.StyleTitle("Configured Vendors:"))
 			fmt.Println()
@@ -322,11 +330,7 @@ func main() {
 
 	case "sync":
 		// Parse common flags
-		flags, args, err := parseCommonFlags(os.Args[2:])
-		if err != nil {
-			tui.PrintError("Error", err.Error())
-			os.Exit(1)
-		}
+		flags, args := parseCommonFlags(os.Args[2:])
 
 		// Create appropriate callback
 		var callback core.UICallback
@@ -343,14 +347,15 @@ func main() {
 		vendorName := ""
 
 		for _, arg := range args {
-			if arg == "--dry-run" {
+			switch {
+			case arg == "--dry-run":
 				dryRun = true
-			} else if arg == "--force" {
+			case arg == "--force":
 				force = true
-			} else if arg == "--verbose" || arg == "-v" {
+			case arg == "--verbose" || arg == "-v":
 				core.Verbose = true
 				manager.UpdateVerboseMode(true)
-			} else if !strings.HasPrefix(arg, "--") {
+			case !strings.HasPrefix(arg, "--"):
 				vendorName = arg
 			}
 		}
@@ -379,11 +384,7 @@ func main() {
 
 	case "update":
 		// Parse common flags
-		flags, args, err := parseCommonFlags(os.Args[2:])
-		if err != nil {
-			tui.PrintError("Error", err.Error())
-			os.Exit(1)
-		}
+		flags, args := parseCommonFlags(os.Args[2:])
 
 		// Create appropriate callback
 		var callback core.UICallback
@@ -415,11 +416,7 @@ func main() {
 
 	case "validate":
 		// Parse common flags
-		flags, _, err := parseCommonFlags(os.Args[2:])
-		if err != nil {
-			tui.PrintError("Error", err.Error())
-			os.Exit(1)
-		}
+		flags, _ := parseCommonFlags(os.Args[2:])
 
 		// Create appropriate callback
 		var callback core.UICallback
@@ -475,7 +472,7 @@ func main() {
 			}
 
 			if len(conflicts) > 0 {
-				callback.FormatJSON(core.JSONOutput{
+				_ = callback.FormatJSON(core.JSONOutput{
 					Status:  "error",
 					Message: fmt.Sprintf("Found %s", core.Pluralize(len(conflicts), "conflict", "conflicts")),
 					Data: map[string]interface{}{
@@ -486,18 +483,18 @@ func main() {
 					},
 				})
 				os.Exit(1)
-			} else {
-				callback.FormatJSON(core.JSONOutput{
-					Status:  "success",
-					Message: "Validation passed",
-					Data: map[string]interface{}{
-						"config_valid":   true,
-						"conflicts":      []map[string]interface{}{},
-						"conflict_count": 0,
-						"vendor_count":   len(cfg.Vendors),
-					},
-				})
 			}
+
+			_ = callback.FormatJSON(core.JSONOutput{
+				Status:  "success",
+				Message: "Validation passed",
+				Data: map[string]interface{}{
+					"config_valid":   true,
+					"conflicts":      []map[string]interface{}{},
+					"conflict_count": 0,
+					"vendor_count":   len(cfg.Vendors),
+				},
+			})
 		} else {
 			// Normal output mode
 			if len(conflicts) > 0 {
@@ -520,11 +517,7 @@ func main() {
 
 	case "status":
 		// Parse common flags
-		flags, _, err := parseCommonFlags(os.Args[2:])
-		if err != nil {
-			tui.PrintError("Error", err.Error())
-			os.Exit(1)
-		}
+		flags, _ := parseCommonFlags(os.Args[2:])
 
 		// Create appropriate callback
 		var callback core.UICallback
@@ -559,7 +552,7 @@ func main() {
 				})
 			}
 
-			callback.FormatJSON(core.JSONOutput{
+			_ = callback.FormatJSON(core.JSONOutput{
 				Status: func() string {
 					if status.AllSynced {
 						return "success"
@@ -588,7 +581,7 @@ func main() {
 			} else {
 				// Show which vendors need syncing
 				callback.ShowWarning("Vendors Need Syncing", fmt.Sprintf("%s out of sync",
-					core.Pluralize(len(status.VendorStatuses) - countSynced(status.VendorStatuses), "vendor", "vendors")))
+					core.Pluralize(len(status.VendorStatuses)-countSynced(status.VendorStatuses), "vendor", "vendors")))
 				fmt.Println()
 
 				for _, vs := range status.VendorStatuses {

@@ -194,7 +194,7 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 	if err != nil {
 		return nil, CopyStats{}, err
 	}
-	defer s.fs.RemoveAll(tempDir)
+	defer func() { _ = s.fs.RemoveAll(tempDir) }()
 
 	// Initialize git repo
 	if err := s.gitClient.Init(tempDir); err != nil {
