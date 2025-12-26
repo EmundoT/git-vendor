@@ -52,10 +52,16 @@ func main() {
 			tui.PrintError("Failed", err.Error())
 			os.Exit(1)
 		}
-		tui.PrintSuccess("Done.")
+		tui.PrintSuccess(fmt.Sprintf("Added %s", spec.Name))
 
 		// Show conflict warnings after adding vendor
 		tui.ShowConflictWarnings(manager, spec.Name)
+
+		// Show next steps
+		fmt.Println()
+		fmt.Println("Next steps:")
+		fmt.Println("  git-vendor sync      # Download files at locked versions")
+		fmt.Println("  git-vendor update    # Fetch latest commits and update lockfile")
 
 	case "edit":
 		if !core.IsVendorInitialized() {
@@ -202,7 +208,7 @@ func main() {
 							prefix = "      └─"
 						}
 
-						fmt.Printf("%s %s → %s\n", prefix, m.From, dest)
+						fmt.Printf("%s %s (remote) → %s (local)\n", prefix, m.From, dest)
 					}
 				}
 				fmt.Println()
@@ -281,6 +287,13 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Get config for summary
+		cfg, err := manager.GetConfig()
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
+		}
+
 		// Perform config validation
 		if err := manager.ValidateConfig(); err != nil {
 			tui.PrintError("Validation Failed", err.Error())
@@ -299,14 +312,17 @@ func main() {
 			fmt.Println()
 			for _, conflict := range conflicts {
 				fmt.Printf("⚠ Conflict: %s\n", conflict.Path)
-				fmt.Printf("  • %s: %s → %s\n", conflict.Vendor1, conflict.Mapping1.From, conflict.Mapping1.To)
-				fmt.Printf("  • %s: %s → %s\n", conflict.Vendor2, conflict.Mapping2.From, conflict.Mapping2.To)
+				fmt.Printf("  • %s: %s (remote) → %s (local)\n", conflict.Vendor1, conflict.Mapping1.From, conflict.Mapping1.To)
+				fmt.Printf("  • %s: %s (remote) → %s (local)\n", conflict.Vendor2, conflict.Mapping2.From, conflict.Mapping2.To)
 				fmt.Println()
 			}
 			os.Exit(1)
 		}
 
-		tui.PrintSuccess("Validation passed. No issues found.")
+		tui.PrintSuccess("Validation passed")
+		fmt.Println("• Config syntax: OK")
+		fmt.Println("• Path conflicts: None")
+		fmt.Printf("• Vendors: %s\n", core.Pluralize(len(cfg.Vendors), "vendor", "vendors"))
 
 	default:
 		tui.PrintError("Unknown Command", fmt.Sprintf("'%s' is not a valid git-vendor command", command))

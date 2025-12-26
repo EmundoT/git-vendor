@@ -92,7 +92,8 @@ func (s *VendorSyncer) Init() error {
 	if err := s.fs.MkdirAll(filepath.Join(s.rootDir, LicenseDir), 0755); err != nil {
 		return err
 	}
-	return s.repository.Save(types.VendorSpec{})
+	// Save empty config with no vendors instead of empty vendor
+	return s.configStore.Save(types.VendorConfig{Vendors: []types.VendorSpec{}})
 }
 
 // AddVendor adds a new vendor with license compliance check
@@ -143,8 +144,13 @@ func (s *VendorSyncer) Sync() error {
 	// Check if lockfile exists, if not, run UpdateAll
 	lock, err := s.lockStore.Load()
 	if err != nil || len(lock.Vendors) == 0 {
-		fmt.Println("No lockfile found. Running update...")
-		return s.update.UpdateAll()
+		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
+		if err := s.update.UpdateAll(); err != nil {
+			return err
+		}
+		fmt.Println()
+		fmt.Println("Lockfile created. Now syncing files...")
+		return s.sync.Sync(SyncOptions{})
 	}
 	return s.sync.Sync(SyncOptions{})
 }
@@ -154,7 +160,7 @@ func (s *VendorSyncer) SyncDryRun() error {
 	// Check if lockfile exists for dry-run
 	lock, err := s.lockStore.Load()
 	if err != nil || len(lock.Vendors) == 0 {
-		fmt.Println("No lockfile found. Would run update to create lockfile.")
+		fmt.Println("No lockfile found. Would generate lockfile from latest commits, then sync files.")
 		return nil
 	}
 	return s.sync.Sync(SyncOptions{DryRun: true})
@@ -165,8 +171,12 @@ func (s *VendorSyncer) SyncWithOptions(vendorName string, force bool) error {
 	// Check if lockfile exists, if not, run UpdateAll
 	lock, err := s.lockStore.Load()
 	if err != nil || len(lock.Vendors) == 0 {
-		fmt.Println("No lockfile found. Running update...")
-		return s.update.UpdateAll()
+		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
+		if err := s.update.UpdateAll(); err != nil {
+			return err
+		}
+		fmt.Println()
+		fmt.Println("Lockfile created. Now syncing files...")
 	}
 	return s.sync.Sync(SyncOptions{
 		VendorName: vendorName,
