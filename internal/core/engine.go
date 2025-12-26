@@ -202,6 +202,11 @@ func (m *Manager) ValidateConfig() error {
 	return m.syncer.ValidateConfig()
 }
 
+// CheckSyncStatus checks if local files are in sync with the lockfile
+func (m *Manager) CheckSyncStatus() (types.SyncStatus, error) {
+	return m.syncer.CheckSyncStatus()
+}
+
 // UpdateVerboseMode updates the verbose flag for git operations
 func (m *Manager) UpdateVerboseMode(verbose bool) {
 	// Update the global git client

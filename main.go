@@ -35,6 +35,17 @@ func parseCommonFlags(args []string) (core.NonInteractiveFlags, []string, error)
 	return flags, remaining, nil
 }
 
+// countSynced counts how many vendors are synced
+func countSynced(statuses []types.VendorStatus) int {
+	count := 0
+	for _, s := range statuses {
+		if s.IsSynced {
+			count++
+		}
+	}
+	return count
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		tui.PrintHelp()
@@ -505,6 +516,93 @@ func main() {
 			fmt.Println("• Config syntax: OK")
 			fmt.Println("• Path conflicts: None")
 			fmt.Printf("• Vendors: %s\n", core.Pluralize(len(cfg.Vendors), "vendor", "vendors"))
+		}
+
+	case "status":
+		// Parse common flags
+		flags, _, err := parseCommonFlags(os.Args[2:])
+		if err != nil {
+			tui.PrintError("Error", err.Error())
+			os.Exit(1)
+		}
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		if !core.IsVendorInitialized() {
+			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Check sync status
+		status, err := manager.CheckSyncStatus()
+		if err != nil {
+			callback.ShowError("Status Check Failed", err.Error())
+			os.Exit(1)
+		}
+
+		if flags.Mode == core.OutputJSON {
+			// JSON output mode
+			vendorStatusData := make([]map[string]interface{}, 0, len(status.VendorStatuses))
+			for _, vs := range status.VendorStatuses {
+				vendorStatusData = append(vendorStatusData, map[string]interface{}{
+					"name":          vs.Name,
+					"ref":           vs.Ref,
+					"is_synced":     vs.IsSynced,
+					"missing_paths": vs.MissingPaths,
+				})
+			}
+
+			callback.FormatJSON(core.JSONOutput{
+				Status: func() string {
+					if status.AllSynced {
+						return "success"
+					}
+					return "warning"
+				}(),
+				Message: func() string {
+					if status.AllSynced {
+						return "All vendors synced"
+					}
+					return "Some vendors need syncing"
+				}(),
+				Data: map[string]interface{}{
+					"all_synced":      status.AllSynced,
+					"vendor_statuses": vendorStatusData,
+				},
+			})
+
+			if !status.AllSynced {
+				os.Exit(1)
+			}
+		} else {
+			// Normal output mode
+			if status.AllSynced {
+				callback.ShowSuccess("All vendors synced")
+			} else {
+				// Show which vendors need syncing
+				callback.ShowWarning("Vendors Need Syncing", fmt.Sprintf("%s out of sync",
+					core.Pluralize(len(status.VendorStatuses) - countSynced(status.VendorStatuses), "vendor", "vendors")))
+				fmt.Println()
+
+				for _, vs := range status.VendorStatuses {
+					if !vs.IsSynced {
+						fmt.Printf("⚠ %s @ %s\n", vs.Name, vs.Ref)
+						for _, path := range vs.MissingPaths {
+							fmt.Printf("  • Missing: %s\n", path)
+						}
+					}
+				}
+				fmt.Println()
+				fmt.Println("Run 'git-vendor sync' to fix.")
+				os.Exit(1)
+			}
 		}
 
 	default:
