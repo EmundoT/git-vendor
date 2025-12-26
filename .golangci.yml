@@ -15,10 +15,6 @@ linters-settings:
         severity: warning
       - name: unused-parameter
         severity: warning
-      - name: stutters
-        disabled: true
-      - name: var-naming
-        disabled: true
 
 linters:
   enable:
