@@ -1,3 +1,4 @@
+// Package tui provides terminal user interface components and callbacks for git-vendor.
 package tui
 
 import (
@@ -6,25 +7,32 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
-// TUICallback implements core.UICallback using charmbracelet TUI
+// TUICallback implements UICallback for interactive terminal use with styled output.
+//
+//nolint:revive // Name TUICallback is intentional and descriptive
 type TUICallback struct{}
 
+// NewTUICallback creates a new interactive terminal UI callback.
 func NewTUICallback() *TUICallback {
 	return &TUICallback{}
 }
 
+// ShowError displays an error message with confirmation dialog.
 func (t *TUICallback) ShowError(title, message string) {
 	PrintError(title, message)
 }
 
+// ShowSuccess displays a success message with styled output.
 func (t *TUICallback) ShowSuccess(message string) {
 	PrintSuccess(message)
 }
 
+// ShowWarning displays a warning message with styled output.
 func (t *TUICallback) ShowWarning(title, message string) {
 	PrintWarning(title, message)
 }
 
+// AskConfirmation prompts the user for yes/no confirmation.
 func (t *TUICallback) AskConfirmation(title, message string) bool {
 	var confirm bool
 	err := huh.NewConfirm().
@@ -40,10 +48,12 @@ func (t *TUICallback) AskConfirmation(title, message string) bool {
 	return confirm
 }
 
+// ShowLicenseCompliance displays license verification information.
 func (t *TUICallback) ShowLicenseCompliance(license string) {
 	PrintComplianceSuccess(license)
 }
 
+// StyleTitle returns a styled title string for terminal output.
 func (t *TUICallback) StyleTitle(title string) string {
 	return StyleTitle(title)
 }
@@ -59,6 +69,6 @@ func (t *TUICallback) IsAutoApprove() bool {
 }
 
 // FormatJSON is not used in interactive mode
-func (t *TUICallback) FormatJSON(output core.JSONOutput) error {
+func (t *TUICallback) FormatJSON(_ core.JSONOutput) error {
 	return nil
 }

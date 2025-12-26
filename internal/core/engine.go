@@ -15,7 +15,7 @@ const (
 	LicenseDir = "licenses"
 )
 
-// License constants
+// AllowedLicenses defines the list of open-source licenses permitted by default.
 var AllowedLicenses = []string{
 	"MIT",
 	"Apache-2.0",
@@ -37,7 +37,7 @@ const (
 	ErrComplianceFailed  = "compliance check failed"
 )
 
-// License file names
+// LicenseFileNames lists standard filenames checked when searching for repository licenses.
 var LicenseFileNames = []string{"LICENSE", "LICENSE.txt", "COPYING"}
 
 // Verbose controls whether git commands are logged
@@ -118,8 +118,8 @@ func IsVendorInitialized() bool {
 const ErrNotInitialized = "vendor directory not found. Run 'git-vendor init' first"
 
 // Init initializes the vendor directory structure
-func (m *Manager) Init() {
-	m.syncer.Init()
+func (m *Manager) Init() error {
+	return m.syncer.Init()
 }
 
 // ParseSmartURL extracts repository, ref, and path from URLs

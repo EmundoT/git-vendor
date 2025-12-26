@@ -3,10 +3,11 @@ package core
 // OutputMode controls how output is displayed
 type OutputMode int
 
+// OutputMode constants define available output formatting modes.
 const (
 	OutputNormal OutputMode = iota // Default: styled output
-	OutputQuiet                     // Minimal output
-	OutputJSON                      // Structured JSON
+	OutputQuiet                    // Minimal output
+	OutputJSON                     // Structured JSON
 )
 
 // NonInteractiveFlags groups all non-interactive options

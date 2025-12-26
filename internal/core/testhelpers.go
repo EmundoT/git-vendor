@@ -86,14 +86,18 @@ func findSubstring(s, substr string) bool {
 // ============================================================================
 
 // assertNoError fails the test if err is not nil
-func assertNoError(t interface{ Fatalf(format string, args ...interface{}) }, err error, msg string) {
+func assertNoError(t interface {
+	Fatalf(format string, args ...interface{})
+}, err error, msg string) {
 	if err != nil {
 		t.Fatalf("%s: expected no error, got: %v", msg, err)
 	}
 }
 
 // assertError fails the test if err is nil
-func assertError(t interface{ Fatalf(format string, args ...interface{}) }, err error, msg string) {
+func assertError(t interface {
+	Fatalf(format string, args ...interface{})
+}, err error, msg string) {
 	if err == nil {
 		t.Fatalf("%s: expected error, got nil", msg)
 	}

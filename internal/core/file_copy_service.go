@@ -65,16 +65,16 @@ func (s *FileCopyService) copyMapping(tempDir string, vendor types.VendorSpec, s
 			return CopyStats{}, fmt.Errorf("failed to copy directory %s to %s: %w", srcPath, destPath, err)
 		}
 		return stats, nil
-	} else {
-		if err := s.fs.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			return CopyStats{}, err
-		}
-		stats, err := s.fs.CopyFile(srcPath, destPath)
-		if err != nil {
-			return CopyStats{}, fmt.Errorf("failed to copy file %s to %s: %w", srcPath, destPath, err)
-		}
-		return stats, nil
 	}
+
+	if err := s.fs.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return CopyStats{}, err
+	}
+	stats, err := s.fs.CopyFile(srcPath, destPath)
+	if err != nil {
+		return CopyStats{}, fmt.Errorf("failed to copy file %s to %s: %w", srcPath, destPath, err)
+	}
+	return stats, nil
 }
 
 // cleanSourcePath removes blob/tree prefixes from source path

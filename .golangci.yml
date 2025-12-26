@@ -17,6 +17,10 @@ linters-settings:
         severity: warning
       - name: unused-parameter
         severity: warning
+      - name: stutters
+        disabled: true
+      - name: var-naming
+        disabled: true
 
 linters:
   enable:
@@ -40,6 +44,12 @@ issues:
         - errcheck
         - gocritic
         - unparam
+    - text: "stutters"
+      linters:
+        - revive
+    - text: "avoid meaningless package names"
+      linters:
+        - revive
 
 run:
   timeout: 5m

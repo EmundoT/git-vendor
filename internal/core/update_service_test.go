@@ -86,7 +86,7 @@ func TestUpdateAll_HappyPath_MultipleVendors(t *testing.T) {
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil).Times(3)
 
 	callCount := 0
-	git.EXPECT().GetHeadHash(gomock.Any()).DoAndReturn(func(dir string) (string, error) {
+	git.EXPECT().GetHeadHash(gomock.Any()).DoAndReturn(func(_ string) (string, error) {
 		callCount++
 		return fmt.Sprintf("hash%d00000", callCount), nil
 	}).Times(3)
@@ -156,7 +156,7 @@ func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
 
 	// Mock: vendor-bad fails (second call), others succeed
 	callCount := 0
-	git.EXPECT().Init(gomock.Any()).DoAndReturn(func(dir string) error {
+	git.EXPECT().Init(gomock.Any()).DoAndReturn(func(_ string) error {
 		callCount++
 		if callCount == 2 {
 			return fmt.Errorf("git init failed")
@@ -345,7 +345,7 @@ func TestUpdateAll_MultipleSpecsPerVendor(t *testing.T) {
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil).Times(3)
 
 	hashCounter := 0
-	git.EXPECT().GetHeadHash(gomock.Any()).DoAndReturn(func(dir string) (string, error) {
+	git.EXPECT().GetHeadHash(gomock.Any()).DoAndReturn(func(_ string) (string, error) {
 		hashCounter++
 		return fmt.Sprintf("hash%d00000", hashCounter), nil
 	}).Times(3)

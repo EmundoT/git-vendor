@@ -29,7 +29,7 @@ func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
-	defer e.fs.RemoveAll(tempDir)
+	defer func() { _ = e.fs.RemoveAll(tempDir) }()
 
 	// Clone with filter=blob:none to avoid downloading file contents
 	opts := &types.CloneOptions{
@@ -44,7 +44,7 @@ func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error)
 
 	// Fetch specific ref if needed
 	if ref != "" && ref != "HEAD" {
-		e.gitClient.Fetch(tempDir, 0, ref)
+		_ = e.gitClient.Fetch(tempDir, 0, ref)
 	}
 
 	// Determine target ref

@@ -17,7 +17,7 @@ func TestLoadConfig(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		// Create a valid config
 		expectedConfig := types.VendorConfig{
@@ -68,7 +68,7 @@ func TestLoadConfig(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		loadedConfig, err := m.loadConfig()
 		if err != nil {
@@ -103,7 +103,7 @@ func TestLoadConfig(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		config := types.VendorConfig{
 			Vendors: []types.VendorSpec{
@@ -156,7 +156,7 @@ func TestSaveConfig(t *testing.T) {
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
 		// Create directory first (saveConfig doesn't create directories)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		config := types.VendorConfig{
 			Vendors: []types.VendorSpec{
@@ -190,7 +190,7 @@ func TestSaveConfig(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		config := types.VendorConfig{
 			Vendors: []types.VendorSpec{
@@ -249,7 +249,7 @@ func TestLoadLock(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		expectedLock := types.VendorLock{
 			Vendors: []types.LockDetails{
@@ -290,7 +290,7 @@ func TestLoadLock(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		_, err := m.loadLock()
 		if err == nil {
@@ -302,7 +302,7 @@ func TestLoadLock(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		// Write invalid YAML
 		lockPath := filepath.Join(m.RootDir, "vendor.lock")
@@ -321,7 +321,7 @@ func TestLoadLock(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		lock := types.VendorLock{
 			Vendors: []types.LockDetails{
@@ -362,7 +362,7 @@ func TestSaveLock(t *testing.T) {
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
 		// Create directory first (saveLock doesn't create directories)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		lock := types.VendorLock{
 			Vendors: []types.LockDetails{
@@ -390,7 +390,7 @@ func TestSaveLock(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		lock := types.VendorLock{
 			Vendors: []types.LockDetails{
@@ -437,7 +437,7 @@ func TestSaveLock(t *testing.T) {
 		tempDir := t.TempDir()
 		vendorDir := filepath.Join(tempDir, "vendor")
 		m := newTestManager(vendorDir)
-		os.MkdirAll(m.RootDir, 0755)
+		_ = os.MkdirAll(m.RootDir, 0755)
 
 		emptyLock := types.VendorLock{
 			Vendors: []types.LockDetails{},

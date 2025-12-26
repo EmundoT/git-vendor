@@ -86,9 +86,9 @@ func TestCopyDir(t *testing.T) {
 		dstDir := filepath.Join(tempDir, "dest")
 
 		// Create source directory with files
-		os.MkdirAll(filepath.Join(srcDir, "subdir"), 0755)
-		os.WriteFile(filepath.Join(srcDir, "file1.txt"), []byte("content1"), 0644)
-		os.WriteFile(filepath.Join(srcDir, "subdir", "file2.txt"), []byte("content2"), 0644)
+		_ = os.MkdirAll(filepath.Join(srcDir, "subdir"), 0755)
+		_ = os.WriteFile(filepath.Join(srcDir, "file1.txt"), []byte("content1"), 0644)
+		_ = os.WriteFile(filepath.Join(srcDir, "subdir", "file2.txt"), []byte("content2"), 0644)
 
 		// Copy directory
 		if _, err := fs.CopyDir(srcDir, dstDir); err != nil {
@@ -116,9 +116,9 @@ func TestCopyDir(t *testing.T) {
 		dstDir := filepath.Join(tempDir, "dest")
 
 		// Create source with .git directory
-		os.MkdirAll(filepath.Join(srcDir, ".git", "objects"), 0755)
-		os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("content"), 0644)
-		os.WriteFile(filepath.Join(srcDir, ".git", "config"), []byte("gitconfig"), 0644)
+		_ = os.MkdirAll(filepath.Join(srcDir, ".git", "objects"), 0755)
+		_ = os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("content"), 0644)
+		_ = os.WriteFile(filepath.Join(srcDir, ".git", "config"), []byte("gitconfig"), 0644)
 
 		// Copy directory
 		if _, err := fs.CopyDir(srcDir, dstDir); err != nil {

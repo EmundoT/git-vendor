@@ -37,10 +37,7 @@ func createMockSyncer(
 	config ConfigStore,
 	lock LockStore,
 	license LicenseChecker,
-	ui UICallback,
+	_ UICallback,
 ) *VendorSyncer {
-	if ui == nil {
-		ui = &SilentUICallback{}
-	}
-	return NewVendorSyncer(config, lock, git, fs, license, "/mock/vendor", ui)
+	return NewVendorSyncer(config, lock, git, fs, license, "/mock/vendor", &SilentUICallback{})
 }

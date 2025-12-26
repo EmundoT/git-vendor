@@ -1,3 +1,4 @@
+// Package core implements the business logic for git-vendor including configuration, syncing, and Git operations.
 package core
 
 import (
