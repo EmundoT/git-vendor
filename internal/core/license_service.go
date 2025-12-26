@@ -74,7 +74,7 @@ func (s *LicenseService) CopyLicense(tempDir, vendorName string) error {
 
 	// Copy license file
 	dest := filepath.Join(licenseDir, vendorName+".txt")
-	if err := s.fs.CopyFile(licenseSrc, dest); err != nil {
+	if _, err := s.fs.CopyFile(licenseSrc, dest); err != nil {
 		return fmt.Errorf("failed to copy license from %s to %s: %w", licenseSrc, dest, err)
 	}
 

@@ -46,7 +46,7 @@ func (s *UpdateService) UpdateAll() error {
 	// Update each vendor
 	for _, v := range config.Vendors {
 		// Sync vendor without lock (force latest)
-		updatedRefs, err := s.syncService.syncVendor(v, nil)
+		updatedRefs, _, err := s.syncService.syncVendor(v, nil)
 		if err != nil {
 			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 			continue

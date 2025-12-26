@@ -80,6 +80,9 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 		s.printSyncHeader(config, opts.VendorName)
 	}
 
+	// Track total stats across all vendors
+	var totalStats CopyStats
+
 	// Sync vendors
 	for _, v := range config.Vendors {
 		// Skip vendors that don't match the filter
@@ -95,10 +98,18 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 			if opts.Force {
 				refs = nil
 			}
-			if _, err := s.syncVendor(v, refs); err != nil {
+			_, stats, err := s.syncVendor(v, refs)
+			if err != nil {
 				return err
 			}
+			totalStats.Add(stats)
 		}
+	}
+
+	// Display summary (only in non-dry-run mode)
+	if !opts.DryRun && totalStats.FileCount > 0 {
+		fmt.Println()
+		fmt.Printf("Summary: Synced %s across all vendors\n", Pluralize(totalStats.FileCount, "file", "files"))
 	}
 
 	return nil
@@ -174,43 +185,49 @@ func (s *SyncService) previewSyncVendor(v types.VendorSpec, lockedRefs map[strin
 }
 
 // syncVendor syncs a single vendor
-// Returns a map of ref to commit hash for all synced refs
-func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (map[string]string, error) {
+// Returns a map of ref to commit hash and total stats for all synced refs
+func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (map[string]string, CopyStats, error) {
 	fmt.Printf("⠿ %s (cloning repository...)\n", v.Name)
 
 	// Create temp directory for cloning
 	tempDir, err := s.fs.CreateTemp("", "git-vendor-*")
 	if err != nil {
-		return nil, err
+		return nil, CopyStats{}, err
 	}
 	defer s.fs.RemoveAll(tempDir)
 
 	// Initialize git repo
 	if err := s.gitClient.Init(tempDir); err != nil {
-		return nil, fmt.Errorf("failed to initialize git repository for %s: %w", v.Name, err)
+		return nil, CopyStats{}, fmt.Errorf("failed to initialize git repository for %s: %w", v.Name, err)
 	}
 	if err := s.gitClient.AddRemote(tempDir, "origin", v.URL); err != nil {
-		return nil, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, v.URL, err)
+		return nil, CopyStats{}, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, v.URL, err)
 	}
 
 	results := make(map[string]string)
+	var totalStats CopyStats
 
 	// Sync each ref
 	for _, spec := range v.Specs {
-		hash, err := s.syncRef(tempDir, v, spec, lockedRefs)
+		hash, stats, err := s.syncRef(tempDir, v, spec, lockedRefs)
 		if err != nil {
-			return nil, err
+			return nil, CopyStats{}, err
 		}
 		results[spec.Ref] = hash
+		totalStats.Add(stats)
 
-		fmt.Printf("  ✓ %s @ %s (synced %s)\n", v.Name, spec.Ref, Pluralize(len(spec.Mapping), "path", "paths"))
+		// Display stats with proper pluralization
+		fmt.Printf("  ✓ %s @ %s (synced %s: %s)\n",
+			v.Name, spec.Ref,
+			Pluralize(len(spec.Mapping), "path", "paths"),
+			Pluralize(stats.FileCount, "file", "files"))
 	}
 
-	return results, nil
+	return results, totalStats, nil
 }
 
 // syncRef syncs a single ref for a vendor
-func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string) (string, error) {
+func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string) (string, CopyStats, error) {
 	targetCommit := ""
 	isLocked := false
 
@@ -226,24 +243,24 @@ func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.Bra
 	if isLocked {
 		// Locked sync - checkout specific commit
 		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
-			return "", fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
+			return "", CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 		}
 		if err := s.gitClient.Checkout(tempDir, targetCommit); err != nil {
 			// Detect stale lock hash error and provide helpful message
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "reference is not a tree") || strings.Contains(errMsg, "not a valid object") {
-				return "", fmt.Errorf(ErrStaleCommitMsg, targetCommit[:7])
+				return "", CopyStats{}, fmt.Errorf(ErrStaleCommitMsg, targetCommit[:7])
 			}
-			return "", fmt.Errorf(ErrCheckoutFailed, targetCommit, err)
+			return "", CopyStats{}, fmt.Errorf(ErrCheckoutFailed, targetCommit, err)
 		}
 	} else {
 		// Unlocked sync - checkout latest
 		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
-			return "", fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
+			return "", CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 		}
 		if err := s.gitClient.Checkout(tempDir, "FETCH_HEAD"); err != nil {
 			if err := s.gitClient.Checkout(tempDir, spec.Ref); err != nil {
-				return "", fmt.Errorf(ErrRefCheckoutFailed, spec.Ref, err)
+				return "", CopyStats{}, fmt.Errorf(ErrRefCheckoutFailed, spec.Ref, err)
 			}
 		}
 	}
@@ -251,20 +268,21 @@ func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.Bra
 	// Get current commit hash
 	hash, err := s.gitClient.GetHeadHash(tempDir)
 	if err != nil {
-		return "", fmt.Errorf("failed to get commit hash for %s @ %s: %w", v.Name, spec.Ref, err)
+		return "", CopyStats{}, fmt.Errorf("failed to get commit hash for %s @ %s: %w", v.Name, spec.Ref, err)
 	}
 
-	// Copy license file
+	// Copy license file (don't count in stats)
 	if err := s.license.CopyLicense(tempDir, v.Name); err != nil {
-		return "", err
+		return "", CopyStats{}, err
 	}
 
-	// Copy files according to mappings
-	if err := s.fileCopy.CopyMappings(tempDir, v, spec); err != nil {
-		return "", err
+	// Copy files according to mappings and collect stats
+	stats, err := s.fileCopy.CopyMappings(tempDir, v, spec)
+	if err != nil {
+		return "", CopyStats{}, err
 	}
 
-	return hash, nil
+	return hash, stats, nil
 }
 
 // fetchWithFallback tries shallow fetch first, falls back to full fetch if needed

@@ -9,10 +9,22 @@ import (
 	"strings"
 )
 
+// CopyStats tracks file copy statistics
+type CopyStats struct {
+	FileCount int
+	ByteCount int64
+}
+
+// Add adds another CopyStats to this one
+func (s *CopyStats) Add(other CopyStats) {
+	s.FileCount += other.FileCount
+	s.ByteCount += other.ByteCount
+}
+
 // FileSystem abstracts file system operations for testing
 type FileSystem interface {
-	CopyFile(src, dst string) error
-	CopyDir(src, dst string) error
+	CopyFile(src, dst string) (CopyStats, error)
+	CopyDir(src, dst string) (CopyStats, error)
 	MkdirAll(path string, perm os.FileMode) error
 	ReadDir(path string) ([]string, error)
 	Stat(path string) (os.FileInfo, error)
@@ -30,26 +42,32 @@ func NewOSFileSystem() *OSFileSystem {
 }
 
 // CopyFile copies a single file from src to dst
-func (fs *OSFileSystem) CopyFile(src, dst string) error {
+func (fs *OSFileSystem) CopyFile(src, dst string) (CopyStats, error) {
 	source, err := os.Open(src)
 	if err != nil {
-		return err
+		return CopyStats{}, err
 	}
 	defer source.Close()
 
 	dest, err := os.Create(dst)
 	if err != nil {
-		return err
+		return CopyStats{}, err
 	}
 	defer dest.Close()
 
-	_, err = io.Copy(dest, source)
-	return err
+	bytes, err := io.Copy(dest, source)
+	if err != nil {
+		return CopyStats{}, err
+	}
+
+	return CopyStats{FileCount: 1, ByteCount: bytes}, nil
 }
 
 // CopyDir recursively copies a directory from src to dst
-func (fs *OSFileSystem) CopyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+func (fs *OSFileSystem) CopyDir(src, dst string) (CopyStats, error) {
+	var stats CopyStats
+
+	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -65,8 +83,17 @@ func (fs *OSFileSystem) CopyDir(src, dst string) error {
 			return os.MkdirAll(destPath, info.Mode())
 		}
 
-		return fs.CopyFile(path, destPath)
+		// Copy file and add to stats
+		fileStats, err := fs.CopyFile(path, destPath)
+		if err != nil {
+			return err
+		}
+		stats.Add(fileStats)
+
+		return nil
 	})
+
+	return stats, err
 }
 
 // MkdirAll creates a directory path

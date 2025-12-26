@@ -31,12 +31,12 @@ func TestSyncVendor_HappyPath_LockedRef(t *testing.T) {
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	hashes, err := syncer.syncVendor(vendor, lockedRefs)
+	hashes, _, err := syncer.syncVendor(vendor, lockedRefs)
 
 	// Verify
 	if err != nil {
@@ -67,12 +67,12 @@ func TestSyncVendor_HappyPath_UnlockedRef(t *testing.T) {
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute with nil lockedRefs (unlocked mode)
-	hashes, err := syncer.syncVendor(vendor, nil)
+	hashes, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err != nil {
@@ -100,12 +100,12 @@ func TestSyncVendor_ShallowFetchSucceeds(t *testing.T) {
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err != nil {
@@ -134,12 +134,12 @@ func TestSyncVendor_ShallowFetchFails_FullFetchSucceeds(t *testing.T) {
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err != nil {
@@ -166,7 +166,7 @@ func TestSyncVendor_BothFetchesFail(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err == nil {
@@ -197,7 +197,7 @@ func TestSyncVendor_StaleCommitHashDetection(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, lockedRefs)
+	_, _, err := syncer.syncVendor(vendor, lockedRefs)
 
 	// Verify
 	if err == nil {
@@ -232,12 +232,12 @@ func TestSyncVendor_CheckoutFETCH_HEADFails_RefFallbackSucceeds(t *testing.T) {
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err != nil {
@@ -264,7 +264,7 @@ func TestSyncVendor_AllCheckoutsFail(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err == nil {
@@ -287,7 +287,7 @@ func TestSyncVendor_TempDirectoryCreationFails(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err == nil {
@@ -330,12 +330,12 @@ func TestSyncVendor_PathTraversalBlocked(t *testing.T) {
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "payload.txt", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	// Even though path validation should catch it, license copy happens before mapping validation
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err == nil {
@@ -396,12 +396,12 @@ func TestSyncVendor_MultipleSpecsPerVendor(t *testing.T) {
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	hashes, err := syncer.syncVendor(vendor, nil)
+	hashes, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err != nil {
@@ -456,12 +456,12 @@ func TestSyncVendor_MultipleMappingsPerSpec(t *testing.T) {
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "file.go", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	// Expect at least 5 CopyFile calls (5 mappings) plus 1 for license
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).MinTimes(5)
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).MinTimes(5)
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err != nil {
@@ -489,17 +489,17 @@ func TestSyncVendor_FileCopyFailsInMapping(t *testing.T) {
 
 	// Mock: License copy succeeds, but mapping copy fails
 	// License copy happens first and succeeds
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(src, dst string) error {
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(src, dst string) (CopyStats, error) {
 		if contains(dst, "licenses") {
-			return nil // License copy succeeds
+			return CopyStats{FileCount: 1, ByteCount: 100}, nil // License copy succeeds
 		}
-		return fmt.Errorf("permission denied") // Mapping copy fails
+		return CopyStats{}, fmt.Errorf("permission denied") // Mapping copy fails
 	}).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err == nil {
@@ -530,17 +530,17 @@ func TestSyncVendor_LicenseCopyFails(t *testing.T) {
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	// Mock: License copy fails
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(src, dst string) error {
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).DoAndReturn(func(src, dst string) (CopyStats, error) {
 		if contains(dst, "licenses") {
-			return fmt.Errorf("disk full")
+			return CopyStats{}, fmt.Errorf("disk full")
 		}
-		return nil
+		return CopyStats{FileCount: 1, ByteCount: 100}, nil
 	}).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil)
 
 	// Verify
 	if err == nil {

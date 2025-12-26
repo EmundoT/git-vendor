@@ -9,6 +9,78 @@ import (
 )
 
 // ============================================================================
+// Init Tests
+// ============================================================================
+
+func TestInit_CreatesEmptyConfig(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	// Mock: MkdirAll called for vendor/ and vendor/licenses/ (use gomock.Any() for cross-platform paths)
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+
+	// Mock: Config save should be called with empty vendor list (not empty vendor)
+	config.EXPECT().Save(gomock.Any()).DoAndReturn(func(cfg types.VendorConfig) error {
+		if cfg.Vendors == nil {
+			t.Error("Expected Vendors slice to be initialized, got nil")
+		}
+		if len(cfg.Vendors) != 0 {
+			t.Errorf("Expected 0 vendors in config, got %d", len(cfg.Vendors))
+		}
+		return nil
+	})
+
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+
+	// Execute
+	err := syncer.Init()
+
+	// Verify
+	assertNoError(t, err, "Init should succeed")
+}
+
+func TestInit_DirectoryCreationFails(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	// Mock: MkdirAll fails for vendor directory
+	fs.EXPECT().MkdirAll("/mock/vendor", gomock.Any()).Return(fmt.Errorf("permission denied"))
+
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+
+	// Execute
+	err := syncer.Init()
+
+	// Verify
+	assertError(t, err, "Init should fail when directory creation fails")
+	if !contains(err.Error(), "permission denied") {
+		t.Errorf("Expected permission denied error, got: %v", err)
+	}
+}
+
+func TestInit_ConfigSaveFails(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	// Mock: Directories created successfully (use gomock.Any() for cross-platform paths)
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+
+	// Mock: Config save fails
+	config.EXPECT().Save(gomock.Any()).Return(fmt.Errorf("disk full"))
+
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+
+	// Execute
+	err := syncer.Init()
+
+	// Verify
+	assertError(t, err, "Init should fail when config save fails")
+	if !contains(err.Error(), "disk full") {
+		t.Errorf("Expected disk full error, got: %v", err)
+	}
+}
+
+// ============================================================================
 // GetConfig Tests
 // ============================================================================
 
@@ -110,7 +182,7 @@ func TestSaveVendor_NewVendor(t *testing.T) {
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123hash", nil)
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "file.go", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	// UpdateAll saves the lock after syncing
 	lock.EXPECT().Save(gomock.Any()).Return(nil)
@@ -152,7 +224,7 @@ func TestSaveVendor_UpdateExisting(t *testing.T) {
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("def456hash", nil)
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "file.go", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	// UpdateAll saves the lock after syncing
 	lock.EXPECT().Save(gomock.Any()).Return(nil)
@@ -228,7 +300,7 @@ func TestRemoveVendor_HappyPath(t *testing.T) {
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("xyz789hash", nil)
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "file.go", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	// UpdateAll saves the lock after syncing
 	lock.EXPECT().Save(gomock.Any()).Return(nil)

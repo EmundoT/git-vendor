@@ -32,7 +32,7 @@ func TestUpdateAll_HappyPath_SingleVendor(t *testing.T) {
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def456", nil)
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
@@ -92,7 +92,7 @@ func TestUpdateAll_HappyPath_MultipleVendors(t *testing.T) {
 	}).Times(3)
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
@@ -170,7 +170,7 @@ func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
 	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil).Times(2)
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
@@ -213,7 +213,7 @@ func TestUpdateAll_LockSaveFails(t *testing.T) {
 	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	// Mock: Lock save fails
@@ -275,7 +275,7 @@ func TestUpdateAll_TimestampFormat(t *testing.T) {
 	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
@@ -351,7 +351,7 @@ func TestUpdateAll_MultipleSpecsPerVendor(t *testing.T) {
 	}).Times(3)
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
@@ -396,7 +396,7 @@ func TestUpdateAll_LicensePathSet(t *testing.T) {
 	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
-	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
