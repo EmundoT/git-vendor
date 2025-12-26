@@ -247,6 +247,89 @@ func (s *VendorSyncer) CheckGitHubLicense(url string) (string, error) {
 	return s.license.CheckLicense(url)
 }
 
+// CheckSyncStatus checks if local files are in sync with the lockfile
+func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
+	// Load config and lockfile
+	config, err := s.configStore.Load()
+	if err != nil {
+		return types.SyncStatus{}, err
+	}
+
+	lock, err := s.lockStore.Load()
+	if err != nil {
+		return types.SyncStatus{}, err
+	}
+
+	// Build a map of vendor configs for quick lookup
+	configMap := make(map[string]types.VendorSpec)
+	for _, v := range config.Vendors {
+		configMap[v.Name] = v
+	}
+
+	// Check each locked vendor
+	var vendorStatuses []types.VendorStatus
+	allSynced := true
+
+	for _, lockEntry := range lock.Vendors {
+		vendorConfig, exists := configMap[lockEntry.Name]
+		if !exists {
+			// Vendor in lockfile but not in config (shouldn't happen normally)
+			continue
+		}
+
+		// Find the matching BranchSpec
+		var matchingSpec *types.BranchSpec
+		for _, spec := range vendorConfig.Specs {
+			if spec.Ref == lockEntry.Ref {
+				matchingSpec = &spec
+				break
+			}
+		}
+
+		if matchingSpec == nil {
+			// No matching spec found (shouldn't happen)
+			continue
+		}
+
+		// Check each path mapping
+		var missingPaths []string
+		for _, mapping := range matchingSpec.Mapping {
+			// Compute destination path using the same logic as sync
+			destPath := mapping.To
+			if destPath == "" || destPath == "." {
+				srcClean := mapping.From
+				// Clean source path (remove blob/tree prefixes if any)
+				srcClean = filepath.Clean(srcClean)
+				destPath = ComputeAutoPath(srcClean, matchingSpec.DefaultTarget, vendorConfig.Name)
+			}
+
+			// Check if path exists (don't join with rootDir since destPath is relative to CWD)
+			_, err := s.fs.Stat(destPath)
+			if err != nil {
+				// Path doesn't exist or error accessing it
+				missingPaths = append(missingPaths, destPath)
+			}
+		}
+
+		isSynced := len(missingPaths) == 0
+		if !isSynced {
+			allSynced = false
+		}
+
+		vendorStatuses = append(vendorStatuses, types.VendorStatus{
+			Name:         lockEntry.Name,
+			Ref:          lockEntry.Ref,
+			IsSynced:     isSynced,
+			MissingPaths: missingPaths,
+		})
+	}
+
+	return types.SyncStatus{
+		AllSynced:      allSynced,
+		VendorStatuses: vendorStatuses,
+	}, nil
+}
+
 // syncVendor is exposed for testing - delegates to sync service
 func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (map[string]string, CopyStats, error) {
 	return s.sync.syncVendor(v, lockedRefs)

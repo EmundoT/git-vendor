@@ -49,3 +49,17 @@ type CloneOptions struct {
 	NoCheckout bool
 	Depth      int
 }
+
+// VendorStatus represents the sync status of a vendor
+type VendorStatus struct {
+	Name         string
+	Ref          string
+	IsSynced     bool
+	MissingPaths []string // Paths that should exist but don't
+}
+
+// SyncStatus represents the overall sync status
+type SyncStatus struct {
+	AllSynced      bool
+	VendorStatuses []VendorStatus
+}
