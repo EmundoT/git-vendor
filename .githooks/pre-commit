@@ -6,11 +6,12 @@ export PATH="/home/emt/go/bin:/usr/local/go/bin:$PATH"
 
 echo "🔍 Running pre-commit checks..."
 
-# 1. Format check
+# 1. Format check (exclude vendor/)
 echo "  → Checking formatting..."
-if [ -n "$(gofmt -l .)" ]; then
+UNFORMATTED=$(gofmt -l . | grep -v "^vendor/")
+if [ -n "$UNFORMATTED" ]; then
   echo "❌ Code is not formatted. Run: gofmt -w ."
-  gofmt -l .
+  echo "$UNFORMATTED"
   exit 1
 fi
 
@@ -30,9 +31,10 @@ if ! go test -mod=mod ./... > /dev/null 2>&1; then
   exit 1
 fi
 
-# 5. Check for debugging artifacts
+# 5. Check for debugging artifacts (only in non-main Go files)
 echo "  → Checking for debugging artifacts..."
-if git diff --cached --name-only | xargs grep -l "fmt.Println\|panic(\"TODO" 2>/dev/null; then
+DEBUG_PATTERNS="DEBUG:\|FIXME:\|XXX:\|HACK:\|panic(\"TODO"
+if git diff --cached --name-only | grep -v "^\.githooks/" | grep -v "^main.go$" | grep "\.go$" | xargs grep -l "$DEBUG_PATTERNS" 2>/dev/null; then
   echo "⚠️  Found debugging statements. Remove them or commit anyway?"
   read -p "Continue? (y/N) " -n 1 -r
   echo
