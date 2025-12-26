@@ -1,35 +1,37 @@
+version: "2"
+
 linters-settings:
-  gofmt:
-    simplify: true
-  goimports:
-    local-prefixes: git-vendor
   govet:
-    check-shadowing: true
+    enable-all: true
   errcheck:
     check-type-assertions: true
     check-blank: true
   gocritic:
     enabled-tags:
       - diagnostic
-      - experimental
-      - opinionated
       - performance
       - style
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+      - name: unused-parameter
+        severity: warning
 
 linters:
   enable:
-    - gofmt
-    - goimports
-    - govet
+    # Default enabled linters
     - errcheck
+    - govet
+    - ineffassign
     - staticcheck
     - unused
-    - gosimple
-    - ineffassign
-    - typecheck
+    # Additional quality linters
     - gocritic
     - misspell
     - revive
+    - unconvert
+    - unparam
 
 issues:
   exclude-rules:
@@ -37,6 +39,7 @@ issues:
       linters:
         - errcheck
         - gocritic
+        - unparam
 
 run:
   timeout: 5m
