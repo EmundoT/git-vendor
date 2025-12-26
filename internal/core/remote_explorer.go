@@ -42,9 +42,10 @@ func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error)
 		return nil, err
 	}
 
-	// Fetch specific ref if needed
+	// Fetch specific ref if needed (best-effort, may already be available)
 	if ref != "" && ref != "HEAD" {
-		_ = e.gitClient.Fetch(tempDir, 0, ref)
+		// Ignore error - if fetch fails, ListTree below will handle it
+		_ = e.gitClient.Fetch(tempDir, 0, ref) //nolint:errcheck
 	}
 
 	// Determine target ref

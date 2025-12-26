@@ -72,7 +72,10 @@ func (fs *OSFileSystem) CopyDir(src, dst string) (CopyStats, error) {
 			return err
 		}
 
-		relPath, _ := filepath.Rel(src, path)
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
 		if strings.Contains(relPath, ".git") {
 			return nil
 		}
