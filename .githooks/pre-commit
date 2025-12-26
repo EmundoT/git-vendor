@@ -22,7 +22,7 @@ fi
 
 # 4. Run tests
 echo "  → Running tests..."
-if ! go test ./... > /dev/null 2>&1; then
+if ! go test -mod=mod ./... > /dev/null 2>&1; then
   echo "❌ Tests failed. Fix them before committing."
   exit 1
 fi
