@@ -249,6 +249,10 @@ go test -v ./...
 **Testing:**
 - `github.com/golang/mock` - Mock generation (gomock/mockgen)
 
+**Environment Variables (Optional):**
+- `GITHUB_TOKEN` - GitHub personal access token (increases rate limit from 60/hr to 5000/hr)
+- `GITLAB_TOKEN` - GitLab personal access token (enables private repos and higher rate limits)
+
 ### Concurrency Considerations
 
 - Git operations use 30-second timeout contexts for directory listing
@@ -257,13 +261,17 @@ go test -v ./...
 
 ## Gotchas
 
-1. **GitHub-only**: Smart URL parsing and license detection only work with GitHub
-2. **Shallow clones**: Uses `--depth 1` which may fail for locked commit hashes not in recent history (falls back to full fetch)
-3. **License location**: Checks LICENSE, LICENSE.txt, and COPYING in repository root only
-4. **Path mapping**: Empty destination ("To" field) uses auto-naming based on source basename
-5. **Edit mode**: When editing existing vendor, changes aren't saved until user selects "💾 Save & Exit"
-6. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing
-7. **Branch names with slashes**: URLs with refs like `feature/foo` cannot be parsed - use base URL and enter ref manually
+1. **Multi-platform support**: Smart URL parsing works with GitHub, GitLab, Bitbucket, and generic git
+2. **License detection**: GitHub and GitLab use API, others read LICENSE file from repo
+3. **Platform auto-detection**: Provider automatically detected from URL
+4. **Self-hosted support**: Works with self-hosted GitLab and GitHub Enterprise
+5. **GitLab nested groups**: Supports unlimited depth (owner/group/subgroup/repo)
+6. **Shallow clones**: Uses `--depth 1` which may fail for old locked commits (falls back to full fetch)
+7. **License location**: Fallback checks LICENSE, LICENSE.txt, LICENSE.md, COPYING in repository root
+8. **Path mapping**: Empty destination uses auto-naming based on source basename
+9. **Edit mode**: Changes aren't saved until user selects "💾 Save & Exit"
+10. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing
+11. **Branch names with slashes**: Cannot parse from URL due to ambiguity - use base URL and enter ref manually
 
 ## Quick Reference
 

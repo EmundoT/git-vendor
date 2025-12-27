@@ -49,21 +49,17 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 	var rawURL string
 	err := huh.NewInput().
 		Title("Remote URL").
-		Placeholder("https://github.com/owner/repo").
-		Description("Paste a full repo URL or a specific file link").
+		Placeholder("https://github.com/owner/repo or https://gitlab.com/group/project").
+		Description("Paste a full repo URL or a specific file link (GitHub, GitLab, Bitbucket, or any git URL)").
 		Value(&rawURL).
 		Validate(func(s string) error {
 			if s == "" {
 				return fmt.Errorf("URL cannot be empty")
 			}
 			s = strings.TrimSpace(s)
-			// Check if it looks like a valid URL
-			if !strings.HasPrefix(s, "http://") && !strings.HasPrefix(s, "https://") && !strings.HasPrefix(s, "git@") {
-				return fmt.Errorf("URL must start with http://, https://, or git@")
-			}
-			// Check if it's a GitHub URL (since ParseSmartURL is GitHub-specific)
-			if !strings.Contains(s, "github.com") {
-				return fmt.Errorf("currently only GitHub URLs are supported")
+			// Allow any git URL - provider registry handles platform detection
+			if !isValidGitURL(s) {
+				return fmt.Errorf("invalid git URL format")
 			}
 			return nil
 		}).
@@ -468,6 +464,21 @@ func truncate(s string, maxLen int) string {
 		return s[:maxLen-3] + "..."
 	}
 	return s
+}
+
+// isValidGitURL checks if the string looks like a valid git repository URL
+func isValidGitURL(s string) bool {
+	s = strings.TrimSpace(s)
+	// Accept http://, https://, git://, or git@ prefixes
+	validPrefixes := []string{"http://", "https://", "git://", "git@", "ssh://"}
+	for _, prefix := range validPrefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	// Also accept URLs without protocol (will be normalized by provider)
+	// Must contain at least one slash and a dot (domain.com/path)
+	return strings.Contains(s, "/") && strings.Contains(s, ".")
 }
 
 // PrintError displays an error message with styling to the terminal.
