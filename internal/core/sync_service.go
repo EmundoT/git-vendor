@@ -2,6 +2,8 @@ package core
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"git-vendor/internal/types"
@@ -12,6 +14,7 @@ type SyncOptions struct {
 	DryRun     bool
 	VendorName string // Empty = all vendors
 	Force      bool
+	NoCache    bool // Disable incremental sync cache
 }
 
 // SyncService handles vendor synchronization operations
@@ -22,6 +25,7 @@ type SyncService struct {
 	fs          FileSystem
 	fileCopy    *FileCopyService
 	license     *LicenseService
+	cache       CacheStore
 	ui          UICallback
 	rootDir     string
 }
@@ -34,6 +38,7 @@ func NewSyncService(
 	fs FileSystem,
 	fileCopy *FileCopyService,
 	license *LicenseService,
+	cache CacheStore,
 	ui UICallback,
 	rootDir string,
 ) *SyncService {
@@ -44,6 +49,7 @@ func NewSyncService(
 		fs:          fs,
 		fileCopy:    fileCopy,
 		license:     license,
+		cache:       cache,
 		ui:          ui,
 		rootDir:     rootDir,
 	}
@@ -98,7 +104,7 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 			if opts.Force {
 				refs = nil
 			}
-			_, stats, err := s.syncVendor(v, refs)
+			_, stats, err := s.syncVendor(v, refs, opts)
 			if err != nil {
 				return err
 			}
@@ -186,7 +192,39 @@ func (s *SyncService) previewSyncVendor(v types.VendorSpec, lockedRefs map[strin
 
 // syncVendor syncs a single vendor
 // Returns a map of ref to commit hash and total stats for all synced refs
-func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (map[string]string, CopyStats, error) {
+func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]string, CopyStats, error) {
+	// Check cache for all refs first (if cache enabled)
+	canSkipClone := false
+	if !opts.NoCache && !opts.Force && lockedRefs != nil {
+		allCached := true
+		for _, spec := range v.Specs {
+			if !s.canSkipSync(v.Name, spec.Ref, lockedRefs[spec.Ref], spec.Mapping) {
+				allCached = false
+				break
+			}
+		}
+		canSkipClone = allCached
+	}
+
+	// If all refs are cached and up-to-date, skip git operations entirely
+	if canSkipClone {
+		fmt.Printf("⚡ %s (cache hit, skipping download)\n", v.Name)
+		results := make(map[string]string)
+		var totalStats CopyStats
+
+		for _, spec := range v.Specs {
+			results[spec.Ref] = lockedRefs[spec.Ref]
+			// Files already exist, count them
+			stats := CopyStats{FileCount: len(spec.Mapping)}
+			totalStats.Add(stats)
+			fmt.Printf("  ✓ %s @ %s (cached: %s)\n",
+				v.Name, spec.Ref,
+				Pluralize(len(spec.Mapping), "path", "paths"))
+		}
+
+		return results, totalStats, nil
+	}
+
 	fmt.Printf("⠿ %s (cloning repository...)\n", v.Name)
 
 	// Create temp directory for cloning
@@ -209,7 +247,7 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 
 	// Sync each ref
 	for _, spec := range v.Specs {
-		hash, stats, err := s.syncRef(tempDir, v, spec, lockedRefs)
+		hash, stats, err := s.syncRef(tempDir, v, spec, lockedRefs, opts)
 		if err != nil {
 			return nil, CopyStats{}, err
 		}
@@ -227,7 +265,7 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 }
 
 // syncRef syncs a single ref for a vendor
-func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string) (string, CopyStats, error) {
+func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string, opts SyncOptions) (string, CopyStats, error) {
 	targetCommit := ""
 	isLocked := false
 
@@ -284,6 +322,15 @@ func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.Bra
 		return "", CopyStats{}, err
 	}
 
+	// Build and save cache (if cache enabled)
+	if !opts.NoCache {
+		if err := s.updateCache(v.Name, spec, hash); err != nil {
+			// Cache update failure shouldn't fail the sync
+			// Just log a warning and continue
+			fmt.Printf("  ⚠ Warning: failed to update cache: %v\n", err)
+		}
+	}
+
 	return hash, stats, nil
 }
 
@@ -298,4 +345,82 @@ func (s *SyncService) fetchWithFallback(tempDir, ref string) error {
 		}
 	}
 	return nil
+}
+
+// canSkipSync checks if a vendor@ref can skip sync based on cache
+func (s *SyncService) canSkipSync(vendorName, ref, commitHash string, mappings []types.PathMapping) bool {
+	// Load cache for this vendor@ref
+	cache, err := s.cache.Load(vendorName, ref)
+	if err != nil || cache.CommitHash == "" {
+		// Cache miss or error - can't skip
+		return false
+	}
+
+	// Check if commit hash matches
+	if cache.CommitHash != commitHash {
+		// Commit hash changed - invalidate cache
+		return false
+	}
+
+	// Build a map of cached checksums for quick lookup
+	cachedChecksums := make(map[string]string)
+	for _, fc := range cache.Files {
+		cachedChecksums[fc.Path] = fc.Hash
+	}
+
+	// Validate all destination files exist and match cached checksums
+	for _, mapping := range mappings {
+		destPath := mapping.To
+		if destPath == "" {
+			// Auto-naming not supported in cache check (too complex)
+			return false
+		}
+
+		// Check if file exists
+		fullPath := filepath.Join(s.rootDir, destPath)
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			// File missing - can't skip
+			return false
+		}
+
+		// Check checksum
+		currentHash, err := s.cache.ComputeFileChecksum(fullPath)
+		if err != nil {
+			// Can't compute checksum - can't skip
+			return false
+		}
+
+		cachedHash, exists := cachedChecksums[destPath]
+		if !exists || cachedHash != currentHash {
+			// Checksum mismatch or not in cache - can't skip
+			return false
+		}
+	}
+
+	// All checks passed - can skip sync
+	return true
+}
+
+// updateCache builds and saves cache for a vendor@ref
+func (s *SyncService) updateCache(vendorName string, spec types.BranchSpec, commitHash string) error {
+	// Collect destination file paths
+	var destPaths []string
+	for _, mapping := range spec.Mapping {
+		destPath := mapping.To
+		if destPath == "" {
+			// Skip auto-named files (too complex to track)
+			continue
+		}
+		fullPath := filepath.Join(s.rootDir, destPath)
+		destPaths = append(destPaths, fullPath)
+	}
+
+	// Build cache with checksums
+	cache, err := s.cache.BuildCache(vendorName, spec.Ref, commitHash, destPaths)
+	if err != nil {
+		return err
+	}
+
+	// Save cache
+	return s.cache.Save(cache)
 }

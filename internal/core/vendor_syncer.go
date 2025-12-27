@@ -87,7 +87,8 @@ func NewVendorSyncer(
 	repository := NewVendorRepository(configStore)
 	fileCopy := NewFileCopyService(fs)
 	license := NewLicenseService(licenseChecker, fs, rootDir, ui)
-	sync := NewSyncService(configStore, lockStore, gitClient, fs, fileCopy, license, ui, rootDir)
+	cache := NewFileCacheStore(fs, rootDir)
+	sync := NewSyncService(configStore, lockStore, gitClient, fs, fileCopy, license, cache, ui, rootDir)
 	update := NewUpdateService(configStore, lockStore, sync, ui, rootDir)
 	validation := NewValidationService(configStore)
 	explorer := NewRemoteExplorer(gitClient, fs)
@@ -191,8 +192,8 @@ func (s *VendorSyncer) SyncDryRun() error {
 	return s.sync.Sync(SyncOptions{DryRun: true})
 }
 
-// SyncWithOptions performs sync with vendor filter and force option
-func (s *VendorSyncer) SyncWithOptions(vendorName string, force bool) error {
+// SyncWithOptions performs sync with vendor filter, force, and cache options
+func (s *VendorSyncer) SyncWithOptions(vendorName string, force, noCache bool) error {
 	// Check if lockfile exists, if not, run UpdateAll
 	lock, err := s.lockStore.Load()
 	if err != nil || len(lock.Vendors) == 0 {
@@ -206,6 +207,7 @@ func (s *VendorSyncer) SyncWithOptions(vendorName string, force bool) error {
 	return s.sync.Sync(SyncOptions{
 		VendorName: vendorName,
 		Force:      force,
+		NoCache:    noCache,
 	})
 }
 
@@ -348,6 +350,6 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 }
 
 // syncVendor is exposed for testing - delegates to sync service
-func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string) (map[string]string, CopyStats, error) {
-	return s.sync.syncVendor(v, lockedRefs)
+func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]string, CopyStats, error) {
+	return s.sync.syncVendor(v, lockedRefs, opts)
 }
