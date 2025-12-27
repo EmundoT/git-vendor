@@ -353,8 +353,10 @@ func main() {
 		force := false
 		noCache := false
 		vendorName := ""
+		groupName := ""
 
-		for _, arg := range args {
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
 			switch {
 			case arg == "--dry-run":
 				dryRun = true
@@ -362,12 +364,26 @@ func main() {
 				force = true
 			case arg == "--no-cache":
 				noCache = true
+			case arg == "--group":
+				if i+1 < len(args) {
+					groupName = args[i+1]
+					i++ // Skip next arg
+				} else {
+					callback.ShowError("Invalid Flag", "--group requires a group name")
+					os.Exit(1)
+				}
 			case arg == "--verbose" || arg == "-v":
 				core.Verbose = true
 				manager.UpdateVerboseMode(true)
 			case !strings.HasPrefix(arg, "--"):
 				vendorName = arg
 			}
+		}
+
+		// Validate that vendor name and group are not both specified
+		if vendorName != "" && groupName != "" {
+			callback.ShowError("Invalid Options", "Cannot specify both vendor name and --group")
+			os.Exit(1)
 		}
 
 		if !core.IsVendorInitialized() {
@@ -385,9 +401,17 @@ func main() {
 				fmt.Println("Run 'git-vendor sync' to apply changes.")
 			}
 		} else {
-			if err := manager.SyncWithOptions(vendorName, force, noCache); err != nil {
-				callback.ShowError("Sync Failed", err.Error())
-				os.Exit(1)
+			// Use group sync if group is specified
+			if groupName != "" {
+				if err := manager.SyncWithGroup(groupName, force, noCache); err != nil {
+					callback.ShowError("Sync Failed", err.Error())
+					os.Exit(1)
+				}
+			} else {
+				if err := manager.SyncWithOptions(vendorName, force, noCache); err != nil {
+					callback.ShowError("Sync Failed", err.Error())
+					os.Exit(1)
+				}
 			}
 			callback.ShowSuccess("Synced.")
 		}
@@ -605,6 +629,99 @@ func main() {
 				fmt.Println()
 				fmt.Println("Run 'git-vendor sync' to fix.")
 				os.Exit(1)
+			}
+		}
+
+	case "check-updates":
+		// Parse common flags
+		flags, _ := parseCommonFlags(os.Args[2:])
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		if !core.IsVendorInitialized() {
+			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Check for updates
+		updates, err := manager.CheckUpdates()
+		if err != nil {
+			callback.ShowError("Update Check Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Count updates available
+		updatesAvailable := 0
+		for _, u := range updates {
+			if !u.UpToDate {
+				updatesAvailable++
+			}
+		}
+
+		if flags.Mode == core.OutputJSON {
+			// JSON output mode
+			updateData := make([]map[string]interface{}, 0, len(updates))
+			for _, u := range updates {
+				updateData = append(updateData, map[string]interface{}{
+					"vendor_name":  u.VendorName,
+					"ref":          u.Ref,
+					"current_hash": u.CurrentHash,
+					"latest_hash":  u.LatestHash,
+					"last_updated": u.LastUpdated,
+					"up_to_date":   u.UpToDate,
+				})
+			}
+
+			_ = callback.FormatJSON(core.JSONOutput{
+				Status: func() string {
+					if updatesAvailable == 0 {
+						return "success"
+					}
+					return "warning"
+				}(),
+				Message: func() string {
+					if updatesAvailable == 0 {
+						return "All vendors up to date"
+					}
+					return fmt.Sprintf("%s available", core.Pluralize(updatesAvailable, "update", "updates"))
+				}(),
+				Data: map[string]interface{}{
+					"updates":           updateData,
+					"updates_available": updatesAvailable,
+					"total_checked":     len(updates),
+				},
+			})
+
+			if updatesAvailable > 0 {
+				os.Exit(1)
+			}
+		} else {
+			// Normal output mode
+			if updatesAvailable == 0 {
+				callback.ShowSuccess("All vendors up to date")
+			} else {
+				fmt.Printf("Found %s:\n\n", core.Pluralize(updatesAvailable, "update", "updates"))
+
+				for _, u := range updates {
+					if !u.UpToDate {
+						fmt.Printf("📦 %s @ %s\n", u.VendorName, u.Ref)
+						fmt.Printf("   Current: %s\n", u.CurrentHash[:7])
+						fmt.Printf("   Latest:  %s\n", u.LatestHash[:7])
+						if u.LastUpdated != "" {
+							fmt.Printf("   Updated: %s\n", u.LastUpdated)
+						}
+						fmt.Println()
+					}
+				}
+
+				fmt.Println("Run 'git-vendor update' to fetch latest versions")
 			}
 		}
 
