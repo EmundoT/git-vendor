@@ -76,6 +76,7 @@ type VendorSyncer struct {
 	license        *LicenseService
 	validation     *ValidationService
 	explorer       *RemoteExplorer
+	updateChecker  *UpdateChecker
 	configStore    ConfigStore
 	lockStore      LockStore
 	gitClient      GitClient
@@ -108,6 +109,7 @@ func NewVendorSyncer(
 	update := NewUpdateService(configStore, lockStore, sync, ui, rootDir)
 	validation := NewValidationService(configStore)
 	explorer := NewRemoteExplorer(gitClient, fs)
+	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
 
 	return &VendorSyncer{
 		repository:     repository,
@@ -116,6 +118,7 @@ func NewVendorSyncer(
 		license:        license,
 		validation:     validation,
 		explorer:       explorer,
+		updateChecker:  updateChecker,
 		configStore:    configStore,
 		lockStore:      lockStore,
 		gitClient:      gitClient,
@@ -224,6 +227,25 @@ func (s *VendorSyncer) SyncWithOptions(vendorName string, force, noCache bool) e
 		VendorName: vendorName,
 		Force:      force,
 		NoCache:    noCache,
+	})
+}
+
+// SyncWithGroup performs sync for all vendors in a group
+func (s *VendorSyncer) SyncWithGroup(groupName string, force, noCache bool) error {
+	// Check if lockfile exists, if not, run UpdateAll
+	lock, err := s.lockStore.Load()
+	if err != nil || len(lock.Vendors) == 0 {
+		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
+		if err := s.update.UpdateAll(); err != nil {
+			return err
+		}
+		fmt.Println()
+		fmt.Println("Lockfile created. Now syncing files...")
+	}
+	return s.sync.Sync(SyncOptions{
+		GroupName: groupName,
+		Force:     force,
+		NoCache:   noCache,
 	})
 }
 
@@ -368,4 +390,9 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 // syncVendor is exposed for testing - delegates to sync service
 func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]string, CopyStats, error) {
 	return s.sync.syncVendor(v, lockedRefs, opts)
+}
+
+// CheckUpdates checks for available updates for all vendors
+func (s *VendorSyncer) CheckUpdates() ([]types.UpdateCheckResult, error) {
+	return s.updateChecker.CheckUpdates()
 }

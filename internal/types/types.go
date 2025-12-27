@@ -13,6 +13,7 @@ type VendorSpec struct {
 	Name    string       `yaml:"name"`
 	URL     string       `yaml:"url"`
 	License string       `yaml:"license"`
+	Groups  []string     `yaml:"groups,omitempty"` // Optional groups for batch operations
 	Specs   []BranchSpec `yaml:"specs"`
 }
 
@@ -101,4 +102,14 @@ type ProgressTracker interface {
 
 	// Fail marks the operation as failed with an error
 	Fail(err error)
+}
+
+// UpdateCheckResult represents an available update for a vendor
+type UpdateCheckResult struct {
+	VendorName  string
+	Ref         string
+	CurrentHash string
+	LatestHash  string
+	LastUpdated string
+	UpToDate    bool
 }

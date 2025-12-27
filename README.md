@@ -13,6 +13,8 @@ A lightweight CLI tool for managing vendored dependencies from Git repositories 
 - **Interactive TUI**: User-friendly terminal interface with file browser
 - **Deterministic Locking**: Lock dependencies to specific commits for reproducibility
 - **Incremental Sync**: Smart caching system skips re-downloading unchanged files (80% faster re-syncs)
+- **Update Checker**: Check for available updates without modifying files
+- **Vendor Groups**: Organize vendors into groups for batch operations
 - **Multi-Ref Support**: Track multiple branches/tags from the same repository
 - **Multi-Platform Support**: Works with GitHub, GitLab, Bitbucket, and any git server
 - **Smart URL Parsing**: Paste file links directly - auto-extracts repo, branch, and path
@@ -209,6 +211,7 @@ Download vendored dependencies to their configured local paths.
 - `--dry-run` - Preview what will be synced without making changes
 - `--force` - Re-download files even if already synced
 - `--no-cache` - Disable incremental sync cache (re-download and revalidate all files)
+- `--group <name>` - Sync only vendors in the specified group
 - `--verbose` / `-v` - Show git commands as they run (useful for debugging)
 - `<vendor-name>` - Sync only the specified vendor
 
@@ -223,6 +226,9 @@ git-vendor sync --dry-run
 
 # Sync only specific vendor
 git-vendor sync my-vendor
+
+# Sync all vendors in a group
+git-vendor sync --group frontend
 
 # Force re-download
 git-vendor sync --force
@@ -260,6 +266,49 @@ Run this when you want to:
 - Update to the latest version of dependencies
 - Regenerate the lock file after manual config changes
 - Refresh cached license files
+
+#### `git-vendor check-updates`
+
+Check if newer commits are available for your vendored dependencies without updating them.
+
+This command:
+
+1. Compares locked commit hashes with the latest commits on tracked refs
+2. Shows which vendors have updates available
+3. Displays current and latest commit hashes
+4. Supports JSON output for automation
+
+**Examples:**
+
+```bash
+# Check for updates (normal output)
+git-vendor check-updates
+
+# JSON output for scripting
+git-vendor check-updates --json
+```
+
+**Example output:**
+
+```text
+Found 2 updates:
+
+📦 charmbracelet/lipgloss @ v0.10.0
+   Current: abc123f
+   Latest:  def456g
+   Updated: 2024-11-15T10:30:00Z
+
+📦 golang/mock @ main
+   Current: ghi789h
+   Latest:  jkl012i
+   Updated: 2024-12-01T14:20:00Z
+
+Run 'git-vendor update' to fetch latest versions
+```
+
+**Exit codes:**
+- `0` - All vendors are up to date
+- `1` - Updates available
 
 #### `git-vendor validate`
 
@@ -308,6 +357,7 @@ vendors:
   - name: example-lib
     url: https://github.com/owner/repo
     license: MIT
+    groups: ["frontend", "ui"]  # Optional: organize vendors into groups
     specs:
       - ref: main
         default_target: ""
@@ -323,6 +373,7 @@ vendors:
 - `name`: Display name for the vendor
 - `url`: Git repository URL
 - `license`: SPDX license identifier (auto-detected)
+- `groups`: (Optional) Array of group names for batch operations
 - `specs`: Array of refs to track (can track multiple branches/tags)
   - `ref`: Branch, tag, or commit hash
   - `default_target`: Optional default destination directory

@@ -179,6 +179,11 @@ func (m *Manager) SyncWithOptions(vendorName string, force, noCache bool) error 
 	return m.syncer.SyncWithOptions(vendorName, force, noCache)
 }
 
+// SyncWithGroup performs sync for all vendors in a group
+func (m *Manager) SyncWithGroup(groupName string, force, noCache bool) error {
+	return m.syncer.SyncWithGroup(groupName, force, noCache)
+}
+
 // UpdateAll updates all vendors and regenerates lockfile
 func (m *Manager) UpdateAll() error {
 	return m.syncer.UpdateAll()
@@ -217,6 +222,11 @@ func (m *Manager) ValidateConfig() error {
 // CheckSyncStatus checks if local files are in sync with the lockfile
 func (m *Manager) CheckSyncStatus() (types.SyncStatus, error) {
 	return m.syncer.CheckSyncStatus()
+}
+
+// CheckUpdates checks for available updates for all vendors
+func (m *Manager) CheckUpdates() ([]types.UpdateCheckResult, error) {
+	return m.syncer.CheckUpdates()
 }
 
 // UpdateVerboseMode updates the verbose flag for git operations

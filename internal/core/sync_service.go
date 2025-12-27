@@ -13,6 +13,7 @@ import (
 type SyncOptions struct {
 	DryRun     bool
 	VendorName string // Empty = all vendors
+	GroupName  string // Empty = all groups, filters vendors by group
 	Force      bool
 	NoCache    bool // Disable incremental sync cache
 }
@@ -78,6 +79,13 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 		}
 	}
 
+	// Validate group exists if filtering by group
+	if opts.GroupName != "" {
+		if err := s.validateGroupExists(config, opts.GroupName); err != nil {
+			return err
+		}
+	}
+
 	// Print header
 	if opts.DryRun {
 		fmt.Println(s.ui.StyleTitle("Sync Plan:"))
@@ -89,7 +97,7 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 	// Calculate total vendors for progress
 	vendorCount := 0
 	for _, v := range config.Vendors {
-		if opts.VendorName == "" || v.Name == opts.VendorName {
+		if s.shouldSyncVendor(v, opts) {
 			vendorCount++
 		}
 	}
@@ -103,8 +111,8 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 
 	// Sync vendors
 	for _, v := range config.Vendors {
-		// Skip vendors that don't match the filter
-		if opts.VendorName != "" && v.Name != opts.VendorName {
+		// Skip vendors that don't match the filters
+		if !s.shouldSyncVendor(v, opts) {
 			continue
 		}
 
@@ -161,6 +169,50 @@ func (s *SyncService) validateVendorExists(config types.VendorConfig, vendorName
 		return fmt.Errorf(ErrVendorNotFound, vendorName)
 	}
 	return nil
+}
+
+// validateGroupExists checks if any vendor has the given group
+func (s *SyncService) validateGroupExists(config types.VendorConfig, groupName string) error {
+	found := false
+	for _, v := range config.Vendors {
+		for _, g := range v.Groups {
+			if g == groupName {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("group '%s' not found in any vendor", groupName)
+	}
+	return nil
+}
+
+// shouldSyncVendor checks if a vendor should be synced based on filters
+func (s *SyncService) shouldSyncVendor(v types.VendorSpec, opts SyncOptions) bool {
+	// If vendor name filter is set, only sync matching vendor
+	if opts.VendorName != "" && v.Name != opts.VendorName {
+		return false
+	}
+
+	// If group filter is set, only sync vendors in that group
+	if opts.GroupName != "" {
+		hasGroup := false
+		for _, g := range v.Groups {
+			if g == opts.GroupName {
+				hasGroup = true
+				break
+			}
+		}
+		if !hasGroup {
+			return false
+		}
+	}
+
+	return true
 }
 
 // printSyncHeader prints the sync header message
