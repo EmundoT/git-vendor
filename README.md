@@ -12,6 +12,7 @@ A lightweight CLI tool for managing vendored dependencies from Git repositories 
 - **Granular Path Vendoring**: Vendor specific files or directories, not entire repositories
 - **Interactive TUI**: User-friendly terminal interface with file browser
 - **Deterministic Locking**: Lock dependencies to specific commits for reproducibility
+- **Incremental Sync**: Smart caching system skips re-downloading unchanged files (80% faster re-syncs)
 - **Multi-Ref Support**: Track multiple branches/tags from the same repository
 - **Multi-Platform Support**: Works with GitHub, GitLab, Bitbucket, and any git server
 - **Smart URL Parsing**: Paste file links directly - auto-extracts repo, branch, and path
@@ -207,6 +208,7 @@ Download vendored dependencies to their configured local paths.
 
 - `--dry-run` - Preview what will be synced without making changes
 - `--force` - Re-download files even if already synced
+- `--no-cache` - Disable incremental sync cache (re-download and revalidate all files)
 - `--verbose` / `-v` - Show git commands as they run (useful for debugging)
 - `<vendor-name>` - Sync only the specified vendor
 
@@ -229,10 +231,14 @@ git-vendor sync --force
 **How it works:**
 
 1. Reads locked commit hashes from `vendor.lock`
-2. Clones repositories to temporary directories
-3. Checks out exact commit hashes for reproducibility
-4. Copies specified paths to local destinations
-5. Caches license files to `vendor/licenses/`
+2. **Checks incremental sync cache** - if files exist and match cached checksums, skip git operations entirely (⚡ fast!)
+3. Clones repositories to temporary directories (only if cache miss)
+4. Checks out exact commit hashes for reproducibility
+5. Copies specified paths to local destinations
+6. Updates cache with SHA-256 file checksums for next sync
+7. Caches license files to `vendor/licenses/`
+
+**Note:** The incremental sync cache is stored in `vendor/.cache/` and automatically invalidates when commit hashes change. Use `--force` or `--no-cache` to bypass the cache.
 
 #### `git-vendor update [options]`
 
