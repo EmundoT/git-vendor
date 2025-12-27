@@ -131,7 +131,7 @@
 - Bubbletea runs in separate goroutine
 - TTY detection is fast (single syscall)
 
-**Commit:** Pending
+**Commit:** `34bf326` feat(phase8): implement Session 2 - Progress Indicators
 
 ---
 
