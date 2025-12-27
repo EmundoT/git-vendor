@@ -75,6 +75,95 @@ func TestValidateDestPath(t *testing.T) {
 			destPath:  "./lib/file.go",
 			wantError: false,
 		},
+		// Additional security edge cases
+		{
+			name:      "Multiple parent traversals",
+			destPath:  "../../../../../../etc/passwd",
+			wantError: true,
+			errorMsg:  "path traversal with .. is not allowed",
+		},
+		{
+			name:      "Windows backslash parent traversal",
+			destPath:  "..\\..\\windows\\system32",
+			wantError: true,
+			errorMsg:  "path traversal",
+		},
+		{
+			name:      "Mixed separators with traversal",
+			destPath:  "lib/../../etc/passwd",
+			wantError: true,
+			errorMsg:  "path traversal with .. is not allowed",
+		},
+		{
+			name:      "Windows UNC path",
+			destPath:  "\\\\server\\share\\file",
+			wantError: true,
+			errorMsg:  "absolute paths are not allowed",
+		},
+		{
+			name:      "Double slash Unix root",
+			destPath:  "//etc/passwd",
+			wantError: true,
+			errorMsg:  "absolute paths are not allowed",
+		},
+		{
+			name:      "Windows drive letter variations",
+			destPath:  "D:\\Users\\Public",
+			wantError: true,
+			errorMsg:  "absolute paths are not allowed",
+		},
+		{
+			name:      "Parent at end normalizes to current dir (allowed)",
+			destPath:  "lib/..",
+			wantError: false, // filepath.Clean("lib/..") = "." which is allowed
+		},
+		{
+			name:      "Single parent reference",
+			destPath:  "../",
+			wantError: true,
+			errorMsg:  "path traversal with .. is not allowed",
+		},
+		// Valid edge cases
+		{
+			name:      "Path with spaces",
+			destPath:  "lib/my file.go",
+			wantError: false,
+		},
+		{
+			name:      "Path with dashes",
+			destPath:  "some-lib/some-file.go",
+			wantError: false,
+		},
+		{
+			name:      "Path with underscores",
+			destPath:  "some_lib/some_file.go",
+			wantError: false,
+		},
+		{
+			name:      "Hidden file (dot prefix)",
+			destPath:  ".hidden/file.go",
+			wantError: false,
+		},
+		{
+			name:      "Path with dots in filename",
+			destPath:  "lib/file.test.go",
+			wantError: false,
+		},
+		{
+			name:      "Unicode in filename",
+			destPath:  "lib/文件.go",
+			wantError: false,
+		},
+		{
+			name:      "Redundant slashes (normalized by filepath.Clean)",
+			destPath:  "lib//file.go",
+			wantError: false,
+		},
+		{
+			name:      "Self reference (normalized by filepath.Clean)",
+			destPath:  "lib/./file.go",
+			wantError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -91,6 +180,40 @@ func TestValidateDestPath(t *testing.T) {
 				if err != nil {
 					t.Errorf("validateDestPath(%q) unexpected error = %v", tt.destPath, err)
 				}
+			}
+		})
+	}
+}
+
+// TestValidateDestPath_SecurityRegression tests real-world path traversal attacks
+func TestValidateDestPath_SecurityRegression(t *testing.T) {
+	// These are real-world path traversal attack vectors
+	// Ensure they are ALL rejected
+	attackVectors := map[string]string{
+		"Simple parent":               "../",
+		"Windows parent":              "..\\",
+		"Deep Unix traversal":         "../../../../../../../etc/passwd",
+		"Deep Windows traversal":      "..\\..\\..\\..\\..\\..\\..\\windows\\system32",
+		"Traversal with prefix":       "foo/../../etc/passwd",
+		"Deep traversal with prefix":  "foo/../../../etc/passwd",
+		"Unix absolute":               "/etc/passwd",
+		"Windows absolute":            "C:\\Windows\\System32",
+		"Double slash":                "//etc/passwd",
+		"Windows pipe":                "\\\\.\\pipe\\vulnerable",
+		"UNC path":                    "\\\\server\\share",
+		"Multiple drives":             "E:\\secret",
+		"Root with traversal":         "/var/../etc/passwd",
+		"Windows root with traversal": "C:\\..\\Windows",
+		"Backslash traversal":         "..\\",
+		"Forward slash traversal":     "../",
+		"Combined traversal":          "lib/../../../../../../etc/shadow",
+	}
+
+	for name, attack := range attackVectors {
+		t.Run(name, func(t *testing.T) {
+			err := ValidateDestPath(attack)
+			if err == nil {
+				t.Errorf("SECURITY: ValidateDestPath(%q) = nil, MUST reject path traversal attack", attack)
 			}
 		})
 	}

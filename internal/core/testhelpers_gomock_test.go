@@ -41,3 +41,48 @@ func createMockSyncer(
 ) *VendorSyncer {
 	return NewVendorSyncer(config, lock, git, fs, license, "/mock/vendor", &SilentUICallback{})
 }
+
+// capturingUICallback captures UI output for testing
+type capturingUICallback struct {
+	errorMsg    string
+	successMsg  string
+	warningMsg  string
+	confirmResp bool
+	licenseMsg  string
+}
+
+func (c *capturingUICallback) ShowError(title, message string) {
+	c.errorMsg = title + ": " + message
+}
+
+func (c *capturingUICallback) ShowSuccess(message string) {
+	c.successMsg = message
+}
+
+func (c *capturingUICallback) ShowWarning(title, message string) {
+	c.warningMsg = title + ": " + message
+}
+
+func (c *capturingUICallback) AskConfirmation(title, message string) bool {
+	return c.confirmResp
+}
+
+func (c *capturingUICallback) ShowLicenseCompliance(license string) {
+	c.licenseMsg = license
+}
+
+func (c *capturingUICallback) StyleTitle(title string) string {
+	return title
+}
+
+func (c *capturingUICallback) GetOutputMode() OutputMode {
+	return OutputNormal
+}
+
+func (c *capturingUICallback) IsAutoApprove() bool {
+	return false
+}
+
+func (c *capturingUICallback) FormatJSON(output JSONOutput) error {
+	return nil
+}

@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"git-vendor/internal/types"
@@ -454,6 +455,279 @@ func TestSaveLock(t *testing.T) {
 
 		if len(loadedLock.Vendors) != 0 {
 			t.Errorf("Expected empty lock, got %d vendors", len(loadedLock.Vendors))
+		}
+	})
+}
+
+// ============================================================================
+// Edge Case Tests for Config/Lock Parsing
+// ============================================================================
+
+func TestLoadConfig_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		yaml      string
+		wantErr   bool
+		wantCount int // Expected number of vendors (if no error)
+	}{
+		{
+			name: "Invalid YAML syntax - unclosed bracket",
+			yaml: `vendors:
+  - name: [unclosed`,
+			wantErr: true,
+		},
+		{
+			name:    "Invalid YAML - wrong type for vendors field",
+			yaml:    `vendors: "not an array"`,
+			wantErr: true,
+		},
+		{
+			name: "Unknown fields are ignored",
+			yaml: `vendors: []
+unknown_field: value
+extra_data: true`,
+			wantErr:   false,
+			wantCount: 0,
+		},
+		{
+			name:      "Empty file",
+			yaml:      "",
+			wantErr:   false,
+			wantCount: 0,
+		},
+		{
+			name:    "Only whitespace (causes YAML parse error)",
+			yaml:    "   \n\t\n   ",
+			wantErr: true,
+		},
+		{
+			name: "Unicode in vendor name",
+			yaml: `vendors:
+  - name: "测试-vendor-Ñoño"
+    url: "https://github.com/test/repo"
+    license: "MIT"
+    specs:
+      - ref: "main"
+        mapping:
+          - from: "src"
+            to: "lib"`,
+			wantErr:   false,
+			wantCount: 1,
+		},
+		{
+			name: "Special characters in paths",
+			yaml: `vendors:
+  - name: "test"
+    url: "https://github.com/test/repo"
+    license: "MIT"
+    specs:
+      - ref: "main"
+        mapping:
+          - from: "path-with-dashes_and_underscores.go"
+            to: "dest/with/slashes/file.go"`,
+			wantErr:   false,
+			wantCount: 1,
+		},
+		{
+			name: "Very long vendor name (printable chars)",
+			yaml: `vendors:
+  - name: "` + strings.Repeat("a", 200) + `"
+    url: "https://github.com/test/repo"
+    license: "MIT"
+    specs:
+      - ref: "main"
+        mapping:
+          - from: "src"
+            to: "lib"`,
+			wantErr:   false,
+			wantCount: 1,
+		},
+		{
+			name: "Multiple vendors with same name (last one wins)",
+			yaml: `vendors:
+  - name: "same"
+    url: "https://github.com/test/repo1"
+    license: "MIT"
+    specs:
+      - ref: "main"
+        mapping:
+          - from: "src1"
+            to: "lib1"
+  - name: "same"
+    url: "https://github.com/test/repo2"
+    license: "Apache-2.0"
+    specs:
+      - ref: "dev"
+        mapping:
+          - from: "src2"
+            to: "lib2"`,
+			wantErr:   false,
+			wantCount: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			vendorDir := filepath.Join(tempDir, "vendor")
+			_ = os.MkdirAll(vendorDir, 0755)
+
+			// Write test YAML
+			configPath := filepath.Join(vendorDir, "vendor.yml")
+			if err := os.WriteFile(configPath, []byte(tt.yaml), 0644); err != nil {
+				t.Fatalf("Failed to write test config: %v", err)
+			}
+
+			// Attempt to load
+			store := NewFileConfigStore(vendorDir)
+			config, err := store.Load()
+
+			// Check error expectation
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if len(config.Vendors) != tt.wantCount {
+					t.Errorf("Expected %d vendors, got %d", tt.wantCount, len(config.Vendors))
+				}
+			}
+		})
+	}
+}
+
+func TestLoadLock_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		yaml      string
+		wantErr   bool
+		wantCount int
+	}{
+		{
+			name: "Invalid YAML syntax",
+			yaml: `vendors:
+  - name: test
+    ref: main
+    commit_hash: {invalid`,
+			wantErr: true,
+		},
+		{
+			name:    "Wrong type for vendors",
+			yaml:    `vendors: "not-an-array"`,
+			wantErr: true,
+		},
+		{
+			name:      "Empty lock file",
+			yaml:      "",
+			wantErr:   false,
+			wantCount: 0,
+		},
+		{
+			name: "Lock with all fields",
+			yaml: `vendors:
+  - name: "complete"
+    ref: "v1.0.0"
+    commit_hash: "abc123def456"
+    license_path: "vendor/licenses/complete.txt"
+    updated: "2025-01-15T12:30:45Z"`,
+			wantErr:   false,
+			wantCount: 1,
+		},
+		{
+			name: "Lock with minimal fields",
+			yaml: `vendors:
+  - name: "minimal"
+    ref: "main"
+    commit_hash: "abc123"`,
+			wantErr:   false,
+			wantCount: 1,
+		},
+		{
+			name: "Lock with extra unknown fields (ignored)",
+			yaml: `vendors:
+  - name: "test"
+    ref: "main"
+    commit_hash: "abc123"
+    extra_field: "ignored"
+    another_field: 42`,
+			wantErr:   false,
+			wantCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			vendorDir := filepath.Join(tempDir, "vendor")
+			_ = os.MkdirAll(vendorDir, 0755)
+
+			// Write test YAML
+			lockPath := filepath.Join(vendorDir, "vendor.lock")
+			if err := os.WriteFile(lockPath, []byte(tt.yaml), 0644); err != nil {
+				t.Fatalf("Failed to write test lock: %v", err)
+			}
+
+			// Attempt to load
+			store := NewFileLockStore(vendorDir)
+			lock, err := store.Load()
+
+			// Check error expectation
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if len(lock.Vendors) != tt.wantCount {
+					t.Errorf("Expected %d vendors, got %d", tt.wantCount, len(lock.Vendors))
+				}
+			}
+		})
+	}
+}
+
+func TestConfig_LargeFile(t *testing.T) {
+	t.Run("Config with 100 vendors", func(t *testing.T) {
+		tempDir := t.TempDir()
+		vendorDir := filepath.Join(tempDir, "vendor")
+		m := newTestManager(vendorDir)
+		_ = os.MkdirAll(m.RootDir, 0755)
+
+		// Create config with 100 vendors
+		config := types.VendorConfig{Vendors: make([]types.VendorSpec, 100)}
+		for i := 0; i < 100; i++ {
+			config.Vendors[i] = types.VendorSpec{
+				Name:    filepath.Join("vendor", string(rune(i))),
+				URL:     filepath.Join("https://github.com/test/repo", string(rune(i))),
+				License: "MIT",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "src", To: filepath.Join("lib", string(rune(i)))},
+						},
+					},
+				},
+			}
+		}
+
+		// Save and load
+		if err := m.saveConfig(config); err != nil {
+			t.Fatalf("Failed to save large config: %v", err)
+		}
+
+		loadedConfig, err := m.loadConfig()
+		if err != nil {
+			t.Fatalf("Failed to load large config: %v", err)
+		}
+
+		if len(loadedConfig.Vendors) != 100 {
+			t.Errorf("Expected 100 vendors, got %d", len(loadedConfig.Vendors))
 		}
 	})
 }
