@@ -13,9 +13,85 @@ A lightweight CLI tool for managing vendored dependencies from Git repositories 
 - **Interactive TUI**: User-friendly terminal interface with file browser
 - **Deterministic Locking**: Lock dependencies to specific commits for reproducibility
 - **Multi-Ref Support**: Track multiple branches/tags from the same repository
-- **Smart URL Parsing**: Paste GitHub file links directly - auto-extracts repo, branch, and path
-- **License Compliance**: Automatic license detection and verification
+- **Multi-Platform Support**: Works with GitHub, GitLab, Bitbucket, and any git server
+- **Smart URL Parsing**: Paste file links directly - auto-extracts repo, branch, and path
+- **License Compliance**: Automatic license detection via API or LICENSE file
 - **Dry-Run Mode**: Preview changes before applying them
+
+## Supported Platforms
+
+git-vendor supports multiple git hosting platforms with automatic detection:
+
+### Full API Support (Automatic License Detection)
+
+**GitHub** - github.com and GitHub Enterprise
+- Smart URL parsing for `/blob/` and `/tree/` links
+- API-based license detection via GitHub API
+- Authentication: `GITHUB_TOKEN` environment variable
+```bash
+git-vendor add https://github.com/owner/repo/blob/main/src/utils.go
+git-vendor add https://github.enterprise.com/team/project
+```
+
+**GitLab** - gitlab.com and self-hosted instances
+- Smart URL parsing for `/-/blob/` and `/-/tree/` links
+- API-based license detection via GitLab API
+- Authentication: `GITLAB_TOKEN` environment variable
+- Supports nested groups (unlimited depth)
+```bash
+git-vendor add https://gitlab.com/owner/repo/-/blob/main/lib/helper.go
+git-vendor add https://gitlab.com/group/subgroup/project/-/tree/dev/src
+git-vendor add https://gitlab.company.com/team/repo
+```
+
+### Partial Support (Manual License Detection)
+
+**Bitbucket** - bitbucket.org
+- Smart URL parsing for `/src/` links
+- License detected from LICENSE file in repository
+```bash
+git-vendor add https://bitbucket.org/owner/repo/src/main/utils.py
+```
+
+**Generic Git** - Any git server
+- Supports git://, ssh://, https:// protocols
+- License detected from LICENSE file in repository
+```bash
+git-vendor add https://git.example.com/project/repo.git
+git-vendor add git@git.company.com:team/project.git
+```
+
+### Authentication
+
+For private repositories or to avoid API rate limits:
+
+```bash
+# GitHub (increases rate limit from 60/hr to 5000/hr)
+export GITHUB_TOKEN=ghp_your_token_here
+
+# GitLab (enables private repos and increases rate limit)
+export GITLAB_TOKEN=glpat_your_token_here
+
+git-vendor add <url>
+```
+
+### Platform Auto-Detection
+
+git-vendor automatically detects the hosting platform from your URL - no configuration needed!
+
+```bash
+# Detected as GitHub
+git-vendor add https://github.com/golang/go/blob/master/src/fmt/print.go
+
+# Detected as GitLab
+git-vendor add https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/api/api.rb
+
+# Detected as Bitbucket
+git-vendor add https://bitbucket.org/atlassian/python-bitbucket/src/master/setup.py
+
+# Detected as Generic
+git-vendor add https://git.kernel.org/pub/scm/git/git.git
+```
 
 ## Installation
 

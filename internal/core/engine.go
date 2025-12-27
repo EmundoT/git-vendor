@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 
+	"git-vendor/internal/core/providers"
 	"git-vendor/internal/types"
 )
 
@@ -59,7 +60,18 @@ func NewManager() *Manager {
 	lockStore := NewFileLockStore(rootDir)
 	gitClient := NewSystemGitClient(Verbose)
 	fs := NewOSFileSystem()
-	licenseChecker := NewGitHubLicenseChecker(nil, AllowedLicenses)
+
+	// Create provider registry for multi-platform URL parsing
+	providerRegistry := providers.NewProviderRegistry()
+
+	// Create multi-platform license checker (supports GitHub, GitLab, Bitbucket, generic)
+	licenseChecker := NewMultiPlatformLicenseChecker(
+		providerRegistry,
+		fs,
+		gitClient,
+		AllowedLicenses,
+	)
+
 	ui := &SilentUICallback{} // Default to silent
 
 	// Create syncer with injected dependencies

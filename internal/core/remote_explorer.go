@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 
+	"git-vendor/internal/core/providers"
 	"git-vendor/internal/types"
 )
 
@@ -10,6 +11,7 @@ import (
 type RemoteExplorer struct {
 	gitClient GitClient
 	fs        FileSystem
+	registry  *providers.ProviderRegistry
 }
 
 // NewRemoteExplorer creates a new RemoteExplorer
@@ -17,6 +19,7 @@ func NewRemoteExplorer(gitClient GitClient, fs FileSystem) *RemoteExplorer {
 	return &RemoteExplorer{
 		gitClient: gitClient,
 		fs:        fs,
+		registry:  providers.NewProviderRegistry(),
 	}
 }
 
@@ -62,7 +65,21 @@ func (e *RemoteExplorer) ListLocalDir(path string) ([]string, error) {
 	return e.fs.ReadDir(path)
 }
 
-// ParseSmartURL parses GitHub URLs and extracts repository, ref, and path
+// ParseSmartURL parses URLs from any supported git hosting platform
+// Supports GitHub, GitLab, Bitbucket, and generic git URLs
 func (e *RemoteExplorer) ParseSmartURL(rawURL string) (string, string, string) {
-	return ParseSmartURL(rawURL)
+	baseURL, ref, path, err := e.registry.ParseURL(rawURL)
+	if err != nil {
+		// Fallback to returning just the URL for compatibility
+		// (generic provider should never error, but just in case)
+		return rawURL, "", ""
+	}
+	return baseURL, ref, path
+}
+
+// GetProviderName returns the detected provider name for a URL
+// Useful for debugging and logging
+func (e *RemoteExplorer) GetProviderName(url string) string {
+	provider := e.registry.DetectProvider(url)
+	return provider.Name()
 }
