@@ -44,10 +44,37 @@ install-hooks:
 ci: mocks lint test
 	@echo "All CI checks passed!"
 
+.PHONY: test-integration
+test-integration:
+	@echo "Running integration tests..."
+	go test -tags=integration -v ./internal/core/...
+
+.PHONY: test-all
+test-all: mocks test test-integration
+	@echo "All tests passed!"
+
+.PHONY: bench
+bench:
+	@echo "Running benchmarks..."
+	go test -bench=. -benchmem ./internal/core/ | tee benchmark.txt
+
+.PHONY: test-coverage-html
+test-coverage-html:
+	@echo "Generating HTML coverage report..."
+	go test -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Open coverage.html in browser"
+
+.PHONY: test-property
+test-property:
+	@echo "Running property-based tests..."
+	go test -v -run Property ./internal/core/
+
 .PHONY: clean
 clean:
 	@echo "Cleaning..."
 	rm -f git-vendor git-vendor.exe
-	rm -f coverage.out coverage.txt
+	rm -f coverage.out coverage.txt coverage.html
+	rm -f benchmark.txt
 	rm -f internal/core/*_mock_test.go
 	@echo "Done!"
