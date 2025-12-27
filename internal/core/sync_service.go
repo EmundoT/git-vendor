@@ -86,6 +86,18 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 		s.printSyncHeader(config, opts.VendorName)
 	}
 
+	// Calculate total vendors for progress
+	vendorCount := 0
+	for _, v := range config.Vendors {
+		if opts.VendorName == "" || v.Name == opts.VendorName {
+			vendorCount++
+		}
+	}
+
+	// Start progress tracking
+	progress := s.ui.StartProgress(vendorCount, "Syncing vendors")
+	defer progress.Complete()
+
 	// Track total stats across all vendors
 	var totalStats CopyStats
 
@@ -98,6 +110,7 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 
 		if opts.DryRun {
 			s.previewSyncVendor(v, lockMap[v.Name])
+			progress.Increment(v.Name)
 		} else {
 			// If force is true, pass nil to ignore lock and re-download
 			refs := lockMap[v.Name]
@@ -106,9 +119,11 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 			}
 			_, stats, err := s.syncVendor(v, refs, opts)
 			if err != nil {
+				progress.Fail(err)
 				return err
 			}
 			totalStats.Add(stats)
+			progress.Increment(fmt.Sprintf("✓ %s", v.Name))
 		}
 	}
 
