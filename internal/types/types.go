@@ -87,3 +87,18 @@ type IncrementalSyncCache struct {
 	Files      []FileChecksum `json:"files"`
 	CachedAt   string         `json:"cached_at"` // RFC3339 timestamp
 }
+
+// ProgressTracker represents a progress indicator for long-running operations
+type ProgressTracker interface {
+	// Increment advances progress by one unit with an optional status message
+	Increment(message string)
+
+	// SetTotal updates the total expected units (for dynamic totals)
+	SetTotal(total int)
+
+	// Complete marks the operation as successfully finished
+	Complete()
+
+	// Fail marks the operation as failed with an error
+	Fail(err error)
+}

@@ -43,6 +43,10 @@ func (s *UpdateService) UpdateAll() error {
 
 	lock := types.VendorLock{}
 
+	// Start progress tracking
+	progress := s.ui.StartProgress(len(config.Vendors), "Updating vendors")
+	defer progress.Complete()
+
 	// Update each vendor
 	for _, v := range config.Vendors {
 		// Sync vendor without lock (force latest)
@@ -50,6 +54,8 @@ func (s *UpdateService) UpdateAll() error {
 		updatedRefs, _, err := s.syncService.syncVendor(v, nil, SyncOptions{Force: true, NoCache: true})
 		if err != nil {
 			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
+			// Continue on error - don't fail the whole update
+			progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
 			continue
 		}
 
@@ -67,6 +73,8 @@ func (s *UpdateService) UpdateAll() error {
 
 			s.ui.ShowSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, hash[:7]))
 		}
+
+		progress.Increment(fmt.Sprintf("✓ %s", v.Name))
 	}
 
 	// Save the new lockfile

@@ -20,6 +20,9 @@ type UICallback interface {
 	GetOutputMode() OutputMode
 	IsAutoApprove() bool
 	FormatJSON(output JSONOutput) error
+
+	// Progress tracking
+	StartProgress(total int, label string) types.ProgressTracker
 }
 
 // SilentUICallback is a no-op implementation (for testing/CI)
@@ -51,6 +54,19 @@ func (s *SilentUICallback) IsAutoApprove() bool { return false }
 
 // FormatJSON implements UICallback for silent operation (does nothing).
 func (s *SilentUICallback) FormatJSON(_ JSONOutput) error { return nil }
+
+// StartProgress implements UICallback for silent operation (no-op).
+func (s *SilentUICallback) StartProgress(total int, label string) types.ProgressTracker {
+	return &NoOpProgressTracker{}
+}
+
+// NoOpProgressTracker is a no-op implementation for testing
+type NoOpProgressTracker struct{}
+
+func (t *NoOpProgressTracker) Increment(message string) {}
+func (t *NoOpProgressTracker) SetTotal(total int)       {}
+func (t *NoOpProgressTracker) Complete()                {}
+func (t *NoOpProgressTracker) Fail(err error)           {}
 
 // VendorSyncer orchestrates vendor operations using domain services
 type VendorSyncer struct {

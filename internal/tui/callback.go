@@ -2,9 +2,13 @@
 package tui
 
 import (
+	"os"
+
 	"git-vendor/internal/core"
+	"git-vendor/internal/types"
 
 	"github.com/charmbracelet/huh"
+	"github.com/mattn/go-isatty"
 )
 
 // TUICallback implements UICallback for interactive terminal use with styled output.
@@ -71,4 +75,14 @@ func (t *TUICallback) IsAutoApprove() bool {
 // FormatJSON is not used in interactive mode
 func (t *TUICallback) FormatJSON(_ core.JSONOutput) error {
 	return nil
+}
+
+// StartProgress creates a progress tracker (bubbletea for TTY, text for non-TTY)
+func (t *TUICallback) StartProgress(total int, label string) types.ProgressTracker {
+	if isatty.IsTerminal(os.Stdout.Fd()) {
+		// Interactive terminal - use bubbletea
+		return NewBubbletaeProgressTracker(total, label)
+	}
+	// Piped or redirected - use text fallback
+	return NewTextProgressTracker(total, label)
 }

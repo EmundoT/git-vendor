@@ -3,6 +3,8 @@ package core
 import (
 	"testing"
 
+	"git-vendor/internal/types"
+
 	"github.com/golang/mock/gomock"
 )
 
@@ -85,4 +87,8 @@ func (c *capturingUICallback) IsAutoApprove() bool {
 
 func (c *capturingUICallback) FormatJSON(output JSONOutput) error {
 	return nil
+}
+
+func (c *capturingUICallback) StartProgress(total int, label string) types.ProgressTracker {
+	return &NoOpProgressTracker{}
 }

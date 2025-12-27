@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"git-vendor/internal/core"
+	"git-vendor/internal/types"
 )
 
 // NonInteractiveTUICallback handles non-interactive mode output
@@ -105,4 +106,18 @@ func (n *NonInteractiveTUICallback) FormatJSON(output core.JSONOutput) error {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)
+}
+
+// StartProgress creates appropriate progress tracker based on output mode
+func (n *NonInteractiveTUICallback) StartProgress(total int, label string) types.ProgressTracker {
+	switch n.flags.Mode {
+	case core.OutputNormal:
+		// Text-based progress for non-interactive normal mode
+		return NewTextProgressTracker(total, label)
+	case core.OutputQuiet, core.OutputJSON:
+		// No progress output in quiet or JSON mode
+		return NewNoOpProgressTracker()
+	default:
+		return NewNoOpProgressTracker()
+	}
 }
