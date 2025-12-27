@@ -72,3 +72,18 @@ type SyncStatus struct {
 	AllSynced      bool
 	VendorStatuses []VendorStatus
 }
+
+// FileChecksum represents a cached checksum for incremental sync
+type FileChecksum struct {
+	Path string `json:"path"`
+	Hash string `json:"hash"` // SHA-256 of file content
+}
+
+// IncrementalSyncCache tracks file states for skip optimization
+type IncrementalSyncCache struct {
+	VendorName string         `json:"vendor_name"`
+	Ref        string         `json:"ref"`
+	CommitHash string         `json:"commit_hash"`
+	Files      []FileChecksum `json:"files"`
+	CachedAt   string         `json:"cached_at"` // RFC3339 timestamp
+}

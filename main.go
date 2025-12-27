@@ -351,6 +351,7 @@ func main() {
 		// Parse command-specific flags
 		dryRun := false
 		force := false
+		noCache := false
 		vendorName := ""
 
 		for _, arg := range args {
@@ -359,6 +360,8 @@ func main() {
 				dryRun = true
 			case arg == "--force":
 				force = true
+			case arg == "--no-cache":
+				noCache = true
 			case arg == "--verbose" || arg == "-v":
 				core.Verbose = true
 				manager.UpdateVerboseMode(true)
@@ -382,7 +385,7 @@ func main() {
 				fmt.Println("Run 'git-vendor sync' to apply changes.")
 			}
 		} else {
-			if err := manager.SyncWithOptions(vendorName, force); err != nil {
+			if err := manager.SyncWithOptions(vendorName, force, noCache); err != nil {
 				callback.ShowError("Sync Failed", err.Error())
 				os.Exit(1)
 			}

@@ -174,9 +174,9 @@ func (m *Manager) SyncDryRun() error {
 	return m.syncer.SyncDryRun()
 }
 
-// SyncWithOptions performs sync with vendor filter and force option
-func (m *Manager) SyncWithOptions(vendorName string, force bool) error {
-	return m.syncer.SyncWithOptions(vendorName, force)
+// SyncWithOptions performs sync with vendor filter, force, and cache options
+func (m *Manager) SyncWithOptions(vendorName string, force, noCache bool) error {
+	return m.syncer.SyncWithOptions(vendorName, force, noCache)
 }
 
 // UpdateAll updates all vendors and regenerates lockfile

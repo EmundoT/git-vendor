@@ -187,7 +187,7 @@ func TestCopyMappings_AutoNaming(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, _, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -231,7 +231,7 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, _, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -260,7 +260,7 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	_, _, err := syncer.syncVendor(vendor, nil)
+	_, _, err := syncer.syncVendor(vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
