@@ -2,6 +2,10 @@
 
 Advanced features and workflows for power users.
 
+**Note:** All examples use `git-vendor`, but `git vendor` works identically as a git subcommand.
+
+---
+
 ## Table of Contents
 
 - [Multi-Ref Tracking](#multi-ref-tracking)

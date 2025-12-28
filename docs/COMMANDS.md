@@ -2,6 +2,25 @@
 
 Complete reference for all git-vendor commands.
 
+## Git Subcommand Support
+
+git-vendor can be invoked as either `git-vendor` or `git vendor` - both work identically.
+
+**Examples:**
+```bash
+# Standalone command
+git-vendor init
+git-vendor sync
+
+# Git subcommand (same result)
+git vendor init
+git vendor sync
+```
+
+All examples in this document use `git-vendor`, but you can substitute `git vendor` anywhere.
+
+---
+
 ## Table of Contents
 
 - [Global Flags](#global-flags)

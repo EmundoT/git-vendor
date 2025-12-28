@@ -515,6 +515,7 @@ func AskToOverrideCompliance(license string) bool {
 func PrintHelp() {
 	fmt.Println(styleTitle.Render(fmt.Sprintf("git-vendor %s", version.GetVersion())))
 	fmt.Println("Vendor specific files/directories from Git repositories with deterministic locking")
+	fmt.Println("\nWorks as: git-vendor <command> or git vendor <command>")
 	fmt.Println("\nCommands:")
 	fmt.Println("  init                Initialize vendor directory")
 	fmt.Println("  add                 Add a new vendor dependency (interactive wizard)")

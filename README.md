@@ -73,6 +73,8 @@ A CLI tool for vendoring specific files/directories from Git repositories with d
 # 1. Install
 go install github.com/EmundoT/git-vendor@latest
 
+# Works as both 'git-vendor' and 'git vendor'
+
 # 2. Initialize vendor directory
 git-vendor init
 
@@ -103,6 +105,35 @@ git clone https://github.com/EmundoT/git-vendor
 cd git-vendor
 go build -o git-vendor
 sudo mv git-vendor /usr/local/bin/  # macOS/Linux
+```
+
+### As a Git Subcommand
+
+Once installed in your PATH, git-vendor automatically works as a git subcommand:
+
+```bash
+# Both of these work identically:
+git-vendor sync
+git vendor sync
+
+# All commands work with git prefix:
+git vendor init
+git vendor add
+git vendor update
+```
+
+To install only as a git subcommand (without standalone `git-vendor`):
+
+**Linux/macOS:**
+```bash
+go build -o git-vendor
+sudo mv git-vendor $(git --exec-path)/git-vendor
+```
+
+**Windows:**
+```powershell
+go build -o git-vendor.exe
+move git-vendor.exe "$(git --exec-path)\git-vendor.exe"
 ```
 
 ### Requirements
@@ -166,6 +197,8 @@ Leave `to` empty for automatic naming based on source filename.
 ---
 
 ## Common Commands
+
+**Note:** All commands can be invoked as `git vendor <command>` or `git-vendor <command>`.
 
 | Command | Description |
 |---------|-------------|
