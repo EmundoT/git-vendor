@@ -113,3 +113,24 @@ type UpdateCheckResult struct {
 	LastUpdated string
 	UpToDate    bool
 }
+
+// CommitInfo represents a single git commit
+type CommitInfo struct {
+	Hash      string
+	ShortHash string
+	Subject   string
+	Author    string
+	Date      string
+}
+
+// VendorDiff represents the commit history between two refs
+type VendorDiff struct {
+	VendorName  string
+	Ref         string
+	OldHash     string
+	NewHash     string
+	OldDate     string
+	NewDate     string
+	Commits     []CommitInfo
+	CommitCount int
+}

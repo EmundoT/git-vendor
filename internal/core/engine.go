@@ -229,6 +229,16 @@ func (m *Manager) CheckUpdates() ([]types.UpdateCheckResult, error) {
 	return m.syncer.CheckUpdates()
 }
 
+// DiffVendor shows commit differences between locked and latest versions
+func (m *Manager) DiffVendor(vendorName string) ([]types.VendorDiff, error) {
+	return m.syncer.DiffVendor(vendorName)
+}
+
+// WatchConfig watches for changes to vendor.yml and triggers a callback
+func (m *Manager) WatchConfig(callback func() error) error {
+	return m.syncer.WatchConfig(callback)
+}
+
 // UpdateVerboseMode updates the verbose flag for git operations
 func (m *Manager) UpdateVerboseMode(verbose bool) {
 	// Update the global git client
