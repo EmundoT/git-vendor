@@ -3,12 +3,14 @@
 ## Development Setup
 
 1. **Clone the repository:**
+
    ```bash
    git clone https://github.com/EmundoT/git-vendor
    cd git-vendor
    ```
 
 2. **Install dependencies:**
+
    ```bash
    # Install mockgen
    go install github.com/golang/mock/mockgen@latest
@@ -18,16 +20,19 @@
    ```
 
 3. **Generate mocks:**
+
    ```bash
    make mocks
    ```
 
 4. **Install pre-commit hooks:**
+
    ```bash
    make install-hooks
    ```
 
 5. **Run tests:**
+
    ```bash
    make test
    ```
@@ -37,6 +42,7 @@
 ### Making Changes
 
 1. Create a feature branch:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -44,21 +50,25 @@
 2. Make your changes
 
 3. **Important:** If you modify any interface, regenerate mocks:
+
    ```bash
    make mocks
    ```
 
 4. Run tests:
+
    ```bash
    make test
    ```
 
 5. Format code:
+
    ```bash
    make fmt
    ```
 
 6. Run linter:
+
    ```bash
    make lint
    ```
@@ -85,6 +95,7 @@
 ```
 
 **Types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `refactor`: Code change that neither fixes a bug nor adds a feature
@@ -93,6 +104,7 @@
 - `chore`: Changes to build process or tools
 
 **Example:**
+
 ```text
 feat(sync): add parallel vendor processing
 
@@ -154,6 +166,7 @@ make lint
 ### CI Checks
 
 All PRs must pass:
+
 - Tests on Linux, macOS, Windows
 - golangci-lint
 - Build verification
@@ -163,6 +176,7 @@ All PRs must pass:
 Releases are automated via GitHub Actions:
 
 1. Tag a new version:
+
    ```bash
    git tag -a v1.2.3 -m "Release v1.2.3"
    git push origin v1.2.3

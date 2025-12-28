@@ -17,12 +17,12 @@ git-vendor supports multiple Git hosting platforms with automatic detection and 
 
 ## Supported Platforms Overview
 
-| Platform | Smart URLs | License API | Authentication | Private Repos |
-|----------|-----------|-------------|----------------|---------------|
-| **GitHub** | ✅ Yes | ✅ API | `GITHUB_TOKEN` | ✅ Yes |
-| **GitLab** | ✅ Yes | ✅ API | `GITLAB_TOKEN` | ✅ Yes |
-| **Bitbucket** | ✅ Yes | ❌ File-based | N/A | ❌ No |
-| **Generic Git** | ❌ No | ❌ File-based | SSH/HTTPS | ✅ Yes (via SSH) |
+| Platform        | Smart URLs | License API   | Authentication | Private Repos    |
+| --------------- | ---------- | ------------- | -------------- | ---------------- |
+| **GitHub**      | ✅ Yes     | ✅ API        | `GITHUB_TOKEN` | ✅ Yes           |
+| **GitLab**      | ✅ Yes     | ✅ API        | `GITLAB_TOKEN` | ✅ Yes           |
+| **Bitbucket**   | ✅ Yes     | ❌ File-based | N/A            | ❌ No            |
+| **Generic Git** | ❌ No      | ❌ File-based | SSH/HTTPS      | ✅ Yes (via SSH) |
 
 ---
 
@@ -56,12 +56,14 @@ git-vendor add https://github.enterprise.com/team/project
 ### Smart URL Patterns
 
 GitHub URLs are automatically parsed to extract:
+
 - **Repository**: `github.com/owner/repo`
 - **Ref**: Branch, tag, or commit from `/blob/{ref}/` or `/tree/{ref}/`
 - **Path**: File or directory path after the ref
 
 Example breakdown:
-```
+
+```text
 https://github.com/golang/go/blob/master/src/fmt/print.go
          └─────┬──────┘ └──┬──┘ └──┬───┘ └────────┬────────┘
             Repo         Ref    Type      Path
@@ -77,6 +79,7 @@ git-vendor add https://github.com/your-org/private-repo
 ```
 
 **How to create a token:**
+
 1. Go to GitHub Settings → Developer settings → Personal access tokens
 2. Generate new token (classic)
 3. Select scopes: `repo` (for private repos) or `public_repo` (for public only)
@@ -115,6 +118,7 @@ git-vendor add https://gitlab.company.com/team/repo
 ### Smart URL Patterns
 
 GitLab URLs use `/-/blob/` and `/-/tree/` delimiters:
+
 ```
 https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/api/api.rb
         └────────┬────────┘ └─┬─┘ └──┬───┘ └─────┬─────┘
@@ -124,6 +128,7 @@ https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/api/api.rb
 ### Nested Groups
 
 GitLab supports unlimited nested groups:
+
 ```bash
 git-vendor add https://gitlab.com/company/team/subteam/project/-/blob/main/src/
                       └──────────────┬──────────────┘
@@ -140,6 +145,7 @@ git-vendor add https://gitlab.com/your-org/private-repo
 ```
 
 **How to create a token:**
+
 1. Go to GitLab User Settings → Access Tokens
 2. Create personal access token
 3. Select scopes: `read_api` and `read_repository`
@@ -173,6 +179,7 @@ git-vendor add https://bitbucket.org/owner/repo/src/develop/lib/
 ### Smart URL Patterns
 
 Bitbucket URLs use `/src/` delimiter:
+
 ```
 https://bitbucket.org/atlassian/python-bitbucket/src/master/setup.py
          └───────┬───────┘ └─┬─┘ └──┬──┘ └───┬────┘
@@ -215,6 +222,7 @@ git-vendor add git://git.kernel.org/pub/scm/git/git.git
 For private repositories, use:
 
 **SSH keys:**
+
 ```bash
 # Ensure SSH key is added to ssh-agent
 ssh-add ~/.ssh/id_rsa
@@ -224,6 +232,7 @@ git-vendor add git@git.company.com:team/repo.git
 ```
 
 **HTTPS with credentials:**
+
 ```bash
 # Git will prompt for credentials or use git credential helper
 git-vendor add https://git.company.com/team/repo.git
@@ -242,10 +251,12 @@ git-vendor add https://git.company.com/team/repo.git
 ### GitHub Token
 
 **Purpose:**
+
 - Access private repositories
 - Increase rate limit from 60/hr to 5000/hr
 
 **Setup:**
+
 ```bash
 # Linux/macOS (persistent)
 echo 'export GITHUB_TOKEN=ghp_your_token_here' >> ~/.bashrc
@@ -259,6 +270,7 @@ export GITHUB_TOKEN=ghp_your_token_here
 ```
 
 **Verify:**
+
 ```bash
 echo $GITHUB_TOKEN
 git-vendor add https://github.com/your-org/private-repo
@@ -267,10 +279,12 @@ git-vendor add https://github.com/your-org/private-repo
 ### GitLab Token
 
 **Purpose:**
+
 - Access private repositories
 - Increase rate limits
 
 **Setup:**
+
 ```bash
 # Linux/macOS (persistent)
 echo 'export GITLAB_TOKEN=glpat_your_token_here' >> ~/.bashrc
@@ -281,9 +295,11 @@ export GITLAB_TOKEN=glpat_your_token_here
 ```
 
 **Verify:**
+
 ```bash
 echo $GITLAB_TOKEN
 git-vendor add https://gitlab.com/your-org/private-repo
+
 ```
 
 ---
@@ -292,24 +308,25 @@ git-vendor add https://gitlab.com/your-org/private-repo
 
 ### GitHub
 
-| Auth Type | Rate Limit | Notes |
-|-----------|-----------|-------|
-| **Unauthenticated** | 60 requests/hour | Shared by IP address |
-| **With GITHUB_TOKEN** | 5,000 requests/hour | Per user |
-| **GitHub Enterprise** | Varies | Configured by admin |
+| Auth Type             | Rate Limit          | Notes                |
+| --------------------- | ------------------- | -------------------- |
+| **Unauthenticated**   | 60 requests/hour    | Shared by IP address |
+| **With GITHUB_TOKEN** | 5,000 requests/hour | Per user             |
+| **GitHub Enterprise** | Varies              | Configured by admin  |
 
 **Impact on git-vendor:**
+
 - License detection: 1 request per vendor
 - Update checking: 1 request per vendor
 - Minimal impact for typical usage
 
 ### GitLab
 
-| Auth Type | Rate Limit | Notes |
-|-----------|-----------|-------|
-| **Unauthenticated** | 300 requests/hour | For gitlab.com |
-| **With GITLAB_TOKEN** | Varies | Typically higher |
-| **Self-hosted** | Configurable | Set by admin |
+| Auth Type             | Rate Limit        | Notes            |
+| --------------------- | ----------------- | ---------------- |
+| **Unauthenticated**   | 300 requests/hour | For gitlab.com   |
+| **With GITLAB_TOKEN** | Varies            | Typically higher |
+| **Self-hosted**       | Configurable      | Set by admin     |
 
 ### Bitbucket
 
@@ -357,11 +374,13 @@ git-vendor add https://git.kernel.org/pub/scm/git/git.git
 ### License Detection Failures
 
 **GitHub/GitLab:**
+
 - Verify API token is set correctly
 - Check token has required scopes (`repo` or `read_repository`)
 - Ensure repository is accessible with your credentials
 
 **Bitbucket/Generic:**
+
 - Ensure repository has LICENSE file in root directory
 - Check file is named: `LICENSE`, `LICENSE.txt`, `LICENSE.md`, or `COPYING`
 - Verify file permissions allow reading
@@ -369,6 +388,7 @@ git-vendor add https://git.kernel.org/pub/scm/git/git.git
 ### Private Repository Access
 
 **GitHub:**
+
 ```bash
 # Verify token
 echo $GITHUB_TOKEN
@@ -379,6 +399,7 @@ git clone https://$GITHUB_TOKEN@github.com/your-org/private-repo.git /tmp/test
 ```
 
 **GitLab:**
+
 ```bash
 # Verify token
 echo $GITLAB_TOKEN
@@ -389,6 +410,7 @@ git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/your-org/private-repo.git /tmp
 ```
 
 **Generic Git (SSH):**
+
 ```bash
 # Test SSH connection
 ssh -T git@git.company.com

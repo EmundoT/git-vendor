@@ -25,6 +25,7 @@ Advanced features and workflows for power users.
 Track multiple branches or tags from the same repository simultaneously.
 
 **Use Cases:**
+
 - Maintain multiple versions of a library (v1.x and v2.x)
 - Track both stable and development branches
 - Compare implementations across versions
@@ -52,11 +53,13 @@ vendors:
 ```
 
 **How it works:**
+
 - Each `spec` tracks a different git ref independently
 - Separate lock file entries for each ref
 - Independent sync and update per ref
 
 **Example workflow:**
+
 ```bash
 # Update all refs (v1.0, v2.0, and main)
 git-vendor update
@@ -84,20 +87,22 @@ vendors:
     url: https://github.com/owner/repo
     specs:
       - ref: main
-        default_target: "lib/"  # Optional default directory
+        default_target: "lib/" # Optional default directory
         mapping:
           - from: src/utils
-            to: ""  # Auto-named as "lib/utils"
+            to: "" # Auto-named as "lib/utils"
           - from: src/helpers.go
-            to: ""  # Auto-named as "lib/helpers.go"
+            to: "" # Auto-named as "lib/helpers.go"
 ```
 
 **Auto-naming logic:**
 
 1. **With `default_target`**: Uses base name of source + default target
+
    - `from: src/utils` + `default_target: lib/` → `lib/utils`
 
 2. **Without `default_target`**: Uses base name of source in current directory
+
    - `from: src/utils` → `utils`
 
 3. **For root paths**: Falls back to vendor name
@@ -150,9 +155,9 @@ vendors:
 
 ### Hook Types
 
-| Hook | When | Failure Behavior |
-|------|------|------------------|
-| `pre_sync` | Before git clone/sync | **Stops sync** (vendor skipped) |
+| Hook        | When                  | Failure Behavior                                |
+| ----------- | --------------------- | ----------------------------------------------- |
+| `pre_sync`  | Before git clone/sync | **Stops sync** (vendor skipped)                 |
 | `post_sync` | After successful sync | **Marks sync as failed** (files already copied) |
 
 ### Features
@@ -166,14 +171,14 @@ vendors:
 
 Hooks have access to these variables:
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `GIT_VENDOR_NAME` | Vendor name | `"frontend-lib"` |
-| `GIT_VENDOR_URL` | Repository URL | `"https://github.com/..."` |
-| `GIT_VENDOR_REF` | Git ref being synced | `"main"` |
-| `GIT_VENDOR_COMMIT` | Resolved commit hash | `"abc123..."` |
-| `GIT_VENDOR_ROOT` | Project root directory | `"/path/to/project"` |
-| `GIT_VENDOR_FILES_COPIED` | Number of files copied | `"42"` |
+| Variable                  | Description            | Example                    |
+| ------------------------- | ---------------------- | -------------------------- |
+| `GIT_VENDOR_NAME`         | Vendor name            | `"frontend-lib"`           |
+| `GIT_VENDOR_URL`          | Repository URL         | `"https://github.com/..."` |
+| `GIT_VENDOR_REF`          | Git ref being synced   | `"main"`                   |
+| `GIT_VENDOR_COMMIT`       | Resolved commit hash   | `"abc123..."`              |
+| `GIT_VENDOR_ROOT`         | Project root directory | `"/path/to/project"`       |
+| `GIT_VENDOR_FILES_COPIED` | Number of files copied | `"42"`                     |
 
 ### Example - Build Automation
 
@@ -226,6 +231,7 @@ vendors:
 - ⚠️ **Only use hooks with vendor configurations you trust**
 
 **Security best practices:**
+
 1. Review hook commands before running `git-vendor sync`
 2. Avoid untrusted vendor configurations
 3. Use version control for `vendor.yml` to track hook changes
@@ -273,6 +279,7 @@ git-vendor sync --group shared
 ### Use Cases
 
 **Environment-specific vendors:**
+
 ```yaml
 vendors:
   - name: dev-tools
@@ -282,6 +289,7 @@ vendors:
 ```
 
 **Feature-based grouping:**
+
 ```yaml
 vendors:
   - name: auth-service
@@ -293,6 +301,7 @@ vendors:
 ```
 
 **Platform-specific:**
+
 ```yaml
 vendors:
   - name: ios-sdk
@@ -312,6 +321,7 @@ vendors:
 ```
 
 This allows flexible batch operations:
+
 ```bash
 # Sync all frontend (includes shared-utils)
 git-vendor sync --group frontend
@@ -337,6 +347,7 @@ git-vendor caches file checksums to skip re-downloading unchanged files.
 ### Cache Invalidation
 
 Cache automatically invalidates when:
+
 - Commit hash changes in `vendor.lock` (after `git-vendor update`)
 - Files manually modified or deleted
 - Vendor configuration changes (new mappings added)
@@ -344,35 +355,40 @@ Cache automatically invalidates when:
 
 ### Performance
 
-| Scenario | Speed | Notes |
-|----------|-------|-------|
-| **Cache hit** | ⚡⚡⚡ 80% faster | No git operations needed |
-| **Cache miss** | Standard | Normal git clone + sync |
-| **Partial cache** | ⚡ 30-50% faster | Some files cached |
+| Scenario          | Speed             | Notes                    |
+| ----------------- | ----------------- | ------------------------ |
+| **Cache hit**     | ⚡⚡⚡ 80% faster | No git operations needed |
+| **Cache miss**    | Standard          | Normal git clone + sync  |
+| **Partial cache** | ⚡ 30-50% faster  | Some files cached        |
 
 ### Cache Management
 
 **Disable cache for single sync:**
+
 ```bash
 git-vendor sync --no-cache
 ```
 
 **Force re-download (bypasses cache):**
+
 ```bash
 git-vendor sync --force
 ```
 
 **Clear cache manually:**
+
 ```bash
 rm -rf vendor/.cache/
 ```
 
 **Inspect cache:**
+
 ```bash
 cat vendor/.cache/my-vendor.json
 ```
 
 Example cache file:
+
 ```json
 {
   "vendor_name": "my-vendor",
@@ -424,18 +440,20 @@ git-vendor update --parallel
 ### Performance
 
 | Vendors | Sequential | Parallel (4 workers) | Speedup |
-|---------|-----------|---------------------|---------|
-| 1 | 10s | 10s | 1x |
-| 3 | 30s | 12s | 2.5x |
-| 5 | 50s | 15s | 3.3x |
-| 10 | 100s | 25s | 4x |
+| ------- | ---------- | -------------------- | ------- |
+| 1       | 10s        | 10s                  | 1x      |
+| 3       | 30s        | 12s                  | 2.5x    |
+| 5       | 50s        | 15s                  | 3.3x    |
+| 10      | 100s       | 25s                  | 4x      |
 
 **Best for:**
+
 - ✅ Projects with 3+ vendors
 - ✅ Large repositories
 - ✅ Network-bound operations
 
 **Not beneficial for:**
+
 - ❌ Single vendor (no parallelization possible)
 - ❌ 1-2 vendors (overhead exceeds benefit)
 - ❌ CPU-bound operations (rare)
@@ -444,25 +462,28 @@ git-vendor update --parallel
 
 git-vendor ensures thread-safe parallel operations:
 
-| Aspect | Thread Safety Approach |
-|--------|----------------------|
-| **Git operations** | Unique temp directories per vendor |
-| **File writes** | Each vendor writes to different paths (no conflicts) |
-| **Lockfile** | Results collected in goroutines, written once at end |
-| **Progress tracking** | Thread-safe progress tracker |
+| Aspect                | Thread Safety Approach                               |
+| --------------------- | ---------------------------------------------------- |
+| **Git operations**    | Unique temp directories per vendor                   |
+| **File writes**       | Each vendor writes to different paths (no conflicts) |
+| **Lockfile**          | Results collected in goroutines, written once at end |
+| **Progress tracking** | Thread-safe progress tracker                         |
 
 **Tested with:**
+
 - `go test -race` (no race conditions detected)
 - All 55 existing tests pass in parallel mode
 
 ### Worker Count Tuning
 
 **Default (NumCPU, max 8):**
+
 ```bash
 git-vendor sync --parallel
 ```
 
 **Custom worker count:**
+
 ```bash
 # 2 workers (conservative)
 git-vendor sync --parallel --workers 2
@@ -472,6 +493,7 @@ git-vendor sync --parallel --workers 8
 ```
 
 **Recommendations:**
+
 - **Fast network**: Use more workers (4-8)
 - **Slow network**: Use fewer workers (2-4)
 - **Mixed vendor sizes**: Default is optimal
@@ -480,6 +502,7 @@ git-vendor sync --parallel --workers 8
 ### Automatic Disabling
 
 Parallel mode auto-disables for:
+
 - Dry-run mode (`--dry-run`)
 - Single vendor sync (`git-vendor sync my-vendor`)
 
@@ -496,6 +519,7 @@ git-vendor watch
 ```
 
 **Output:**
+
 ```text
 👁 Watching for changes to vendor/vendor.yml...
 Press Ctrl+C to stop
@@ -517,6 +541,7 @@ Press Ctrl+C to stop
 ### Use Cases
 
 **Development workflow:**
+
 ```bash
 # Terminal 1: Watch mode
 git-vendor watch
@@ -527,20 +552,22 @@ vim vendor/vendor.yml
 ```
 
 **Live reloading:**
+
 - Edit vendor configuration
 - Automatic sync
 - See changes immediately
 
 ### Editor Compatibility
 
-| Editor | Compatibility | Notes |
-|--------|--------------|-------|
-| **VSCode** | ✅ Excellent | Direct writes trigger watch |
-| **Sublime** | ✅ Good | Triggers correctly |
-| **vim** | ⚠️ Varies | May use atomic writes (temp files) |
-| **nano** | ✅ Good | Usually triggers |
+| Editor      | Compatibility | Notes                              |
+| ----------- | ------------- | ---------------------------------- |
+| **VSCode**  | ✅ Excellent  | Direct writes trigger watch        |
+| **Sublime** | ✅ Good       | Triggers correctly                 |
+| **vim**     | ⚠️ Varies     | May use atomic writes (temp files) |
+| **nano**    | ✅ Good       | Usually triggers                   |
 
 **Tip:** If your editor doesn't trigger watch, save changes and manually touch the file:
+
 ```bash
 touch vendor/vendor.yml
 ```
@@ -595,11 +622,13 @@ git commit -m "Add vendor dependencies"
 ```
 
 **CI workflow:**
+
 ```bash
 git-vendor sync  # Uses committed lockfile
 ```
 
 **Benefits:**
+
 - ✅ Deterministic builds (exact commit hashes)
 - ✅ Fast CI (no update step needed)
 - ✅ Reviewable in PRs
@@ -609,12 +638,14 @@ git-vendor sync  # Uses committed lockfile
 Commit only `vendor/vendor.yml`:
 
 **CI workflow:**
+
 ```bash
 git-vendor update  # Generate lockfile from latest
 git-vendor sync    # Download dependencies
 ```
 
 **Drawbacks:**
+
 - ❌ Non-deterministic (latest commits at CI runtime)
 - ❌ Slower (update + sync)
 - ⚠️ May break if upstream changes
@@ -622,6 +653,7 @@ git-vendor sync    # Download dependencies
 ### Environment Variables
 
 **GitHub Actions:**
+
 ```yaml
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -629,12 +661,14 @@ env:
 ```
 
 **GitLab CI:**
+
 ```yaml
 variables:
   GITHUB_TOKEN: $CI_JOB_TOKEN
 ```
 
 **CircleCI:**
+
 ```yaml
 environment:
   GITHUB_TOKEN: ${GITHUB_TOKEN}
@@ -650,6 +684,7 @@ Add validation to catch config errors:
 ```
 
 **Checks:**
+
 - Duplicate vendor names
 - Missing URLs/refs
 - Empty path mappings
@@ -669,6 +704,7 @@ Speed up builds by caching vendored files:
 ```
 
 **Benefits:**
+
 - Skip re-downloading on cache hit
 - Faster CI runs
 - Reduced network usage
@@ -676,22 +712,26 @@ Speed up builds by caching vendored files:
 ### Best Practices
 
 1. **Use verbose mode for debugging:**
+
    ```bash
    git-vendor sync --verbose
    ```
 
 2. **Dry-run in pull requests:**
+
    ```yaml
    - name: Preview vendor changes
      run: git-vendor sync --dry-run
    ```
 
 3. **Parallel sync for speed:**
+
    ```bash
    git-vendor sync --parallel
    ```
 
 4. **Fail fast on validation:**
+
    ```bash
    git-vendor validate || exit 1
    ```
@@ -704,16 +744,17 @@ Optimize git-vendor for your workflow.
 
 ### Sync Performance
 
-| Technique | Speedup | When to Use |
-|-----------|---------|-------------|
-| **Incremental cache** | 80% | Re-syncing unchanged vendors |
-| **Parallel processing** | 3-5x | Multiple vendors (3+) |
-| **Vendor groups** | Variable | Syncing subsets |
-| **Shallow clones** | 20-40% | Large repos (automatic) |
+| Technique               | Speedup  | When to Use                  |
+| ----------------------- | -------- | ---------------------------- |
+| **Incremental cache**   | 80%      | Re-syncing unchanged vendors |
+| **Parallel processing** | 3-5x     | Multiple vendors (3+)        |
+| **Vendor groups**       | Variable | Syncing subsets              |
+| **Shallow clones**      | 20-40%   | Large repos (automatic)      |
 
 ### Best Practices
 
 **1. Use incremental cache:**
+
 ```bash
 # Normal sync (uses cache)
 git-vendor sync
@@ -723,12 +764,14 @@ git-vendor sync --no-cache
 ```
 
 **2. Enable parallel for multi-vendor:**
+
 ```bash
 # 5+ vendors? Use parallel
 git-vendor sync --parallel
 ```
 
 **3. Organize with groups:**
+
 ```yaml
 vendors:
   - name: frontend-lib
@@ -743,14 +786,16 @@ git-vendor sync --group frontend
 ```
 
 **4. Lock to stable refs:**
+
 ```yaml
 # Prefer tags over branches
 specs:
-  - ref: v1.2.3  # ✅ Stable
+  - ref: v1.2.3 # ✅ Stable
   # - ref: main    # ❌ Changes frequently
 ```
 
 **5. Minimize path mappings:**
+
 ```yaml
 # ❌ Avoid many small mappings
 mapping:
@@ -770,12 +815,14 @@ mapping:
 **Symptom:** Sync takes too long
 
 **Check:**
+
 1. **Network speed:** `ping github.com`
 2. **Repository size:** `git clone --depth 1 <url> test`
 3. **Cache status:** Check `vendor/.cache/`
 4. **Parallel mode:** Try `--parallel` flag
 
 **Solutions:**
+
 - Use `--parallel` for multiple vendors
 - Ensure cache is enabled (no `--no-cache`)
 - Use `--group` to sync subsets

@@ -89,6 +89,7 @@ git-vendor sync
 ```
 
 **What just happened?**
+
 - `init` created `vendor/vendor.yml`, `vendor/vendor.lock`, and `vendor/licenses/`
 - `add` launched an interactive wizard to configure path mappings
 - `sync` downloaded files and locked to exact commit SHAs
@@ -125,12 +126,14 @@ git vendor update
 To install only as a git subcommand (without standalone `git-vendor`):
 
 **Linux/macOS:**
+
 ```bash
 go build -o git-vendor
 sudo mv git-vendor $(git --exec-path)/git-vendor
 ```
 
 **Windows:**
+
 ```powershell
 go build -o git-vendor.exe
 move git-vendor.exe "$(git --exec-path)\git-vendor.exe"
@@ -153,15 +156,16 @@ Defines what to vendor and where:
 vendors:
   - name: example-lib
     url: https://github.com/owner/repo
-    license: MIT  # Auto-detected
+    license: MIT # Auto-detected
     specs:
-      - ref: main  # Branch, tag, or commit
+      - ref: main # Branch, tag, or commit
         mapping:
-          - from: src/utils.go       # Remote path
-            to: internal/utils.go    # Local path
+          - from: src/utils.go # Remote path
+            to: internal/utils.go # Local path
 ```
 
 **Key fields:**
+
 - `name` - Display name
 - `url` - Git repository URL (any platform)
 - `ref` - Branch, tag, or commit to track
@@ -177,7 +181,7 @@ Stores exact commit hashes for reproducibility:
 vendors:
   - name: example-lib
     ref: main
-    commit_hash: abc123def456...  # Exact SHA
+    commit_hash: abc123def456... # Exact SHA
     updated: "2024-12-27T10:30:00Z"
 ```
 
@@ -188,8 +192,8 @@ vendors:
 Map remote paths to local destinations:
 
 ```yaml
-from: src/utils/  # Remote: owner/repo/src/utils/
-to: lib/          # Local: your-project/lib/
+from: src/utils/ # Remote: owner/repo/src/utils/
+to: lib/ # Local: your-project/lib/
 ```
 
 Leave `to` empty for automatic naming based on source filename.
@@ -200,24 +204,25 @@ Leave `to` empty for automatic naming based on source filename.
 
 **Note:** All commands can be invoked as `git vendor <command>` or `git-vendor <command>`.
 
-| Command | Description |
-|---------|-------------|
-| `init` | Initialize vendor directory |
-| `add` | Add vendor dependency (interactive) |
-| `sync` | Download files to locked versions |
-| `update` | Fetch latest commits, update lockfile |
-| `list` | Show all configured vendors |
-| `validate` | Check for configuration errors and path conflicts |
-| `status` | Check if local files match lockfile |
-| `check-updates` | Preview available updates |
-| `diff <vendor>` | Show commit history between locked and latest |
-| `watch` | Auto-sync on config changes |
+| Command         | Description                                       |
+| --------------- | ------------------------------------------------- |
+| `init`          | Initialize vendor directory                       |
+| `add`           | Add vendor dependency (interactive)               |
+| `sync`          | Download files to locked versions                 |
+| `update`        | Fetch latest commits, update lockfile             |
+| `list`          | Show all configured vendors                       |
+| `validate`      | Check for configuration errors and path conflicts |
+| `status`        | Check if local files match lockfile               |
+| `check-updates` | Preview available updates                         |
+| `diff <vendor>` | Show commit history between locked and latest     |
+| `watch`         | Auto-sync on config changes                       |
 
 [Complete command reference →](./docs/COMMANDS.md)
 
 ### Common Options
 
 **Sync options:**
+
 ```bash
 git-vendor sync --dry-run      # Preview without changes
 git-vendor sync --force        # Re-download all files
@@ -227,6 +232,7 @@ git-vendor sync --group frontend  # Sync only specific group
 ```
 
 **Global options:**
+
 ```bash
 --verbose, -v    # Show git commands (debugging)
 --version        # Show version information
@@ -278,11 +284,11 @@ vendors:
   - name: api-client
     url: https://github.com/company/api
     specs:
-      - ref: v1.0        # Stable API
+      - ref: v1.0 # Stable API
         mapping:
           - from: client
             to: vendor/api-v1
-      - ref: v2.0        # New API
+      - ref: v2.0 # New API
         mapping:
           - from: client
             to: vendor/api-v2
@@ -315,7 +321,7 @@ vendors:
 
 ![Interactive TUI](./docs/images/tui-placeholder.png)
 
-*Interactive file browser for selecting paths to vendor*
+_Interactive file browser for selecting paths to vendor_
 
 > Note: Screenshot coming in next release
 
@@ -338,35 +344,35 @@ vendors:
 
 ### vs. Git Submodules
 
-| Feature | git-vendor | Git Submodules |
-|---------|-----------|----------------|
-| **Granular paths** | ✅ Specific files/directories | ❌ Entire repository |
-| **Nested repos** | ✅ Plain copies (no `.git`) | ❌ Nested `.git` dirs |
-| **Easy updates** | ✅ `git-vendor update` | ⚠️ Complex `git submodule update` |
-| **Installation** | ⚠️ Separate tool | ✅ Built into Git |
+| Feature            | git-vendor                    | Git Submodules                    |
+| ------------------ | ----------------------------- | --------------------------------- |
+| **Granular paths** | ✅ Specific files/directories | ❌ Entire repository              |
+| **Nested repos**   | ✅ Plain copies (no `.git`)   | ❌ Nested `.git` dirs             |
+| **Easy updates**   | ✅ `git-vendor update`        | ⚠️ Complex `git submodule update` |
+| **Installation**   | ⚠️ Separate tool              | ✅ Built into Git                 |
 
 **Best for:** Vendoring specific files from larger repos
 
 ### vs. Package Managers (npm, pip, cargo, go modules)
 
-| Feature | git-vendor | Package Managers |
-|---------|-----------|------------------|
-| **Language-agnostic** | ✅ Any Git repo | ❌ Language-specific |
-| **Non-packaged code** | ✅ Snippets, configs, scripts | ❌ Requires published packages |
-| **Granular control** | ✅ File-level | ⚠️ Package-level |
-| **Dependency resolution** | ❌ No automatic resolution | ✅ Automatic |
+| Feature                   | git-vendor                    | Package Managers               |
+| ------------------------- | ----------------------------- | ------------------------------ |
+| **Language-agnostic**     | ✅ Any Git repo               | ❌ Language-specific           |
+| **Non-packaged code**     | ✅ Snippets, configs, scripts | ❌ Requires published packages |
+| **Granular control**      | ✅ File-level                 | ⚠️ Package-level               |
+| **Dependency resolution** | ❌ No automatic resolution    | ✅ Automatic                   |
 
 **Best for:** Cross-language projects, non-packaged code
 
 ### vs. Manual Copying
 
-| Feature | git-vendor | Manual Copy |
-|---------|-----------|-------------|
-| **Reproducibility** | ✅ Lockfile with commit SHAs | ❌ No version tracking |
-| **Easy updates** | ✅ One command | ❌ Manual re-copy |
-| **Provenance** | ✅ Tracks source and version | ❌ Loses origin |
-| **License tracking** | ✅ Automatic caching | ❌ Manual |
-| **Setup** | ⚠️ Requires tool | ✅ None |
+| Feature              | git-vendor                   | Manual Copy            |
+| -------------------- | ---------------------------- | ---------------------- |
+| **Reproducibility**  | ✅ Lockfile with commit SHAs | ❌ No version tracking |
+| **Easy updates**     | ✅ One command               | ❌ Manual re-copy      |
+| **Provenance**       | ✅ Tracks source and version | ❌ Loses origin        |
+| **License tracking** | ✅ Automatic caching         | ❌ Manual              |
+| **Setup**            | ⚠️ Requires tool             | ✅ None                |
 
 **Best for:** Anyone copying files manually who wants reproducibility
 
@@ -406,6 +412,7 @@ A: Use the base repository URL in the wizard and manually enter the ref name (e.
 ## Who Should Use This?
 
 **✅ Perfect for:**
+
 - Projects vendoring utility functions from OSS libraries
 - Cross-language teams needing dependencies from multiple ecosystems
 - Teams wanting deterministic, reproducible builds
@@ -414,6 +421,7 @@ A: Use the base repository URL in the wizard and manually enter the ref name (e.
 - CI/CD pipelines requiring locked dependency versions
 
 **⚠️ Maybe Not For:**
+
 - Large-scale package management (use language-specific package managers)
 - Projects requiring automatic dependency resolution
 - Teams uncomfortable with CLI tools
@@ -423,12 +431,14 @@ A: Use the base repository URL in the wizard and manually enter the ref name (e.
 ## Contributing
 
 Contributions welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for:
+
 - Development setup
 - Testing requirements (maintain >60% coverage)
 - Code style guidelines
 - Pull request process
 
 **Quick start:**
+
 ```bash
 git clone https://github.com/EmundoT/git-vendor
 cd git-vendor
@@ -448,6 +458,7 @@ MIT License - see [LICENSE](./LICENSE) for details.
 ## Credits
 
 Built with:
+
 - [charmbracelet/huh](https://github.com/charmbracelet/huh) - TUI forms
 - [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) - Terminal styling
 - [fsnotify/fsnotify](https://github.com/fsnotify/fsnotify) - File watching
