@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"git-vendor/internal/core"
 	"git-vendor/internal/types"
+	"git-vendor/internal/version"
 	"os"
 	"path"
 	"strings"
@@ -512,7 +513,7 @@ func AskToOverrideCompliance(license string) bool {
 
 // PrintHelp displays usage information for git-vendor commands.
 func PrintHelp() {
-	fmt.Println(styleTitle.Render("git-vendor v5.0"))
+	fmt.Println(styleTitle.Render(fmt.Sprintf("git-vendor %s", version.GetVersion())))
 	fmt.Println("Vendor specific files/directories from Git repositories with deterministic locking")
 	fmt.Println("\nCommands:")
 	fmt.Println("  init                Initialize vendor directory")
