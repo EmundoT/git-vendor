@@ -23,6 +23,7 @@ type GitClient interface {
 	GetHeadHash(dir string) (string, error)
 	Clone(dir, url string, opts *types.CloneOptions) error
 	ListTree(dir, ref, subdir string) ([]string, error)
+	GetCommitLog(dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error)
 }
 
 // SystemGitClient implements GitClient using system git commands
@@ -157,6 +158,53 @@ func (g *SystemGitClient) ListTree(dir, ref, subdir string) ([]string, error) {
 
 	sort.Strings(items)
 	return items, nil
+}
+
+// GetCommitLog retrieves commit history between two commits
+func (g *SystemGitClient) GetCommitLog(dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error) {
+	// Format: hash|shortHash|subject|author|date
+	formatString := "--pretty=format:%H|%h|%s|%an|%ai"
+
+	args := []string{"log", formatString}
+	if maxCount > 0 {
+		args = append(args, fmt.Sprintf("-%d", maxCount))
+	}
+
+	// Use range syntax: oldHash..newHash shows commits in newHash not in oldHash
+	rangeSpec := fmt.Sprintf("%s..%s", oldHash, newHash)
+	args = append(args, rangeSpec)
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git log failed: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var commits []types.CommitInfo
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Split(line, "|")
+		if len(parts) != 5 {
+			continue
+		}
+
+		commits = append(commits, types.CommitInfo{
+			Hash:      parts[0],
+			ShortHash: parts[1],
+			Subject:   parts[2],
+			Author:    parts[3],
+			Date:      parts[4],
+		})
+	}
+
+	return commits, nil
 }
 
 // run executes a git command

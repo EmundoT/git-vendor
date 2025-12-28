@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"git-vendor/cmd"
 	"git-vendor/internal/core"
 	"git-vendor/internal/tui"
 	"git-vendor/internal/types"
@@ -723,6 +724,103 @@ func main() {
 
 				fmt.Println("Run 'git-vendor update' to fetch latest versions")
 			}
+		}
+
+	case "completion":
+		// Generate shell completion script
+		if len(os.Args) < 3 {
+			tui.PrintError("Usage", "git-vendor completion <shell>\nSupported shells: bash, zsh, fish, powershell")
+			os.Exit(1)
+		}
+
+		shell := os.Args[2]
+		var script string
+
+		switch shell {
+		case "bash":
+			script = cmd.GenerateBashCompletion()
+		case "zsh":
+			script = cmd.GenerateZshCompletion()
+		case "fish":
+			script = cmd.GenerateFishCompletion()
+		case "powershell":
+			script = cmd.GeneratePowerShellCompletion()
+		default:
+			tui.PrintError("Invalid Shell", fmt.Sprintf("'%s' is not supported. Use: bash, zsh, fish, or powershell", shell))
+			os.Exit(1)
+		}
+
+		fmt.Println(script)
+
+	case "diff":
+		// Parse common flags
+		flags, args := parseCommonFlags(os.Args[2:])
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		// Get vendor name from args
+		if len(args) < 1 {
+			callback.ShowError("Usage", "git-vendor diff <vendor>")
+			os.Exit(1)
+		}
+		vendorName := args[0]
+
+		if !core.IsVendorInitialized() {
+			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Get diff for vendor
+		diffs, err := manager.DiffVendor(vendorName)
+		if err != nil {
+			callback.ShowError("Diff Failed", err.Error())
+			os.Exit(1)
+		}
+
+		if len(diffs) == 0 {
+			callback.ShowWarning("No Diffs", fmt.Sprintf("No locked versions found for vendor '%s'", vendorName))
+			os.Exit(0)
+		}
+
+		// Display diffs
+		for _, diff := range diffs {
+			fmt.Print(core.FormatDiffOutput(diff))
+			fmt.Println()
+		}
+
+	case "watch":
+		// Parse common flags
+		flags, _ := parseCommonFlags(os.Args[2:])
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		if !core.IsVendorInitialized() {
+			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Watch for config changes and auto-sync
+		err := manager.WatchConfig(func() error {
+			return manager.Sync()
+		})
+
+		if err != nil {
+			callback.ShowError("Watch Failed", err.Error())
+			os.Exit(1)
 		}
 
 	default:

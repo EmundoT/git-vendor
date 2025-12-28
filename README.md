@@ -14,7 +14,10 @@ A lightweight CLI tool for managing vendored dependencies from Git repositories 
 - **Deterministic Locking**: Lock dependencies to specific commits for reproducibility
 - **Incremental Sync**: Smart caching system skips re-downloading unchanged files (80% faster re-syncs)
 - **Update Checker**: Check for available updates without modifying files
+- **Diff Command**: View commit history between locked and latest versions
+- **Watch Mode**: Auto-sync on config file changes for live development
 - **Vendor Groups**: Organize vendors into groups for batch operations
+- **Shell Completion**: Auto-completion for bash, zsh, fish, and PowerShell
 - **Multi-Ref Support**: Track multiple branches/tags from the same repository
 - **Multi-Platform Support**: Works with GitHub, GitLab, Bitbucket, and any git server
 - **Smart URL Parsing**: Paste file links directly - auto-extracts repo, branch, and path
@@ -345,6 +348,158 @@ Found 2 conflict(s)
 - Before committing vendoring changes
 - To diagnose sync issues
 - As part of CI/CD validation
+
+#### `git-vendor status`
+
+Check if local files are in sync with the lock file.
+
+This command verifies:
+
+- All vendored files exist at their configured paths
+- Files haven't been manually modified since sync
+- Lock file entries have corresponding local files
+
+**Examples:**
+
+```bash
+# Check sync status (normal output)
+git-vendor status
+
+# JSON output for automation
+git-vendor status --json
+```
+
+**Example output:**
+
+```text
+✔ All vendors synced
+
+# Or if out of sync:
+! Vendors Need Syncing
+2 vendors out of sync
+
+⚠ my-vendor @ main
+  • Missing: lib/utils.go
+  • Missing: lib/types.go
+
+Run 'git-vendor sync' to fix.
+```
+
+**Exit codes:**
+- `0` - All vendors are synced
+- `1` - Some vendors need syncing
+
+#### `git-vendor diff <vendor>`
+
+Show commit differences between the locked version and the latest available version.
+
+This command displays:
+
+- Current locked commit hash and date
+- Latest available commit hash and date
+- Commit history (up to 10 commits) with messages
+- Author and date for each commit
+
+**Examples:**
+
+```bash
+# Show diff for a specific vendor
+git-vendor diff my-vendor
+
+# Check what changed since last update
+git-vendor diff charmbracelet/lipgloss
+```
+
+**Example output:**
+
+```text
+📦 charmbracelet/lipgloss @ v0.10.0
+   Old: abc123f (Nov 15)
+   New: def456g (Dec 20)
+
+   Commits (+5):
+   • def456g - Fix: color rendering bug (Dec 20)
+   • ghi789h - Feat: add gradient support (Dec 18)
+   • jkl012i - Docs: update examples (Dec 15)
+   • mno345j - Refactor: optimize styles (Dec 12)
+   • pqr678k - Fix: border rendering (Nov 28)
+```
+
+**When to use:**
+
+- Before running `git-vendor update` to see what will change
+- To review changes in dependencies
+- To track when dependencies were last updated
+- To generate changelog information
+
+#### `git-vendor watch`
+
+Watch for changes to `vendor.yml` and automatically sync when the file is modified.
+
+This command:
+
+1. Monitors `vendor/vendor.yml` for file system changes
+2. Automatically runs `git-vendor sync` when changes are detected
+3. Debounces rapid changes (1 second delay)
+4. Runs until you press Ctrl+C
+
+**Example:**
+
+```bash
+git-vendor watch
+# 👁 Watching for changes to vendor/vendor.yml...
+# Press Ctrl+C to stop
+#
+# 📝 Detected change to vendor.yml
+# [Sync output...]
+# ✓ Sync completed
+#
+# 👁 Still watching for changes...
+```
+
+**When to use:**
+
+- During development when frequently modifying vendor configuration
+- To automatically sync after manual edits to `vendor.yml`
+- For live-reloading vendored dependencies
+
+**Note:** This command requires write access to the vendor directory and will sync all vendors on each detected change.
+
+#### `git-vendor completion <shell>`
+
+Generate shell completion scripts for command-line auto-completion.
+
+Supported shells:
+
+- `bash` - Bash completion
+- `zsh` - Zsh completion
+- `fish` - Fish shell completion
+- `powershell` - PowerShell completion
+
+**Installation:**
+
+```bash
+# Bash (Linux)
+git-vendor completion bash | sudo tee /etc/bash_completion.d/git-vendor
+
+# Bash (macOS with Homebrew)
+git-vendor completion bash > $(brew --prefix)/etc/bash_completion.d/git-vendor
+
+# Zsh
+git-vendor completion zsh > ~/.zsh/completions/_git-vendor
+
+# Fish
+git-vendor completion fish > ~/.config/fish/completions/git-vendor.fish
+
+# PowerShell (add to profile)
+git-vendor completion powershell >> $PROFILE
+```
+
+**Features:**
+
+- Command name completion
+- Flag completion for each command
+- Context-aware suggestions (e.g., flags only shown for relevant commands)
 
 ### Configuration Files
 
