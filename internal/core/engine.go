@@ -184,9 +184,19 @@ func (m *Manager) SyncWithGroup(groupName string, force, noCache bool) error {
 	return m.syncer.SyncWithGroup(groupName, force, noCache)
 }
 
+// SyncWithParallel performs sync with parallel processing
+func (m *Manager) SyncWithParallel(vendorName string, force, noCache bool, parallelOpts types.ParallelOptions) error {
+	return m.syncer.SyncWithParallel(vendorName, force, noCache, parallelOpts)
+}
+
 // UpdateAll updates all vendors and regenerates lockfile
 func (m *Manager) UpdateAll() error {
 	return m.syncer.UpdateAll()
+}
+
+// UpdateAllWithParallel updates all vendors with parallel processing
+func (m *Manager) UpdateAllWithParallel(parallelOpts types.ParallelOptions) error {
+	return m.syncer.UpdateAllWithParallel(parallelOpts)
 }
 
 // CheckGitHubLicense checks a repository's license via GitHub API
