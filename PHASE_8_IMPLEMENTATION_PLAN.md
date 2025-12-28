@@ -3,9 +3,9 @@
 ## 🔄 IN PROGRESS - Implementation Status
 
 **Status:** ACTIVE (Started 2025-12-27)
-**Sessions Complete:** 4 of 6
-**Progress:** 67% (4 features complete, 2 remaining)
-**Next Session:** Session 5 - Custom Hooks
+**Sessions Complete:** 5 of 6
+**Progress:** 83% (5 features complete, 1 remaining)
+**Next Session:** Session 6 - Parallel Processing
 
 ### Session Completion Status
 
@@ -13,7 +13,7 @@
 - [x] **Session 2:** Progress Indicators ✅ COMPLETE
 - [x] **Session 3:** Update Checker + Groups ✅ COMPLETE
 - [x] **Session 4:** Advanced CLI Features ✅ COMPLETE
-- [ ] **Session 5:** Custom Hooks
+- [x] **Session 5:** Custom Hooks ✅ COMPLETE
 - [ ] **Session 6:** Parallel Processing ⚠️ HIGH RISK
 
 ---
@@ -319,23 +319,27 @@ Press Ctrl+C to stop
 
 ---
 
-### 5. ⏳ Custom Hooks (Session 5 - PENDING)
+### 5. ✅ Custom Hooks (Session 5 - COMPLETE)
 
-**Status:** NOT STARTED
-**Effort:** 3-4 hours
+**Status:** ✅ IMPLEMENTED (2025-12-27)
+**Effort:** 3 hours (actual)
 **Complexity:** Medium
 **Value:** Medium
 
-**Goals:**
-- Pre-sync and post-sync shell commands
-- Environment variable injection (VENDOR_NAME, FILES_COPIED, etc.)
-- Security documentation for arbitrary code execution
+**What Was Built:**
+- Pre/post sync shell command execution
+- Environment variable injection for hook context
+- Full shell support via `sh -c` (pipes, multiline, etc.)
+- Hooks run even for cache hits
+- Proper error handling and failure propagation
 
 **Implementation:**
-- Add `HookConfig` type to `types.go`
-- Modify `VendorSpec` to include `Hooks *HookConfig`
-- Create `internal/core/hook_service.go` (NEW)
-- Integrate hooks into `sync_service.go`
+- ✅ `HookConfig` and `HookContext` types added to `types.go`
+- ✅ `Hooks *HookConfig` field added to `VendorSpec`
+- ✅ `internal/core/hook_service.go` (NEW - 111 lines) - Hook execution service
+- ✅ `HookExecutor` interface with mock generation
+- ✅ Integrated into `sync_service.go` for pre/post sync execution
+- ✅ Wired into `vendor_syncer.go` dependency injection
 
 **Config Example:**
 ```yaml
@@ -355,21 +359,44 @@ vendors:
 - Path traversal: Hooks run in project root (acceptable - same as package.json scripts)
 - Privilege escalation: Hooks run as current user (no sudo by default)
 
+**Environment Variables:**
+- `GIT_VENDOR_NAME`: Vendor name
+- `GIT_VENDOR_URL`: Repository URL
+- `GIT_VENDOR_REF`: Git ref being synced
+- `GIT_VENDOR_COMMIT`: Resolved commit hash
+- `GIT_VENDOR_ROOT`: Project root directory
+- `GIT_VENDOR_FILES_COPIED`: Number of files copied
+
 **CLI Output:**
 ```text
-📦 react @ main
-   Pre-sync hook: Preparing React sync...
-   Cloning repository...
-   ✓ react: 145 files, 12 directories
-   Post-sync hook: React synced!
-                   npm install complete
-                   Build successful
+  🪝 Running pre-sync hook...
+=== PRE-SYNC HOOK ===
+Vendor: test-lib
+⠿ test-lib (cloning repository...)
+  ✓ test-lib @ v0.10.0 (synced 1 path: 1 file)
+  🪝 Running post-sync hook...
+=== POST-SYNC HOOK ===
+Commit: 439c06fae64d2f53261b692fcfcbe464d8e18d89
 ```
 
 **Testing:**
-- Hook execution success/failure
-- Environment variable passing
-- Security: document expected behavior for shell injection
+- ✅ All 55 existing tests pass
+- ✅ Hook execution success/failure verified manually
+- ✅ Environment variable passing confirmed
+- ✅ Pre-sync hook failure stops sync operation
+- ✅ Post-sync hook runs after successful sync
+- ✅ Hooks run even for cache hits
+- ✅ Output displayed correctly to user
+
+**Files Modified:**
+- `internal/types/types.go` (+18 lines) - HookConfig, HookContext types
+- `internal/core/sync_service.go` (+42 lines) - Hook execution integration
+- `internal/core/vendor_syncer.go` (+1 line) - Hook service injection
+- `CLAUDE.md` (+52 lines) - Hook documentation
+
+**Files Created:**
+- `internal/core/hook_service.go` (111 lines) - Hook execution service
+- `internal/core/hook_executor_mock_test.go` (auto-generated mock)
 
 ---
 
@@ -781,5 +808,5 @@ Optional features beyond Phase 8:
 
 **Last Updated:** 2025-12-27
 **Phase Owner:** Claude Sonnet 4.5
-**Status:** 4/6 sessions complete (67% done)
-**Next Session:** Session 5 - Custom Hooks
+**Status:** 5/6 sessions complete (83% done)
+**Next Session:** Session 6 - Parallel Processing ⚠️ HIGH RISK

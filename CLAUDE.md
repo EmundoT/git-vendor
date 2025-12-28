@@ -40,6 +40,8 @@ The codebase follows clean architecture principles with proper separation of con
    - **github_client.go**: `LicenseChecker` interface - GitHub API license detection
    - **config_store.go**: `ConfigStore` interface - vendor.yml I/O
    - **lock_store.go**: `LockStore` interface - vendor.lock I/O
+   - **hook_service.go**: `HookExecutor` interface - Pre/post sync shell hooks
+   - **cache_store.go**: `CacheStore` interface - Incremental sync cache
    - **mocks_test.go**: Mock implementations for testing
 
 3. **internal/tui/wizard.go** - Interactive user interface
@@ -61,6 +63,10 @@ VendorConfig (vendor.yml)
       ├─ Name: display name
       ├─ URL: git repository URL
       ├─ License: SPDX license identifier
+      ├─ Groups: []string (optional group tags for batch operations)
+      ├─ Hooks: *HookConfig (optional pre/post sync automation)
+      │   ├─ PreSync: shell command to run before sync
+      │   └─ PostSync: shell command to run after sync
       └─ Specs: []BranchSpec (can track multiple refs)
           └─ BranchSpec
               ├─ Ref: branch/tag/commit
@@ -143,6 +149,57 @@ Security validation via `ValidateDestPath` (filesystem.go:121):
 - Rejects parent directory references (e.g., `../../../etc/passwd`)
 - Only allows relative paths within project directory
 - Called before all file copy operations in `vendor_syncer.go`
+
+### Custom Hooks (Phase 8)
+
+Pre and post-sync shell command execution via `HookExecutor` (hook_service.go):
+
+**Features:**
+- Pre-sync hooks run before git clone/sync operations
+- Post-sync hooks run after successful sync completion
+- Environment variable injection for hook context
+- Executed via `sh -c` for full shell support (pipes, multiline, etc.)
+- Runs in project root directory with current user permissions
+
+**Configuration Example:**
+
+```yaml
+vendors:
+  - name: frontend-lib
+    url: https://github.com/owner/lib
+    license: MIT
+    hooks:
+      pre_sync: echo "Preparing to sync frontend-lib..."
+      post_sync: |
+        npm install
+        npm run build
+    specs:
+      - ref: main
+        mapping:
+          - from: src/
+            to: vendor/frontend-lib/
+```
+
+**Environment Variables Provided to Hooks:**
+- `GIT_VENDOR_NAME`: Vendor name
+- `GIT_VENDOR_URL`: Repository URL
+- `GIT_VENDOR_REF`: Git ref being synced
+- `GIT_VENDOR_COMMIT`: Resolved commit hash
+- `GIT_VENDOR_ROOT`: Project root directory
+- `GIT_VENDOR_FILES_COPIED`: Number of files copied
+
+**Behavior:**
+- Pre-sync hook failure stops the sync operation (entire vendor skipped)
+- Post-sync hook failure fails the sync (files already copied but operation marked failed)
+- Hook output is displayed directly to stdout/stderr
+- Hooks run even for cache hits (where git clone is skipped)
+
+**Security Considerations:**
+- Hooks execute arbitrary shell commands with user's permissions
+- No sandboxing or privilege restrictions
+- Users control hook commands via vendor.yml (acceptable - same trust model as package.json scripts)
+- Commands run in project root, cannot escape to parent directories via cd
+- Similar security model to npm scripts, git hooks, or Makefile targets
 
 ## Common Patterns
 

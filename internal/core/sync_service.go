@@ -27,6 +27,7 @@ type SyncService struct {
 	fileCopy    *FileCopyService
 	license     *LicenseService
 	cache       CacheStore
+	hooks       HookExecutor
 	ui          UICallback
 	rootDir     string
 }
@@ -40,6 +41,7 @@ func NewSyncService(
 	fileCopy *FileCopyService,
 	license *LicenseService,
 	cache CacheStore,
+	hooks HookExecutor,
 	ui UICallback,
 	rootDir string,
 ) *SyncService {
@@ -51,6 +53,7 @@ func NewSyncService(
 		fileCopy:    fileCopy,
 		license:     license,
 		cache:       cache,
+		hooks:       hooks,
 		ui:          ui,
 		rootDir:     rootDir,
 	}
@@ -289,7 +292,32 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 				Pluralize(len(spec.Mapping), "path", "paths"))
 		}
 
+		// Execute post-sync hook even for cached syncs
+		if v.Hooks != nil && v.Hooks.PostSync != "" {
+			ctx := types.HookContext{
+				VendorName:  v.Name,
+				VendorURL:   v.URL,
+				RootDir:     s.rootDir,
+				FilesCopied: totalStats.FileCount,
+			}
+			if err := s.hooks.ExecutePostSync(v, ctx); err != nil {
+				return nil, CopyStats{}, fmt.Errorf("post-sync hook failed: %w", err)
+			}
+		}
+
 		return results, totalStats, nil
+	}
+
+	// Execute pre-sync hook before cloning
+	if v.Hooks != nil && v.Hooks.PreSync != "" {
+		ctx := types.HookContext{
+			VendorName: v.Name,
+			VendorURL:  v.URL,
+			RootDir:    s.rootDir,
+		}
+		if err := s.hooks.ExecutePreSync(v, ctx); err != nil {
+			return nil, CopyStats{}, fmt.Errorf("pre-sync hook failed: %w", err)
+		}
 	}
 
 	fmt.Printf("⠿ %s (cloning repository...)\n", v.Name)
@@ -326,6 +354,30 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 			v.Name, spec.Ref,
 			Pluralize(len(spec.Mapping), "path", "paths"),
 			Pluralize(stats.FileCount, "file", "files"))
+	}
+
+	// Execute post-sync hook after successful sync
+	if v.Hooks != nil && v.Hooks.PostSync != "" {
+		// Get the first ref's commit hash for context (if multiple refs, use the first)
+		firstHash := ""
+		firstRef := ""
+		for ref, hash := range results {
+			firstHash = hash
+			firstRef = ref
+			break
+		}
+
+		ctx := types.HookContext{
+			VendorName:  v.Name,
+			VendorURL:   v.URL,
+			Ref:         firstRef,
+			CommitHash:  firstHash,
+			RootDir:     s.rootDir,
+			FilesCopied: totalStats.FileCount,
+		}
+		if err := s.hooks.ExecutePostSync(v, ctx); err != nil {
+			return nil, CopyStats{}, fmt.Errorf("post-sync hook failed: %w", err)
+		}
 	}
 
 	return results, totalStats, nil
