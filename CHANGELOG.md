@@ -14,6 +14,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
 ### Added
 
 **Core Vendoring Features:**
+
 - Granular path vendoring - vendor specific files/directories, not entire repositories
 - Deterministic locking with vendor.lock (exact commit SHA tracking)
 - Interactive TUI with file browser for path selection
@@ -25,6 +26,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
 - Verbose mode (`--verbose`) for debugging git operations
 
 **Multi-Platform Git Support:**
+
 - GitHub (github.com and GitHub Enterprise) with API-based license detection
 - GitLab (gitlab.com and self-hosted) with API-based license detection and nested group support
 - Bitbucket (bitbucket.org) with file-based license detection
@@ -32,13 +34,16 @@ First beta release with comprehensive feature set for granular Git vendoring.
 - Platform auto-detection from URLs
 
 **Advanced Features:**
+
 - **Parallel Processing** - Worker pool for 3-5x speedup on multi-vendor operations
+
   - `--parallel` flag enables parallel mode
   - `--workers <N>` flag sets custom worker count (default: NumCPU, max 8)
   - Thread-safe with unique temp directories per vendor
   - Atomic lockfile writes (collect results, write once at end)
 
 - **Custom Hooks** - Pre/post sync automation
+
   - `pre_sync` hook runs before git clone/sync operations
   - `post_sync` hook runs after successful sync
   - Full shell support via `sh -c` (pipes, multiline scripts, etc.)
@@ -46,6 +51,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
   - Hooks run even for cache hits
 
 - **Incremental Sync Cache** - 80% faster re-syncs
+
   - SHA-256 file checksums cached in `vendor/.cache/`
   - Skip re-downloading unchanged files
   - Auto-invalidates when commit hashes change
@@ -53,11 +59,13 @@ First beta release with comprehensive feature set for granular Git vendoring.
   - `--force` flag to re-download all files
 
 - **Vendor Groups** - Organize vendors for batch operations
+
   - `groups` field in vendor.yml for logical grouping
   - `--group <name>` flag to sync specific groups
   - Vendors can belong to multiple groups
 
 - **Advanced CLI Commands:**
+
   - `status` - Check if local files match lockfile
   - `check-updates` - Preview available updates without modifying files
   - `diff <vendor>` - View commit history between locked and latest versions
@@ -65,6 +73,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
   - `completion <shell>` - Generate shell completion for bash/zsh/fish/powershell
 
 - **Progress Indicators:**
+
   - Real-time progress during sync and update operations
   - TTY auto-detection (animated for interactive, text for CI/CD)
   - Vendor-level progress granularity
@@ -75,6 +84,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
   - `--json` flag for JSON output (automation)
 
 **Commands:**
+
 - `init` - Initialize vendor directory structure
 - `add` - Add vendor dependency (interactive wizard)
 - `edit` - Modify vendor configuration (interactive wizard)
@@ -90,6 +100,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
 - `completion <shell>` - Generate shell completion
 
 **Documentation:**
+
 - Comprehensive README with quick start
 - docs/TROUBLESHOOTING.md with 20+ common issues
 - CONTRIBUTING.md with development workflow

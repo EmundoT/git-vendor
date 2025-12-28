@@ -28,12 +28,14 @@ go run main.go <command>
 The codebase follows clean architecture principles with proper separation of concerns:
 
 1. **main.go** - Command dispatcher and CLI interface
+
    - Routes commands (init, add, edit, remove, list, sync, update, validate, status, check-updates, diff, watch, completion)
    - Handles argument parsing and basic validation
    - Entry point for all user interactions
    - Version management (receives ldflags from GoReleaser, injects into version package)
 
 2. **internal/core/** - Business logic layer (dependency injection pattern)
+
    - **engine.go**: `Manager` facade - public API that delegates to VendorSyncer
    - **vendor_syncer.go**: `VendorSyncer` - orchestrates all business logic
    - **git_operations.go**: `GitClient` interface - Git command operations
@@ -50,12 +52,14 @@ The codebase follows clean architecture principles with proper separation of con
    - **mocks_test.go**: Mock implementations for testing
 
 3. **internal/tui/wizard.go** - Interactive user interface
+
    - Built with charmbracelet/huh (form library) and lipgloss (styling)
    - Multi-step wizards for add/edit operations
    - File browser for both remote (via git ls-tree) and local directories
    - Path mapping management interface
 
 4. **internal/types/types.go** - Data models
+
    - VendorConfig, VendorSpec, BranchSpec, PathMapping
    - VendorLock, LockDetails
    - PathConflict
@@ -114,6 +118,7 @@ Vendored files are copied to paths specified in the configuration (outside vendo
 ### sync vs update
 
 - **sync**: Fetches dependencies at locked commit hashes (deterministic)
+
   - If no lockfile exists, runs `update` first
   - Uses `--depth 1` for shallow clones when possible
   - Supports `--dry-run` flag for preview
@@ -165,6 +170,7 @@ Security validation via `ValidateDestPath` (filesystem.go:121):
 Worker pool-based parallel processing for multi-vendor operations via `ParallelExecutor` (parallel_executor.go):
 
 **Features:**
+
 - Worker pool pattern with configurable worker count
 - Default workers: runtime.NumCPU() (limited to max 8)
 - Thread-safe git operations (unique temp dirs per vendor)
@@ -187,23 +193,27 @@ git-vendor update --parallel
 ```
 
 **Implementation:**
+
 - `ParallelExecutor` with `ExecuteParallelSync()` and `ExecuteParallelUpdate()` methods
 - Worker goroutines process vendors from job channel
 - Results collected via channel and aggregated
 - First error returned (fail-fast behavior)
 
 **Performance:**
+
 - 3-5x speedup for multi-vendor operations
 - No performance penalty for single vendor
 - Automatically disabled for dry-run mode
 
 **Thread Safety:**
+
 - Git operations use unique temp directories per vendor
 - Lockfile collected from results and written once at end
 - File operations protected by filesystem guarantees
 - No shared mutable state between workers
 
 **Testing:**
+
 - Passes `go test -race` with no race conditions
 - All 55 existing tests continue to pass
 - Backwards compatible (opt-in via `--parallel` flag)
@@ -213,6 +223,7 @@ git-vendor update --parallel
 Pre and post-sync shell command execution via `HookExecutor` (hook_service.go):
 
 **Features:**
+
 - Pre-sync hooks run before git clone/sync operations
 - Post-sync hooks run after successful sync completion
 - Environment variable injection for hook context
@@ -239,6 +250,7 @@ vendors:
 ```
 
 **Environment Variables Provided to Hooks:**
+
 - `GIT_VENDOR_NAME`: Vendor name
 - `GIT_VENDOR_URL`: Repository URL
 - `GIT_VENDOR_REF`: Git ref being synced
@@ -247,12 +259,14 @@ vendors:
 - `GIT_VENDOR_FILES_COPIED`: Number of files copied
 
 **Behavior:**
+
 - Pre-sync hook failure stops the sync operation (entire vendor skipped)
 - Post-sync hook failure fails the sync (files already copied but operation marked failed)
 - Hook output is displayed directly to stdout/stderr
 - Hooks run even for cache hits (where git clone is skipped)
 
 **Security Considerations:**
+
 - Hooks execute arbitrary shell commands with user's permissions
 - No sandboxing or privilege restrictions
 - Users control hook commands via vendor.yml (acceptable - same trust model as package.json scripts)
@@ -357,15 +371,18 @@ go test -v ./...
 ### Dependencies
 
 **Runtime:**
+
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
 - `github.com/fsnotify/fsnotify` - file system watching (watch mode)
 
 **Testing:**
+
 - `github.com/golang/mock` - Mock generation (gomock/mockgen)
 
 **Environment Variables (Optional):**
+
 - `GITHUB_TOKEN` - GitHub personal access token (increases rate limit from 60/hr to 5000/hr)
 - `GITLAB_TOKEN` - GitLab personal access token (enables private repos and higher rate limits)
 

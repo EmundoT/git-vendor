@@ -19,6 +19,7 @@ Technical architecture and design decisions for git-vendor.
 git-vendor is a CLI tool built in Go that enables granular vendoring of files/directories from Git repositories with deterministic locking.
 
 **Key characteristics:**
+
 - Written in Go (single binary, no runtime dependencies)
 - Clean architecture with dependency injection
 - Interactive TUI with charmbracelet/huh
@@ -68,6 +69,7 @@ Non-interactive mode (`--yes`, `--quiet`, `--json`) for automation.
 **Responsibility:** Routes commands to appropriate handlers
 
 **Entry points:**
+
 - `init` - Initialize vendor directory
 - `add`/`edit` - Interactive wizards
 - `remove` - Delete vendor
@@ -89,6 +91,7 @@ Delegates to VendorSyncer for business logic. Provides clean, simple API for CLI
 **Responsibility:** Orchestrates vendor operations
 
 Coordinates between:
+
 - ConfigStore (vendor.yml)
 - LockStore (vendor.lock)
 - GitClient (git operations)
@@ -102,6 +105,7 @@ Coordinates between:
 **Responsibility:** Git operations abstraction
 
 **Methods:**
+
 - `Clone()` - Clone repository
 - `Fetch()` - Fetch specific ref
 - `Checkout()` - Checkout commit
@@ -110,6 +114,7 @@ Coordinates between:
 - `GetCommitLog()` - Get commit history
 
 **Implementations:**
+
 - Production: Executes git binary via `exec.Command`
 - Testing: Mock via gomock
 
@@ -118,6 +123,7 @@ Coordinates between:
 **Responsibility:** File I/O abstraction
 
 **Methods:**
+
 - `CopyFile()` / `CopyDir()` - File operations
 - `CreateTemp()` - Temp directory
 - `RemoveAll()` - Cleanup
@@ -140,6 +146,7 @@ Abstracts vendor.yml and vendor.lock I/O.
 **Responsibility:** License detection and compliance
 
 **Implementations:**
+
 - GitHub: API-based
 - GitLab: API-based
 - Bitbucket/Generic: File-based
@@ -171,6 +178,7 @@ Worker pool pattern for multi-vendor operations (opt-in via `--parallel`).
 Built with charmbracelet/huh (forms) and lipgloss (styling).
 
 **Wizards:**
+
 - Add vendor wizard
 - Edit vendor wizard
 - File browser (remote and local)
@@ -182,7 +190,7 @@ Built with charmbracelet/huh (forms) and lipgloss (styling).
 
 ### Sync Operation
 
-```
+```text
 User runs: git-vendor sync
 
 1. main.go
@@ -209,7 +217,7 @@ User runs: git-vendor sync
 
 ### Update Operation
 
-```
+```text
 User runs: git-vendor update
 
 1. main.go
@@ -231,7 +239,7 @@ User runs: git-vendor update
 
 ### Add Vendor Wizard
 
-```
+```text
 User runs: git-vendor add
 
 1. main.go
@@ -258,7 +266,7 @@ User runs: git-vendor add
 
 ## File System Layout
 
-```
+```text
 project/
 ├── vendor/
 │   ├── vendor.yml       # Configuration (user-managed)
@@ -276,6 +284,7 @@ project/
 ```
 
 **Key directories:**
+
 - `vendor/` - git-vendor metadata
 - User-specified paths - vendored files (outside vendor/)
 
@@ -354,23 +363,27 @@ project/
 ### Adding New Git Platforms
 
 **Steps:**
+
 1. Update smart URL parsing in `ParseSmartURL()` (git_operations.go)
 2. Implement platform-specific license detection
 3. Add tests
 
 **Example:** Adding Codeberg support would require:
+
 - Pattern matching for `codeberg.org` URLs
 - License file detection (no API)
 
 ### Adding New Commands
 
 **Steps:**
+
 1. Add command case in main.go switch
 2. Implement logic in Manager (engine.go)
 3. Add TUI wizard if interactive (tui/wizard.go)
 4. Add tests
 
 **Example:** Adding `git-vendor search <query>` command:
+
 ```go
 case "search":
     query := os.Args[2]
@@ -381,11 +394,13 @@ case "search":
 ### Custom License Validators
 
 **Steps:**
+
 1. Implement `LicenseChecker` interface
 2. Inject into VendorSyncer
 3. Override default checker
 
 **Example:** Custom SPDX validation:
+
 ```go
 type CustomLicenseChecker struct {}
 
@@ -397,6 +412,7 @@ func (c *CustomLicenseChecker) CheckLicense(url string) (string, error) {
 ### Plugin System (Future)
 
 **Potential design:**
+
 ```yaml
 plugins:
   - name: "custom-provider"
@@ -404,6 +420,7 @@ plugins:
 ```
 
 **Would enable:**
+
 - Custom Git providers
 - Custom license validators
 - Custom hook executors
@@ -414,27 +431,27 @@ plugins:
 
 ### Sync Performance
 
-| Operation | Time | Bottleneck |
-|-----------|------|------------|
-| **First sync** | ~5-10s/vendor | Network + Git |
-| **Cache hit** | ~1-2s/vendor | File validation |
-| **Parallel (4 vendors)** | ~3x faster | Worker pool |
+| Operation                | Time          | Bottleneck      |
+| ------------------------ | ------------- | --------------- |
+| **First sync**           | ~5-10s/vendor | Network + Git   |
+| **Cache hit**            | ~1-2s/vendor  | File validation |
+| **Parallel (4 vendors)** | ~3x faster    | Worker pool     |
 
 ### Memory Usage
 
-| Scenario | Memory |
-|----------|--------|
-| **Single vendor** | ~50MB |
-| **10 vendors** | ~200MB |
+| Scenario                 | Memory |
+| ------------------------ | ------ |
+| **Single vendor**        | ~50MB  |
+| **10 vendors**           | ~200MB |
 | **Parallel (8 workers)** | ~400MB |
 
 ### Disk Usage
 
-| Item | Size |
-|------|------|
-| **Binary** | ~10MB |
+| Item          | Size               |
+| ------------- | ------------------ |
+| **Binary**    | ~10MB              |
 | **Temp dirs** | Deleted after sync |
-| **Cache** | ~1KB/file |
+| **Cache**     | ~1KB/file          |
 
 ---
 
@@ -463,15 +480,18 @@ plugins:
 ## Dependencies
 
 **Runtime:**
+
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - Styling
 - `gopkg.in/yaml.v3` - YAML parsing
 - `github.com/fsnotify/fsnotify` - File watching
 
 **Testing:**
+
 - `github.com/golang/mock` - Mock generation (gomock)
 
 **Build:**
+
 - GoReleaser - Release automation with ldflags version injection
 
 ---
@@ -483,10 +503,12 @@ plugins:
 **Validation:** `ValidateDestPath()` in filesystem.go
 
 **Rejects:**
+
 - Absolute paths: `/etc/passwd`, `C:\Windows\System32`
 - Parent references: `../../../etc/passwd`
 
 **Allows:**
+
 - Relative paths within project: `internal/vendor/utils`
 
 ### License Compliance
@@ -510,6 +532,7 @@ plugins:
 ## Future Enhancements
 
 **Potential features:**
+
 - Checksum verification for vendored files
 - Diff visualization in TUI
 - Vendor search/discovery

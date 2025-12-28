@@ -111,11 +111,13 @@ Top-level vendor configuration.
 **Type:** `string`
 **Description:** Display name for the vendor
 **Validation:**
+
 - Must be unique across all vendors
 - Cannot be empty
 - Recommended: Use descriptive names
 
 **Examples:**
+
 ```yaml
 ✅ name: "charmbracelet-lipgloss"
 ✅ name: "golang-mock"
@@ -128,11 +130,13 @@ Top-level vendor configuration.
 **Type:** `string`
 **Description:** Git repository URL
 **Validation:**
+
 - Must be valid Git URL
 - Supported protocols: https://, git://, ssh://
 - Can be GitHub, GitLab, Bitbucket, or generic Git
 
 **Examples:**
+
 ```yaml
 ✅ url: "https://github.com/owner/repo"
 ✅ url: "git@github.com:owner/repo.git"
@@ -149,6 +153,7 @@ Top-level vendor configuration.
 **Validation:** Optional but recommended
 
 **Pre-approved licenses:**
+
 - MIT
 - Apache-2.0
 - BSD-3-Clause
@@ -158,6 +163,7 @@ Top-level vendor configuration.
 - CC0-1.0
 
 **Examples:**
+
 ```yaml
 ✅ license: "MIT"
 ✅ license: "Apache-2.0"
@@ -174,6 +180,7 @@ Top-level vendor configuration.
 **Validation:** Can be empty
 
 **Examples:**
+
 ```yaml
 ✅ groups: ["frontend", "ui"]
 ✅ groups: ["backend"]
@@ -181,6 +188,7 @@ Top-level vendor configuration.
 ```
 
 **Use cases:**
+
 ```yaml
 # Environment-specific
 groups: ["development", "testing"]
@@ -199,13 +207,15 @@ groups: ["authentication", "backend"]
 **Default:** No hooks
 
 **Structure:**
+
 ```yaml
 hooks:
-  pre_sync: string   # Optional: runs before sync
-  post_sync: string  # Optional: runs after sync
+  pre_sync: string # Optional: runs before sync
+  post_sync: string # Optional: runs after sync
 ```
 
 **Examples:**
+
 ```yaml
 # Single-line commands
 hooks:
@@ -229,6 +239,7 @@ hooks:
 **Validation:** Must have at least one spec
 
 **Examples:**
+
 ```yaml
 # Single ref
 specs:
@@ -256,6 +267,7 @@ Configuration for a specific git ref.
 **Validation:** Cannot be empty
 
 **Examples:**
+
 ```yaml
 ✅ ref: "main"          # Branch
 ✅ ref: "v1.2.3"        # Tag
@@ -264,9 +276,10 @@ Configuration for a specific git ref.
 ```
 
 **Best practice:** Use tags for stable dependencies:
+
 ```yaml
-✅ ref: "v1.0.0"   # Stable, won't change
-⚠️ ref: "main"     # Changes frequently
+✅ ref: "v1.0.0" # Stable, won't change
+⚠️ ref: "main" # Changes frequently
 ```
 
 #### default_target (optional)
@@ -276,13 +289,14 @@ Configuration for a specific git ref.
 **Default:** Empty (current directory)
 
 **Examples:**
+
 ```yaml
 default_target: "vendor/lib/"
 
 # With auto-naming:
 mapping:
   - from: src/utils
-    to: ""  # Auto-named as "vendor/lib/utils"
+    to: "" # Auto-named as "vendor/lib/utils"
 ```
 
 #### mapping (required)
@@ -304,6 +318,7 @@ Maps remote repository path to local destination.
 **Validation:** Cannot be empty
 
 **Examples:**
+
 ```yaml
 ✅ from: "src/utils"           # Directory
 ✅ from: "src/config.go"       # File
@@ -320,6 +335,7 @@ Maps remote repository path to local destination.
 **Validation:** Must be relative (no `..`, no absolute paths)
 
 **Examples:**
+
 ```yaml
 ✅ to: "internal/vendor/utils"     # Explicit path
 ✅ to: "lib/config.go"             # File destination
@@ -329,6 +345,7 @@ Maps remote repository path to local destination.
 ```
 
 **Auto-naming logic:**
+
 ```yaml
 # With default_target: "vendor/"
 from: "src/utils"
@@ -375,6 +392,7 @@ git-vendor validate
 ```
 
 **Example output:**
+
 ```text
 ✔ Validation passed. No issues found.
 
@@ -399,8 +417,8 @@ git-vendor validate
 ### 2. Lock to Stable Refs
 
 ```yaml
-✅ ref: "v1.2.3"    # Tag (stable)
-⚠️ ref: "main"      # Branch (changes)
+✅ ref: "v1.2.3" # Tag (stable)
+⚠️ ref: "main" # Branch (changes)
 ```
 
 ### 3. Organize with Groups
@@ -426,12 +444,12 @@ hooks:
 
 ```yaml
 ✅ mapping:
-     - from: src/
-       to: vendor/lib/
+  - from: src/
+    to: vendor/lib/
 
 ⚠️ mapping:
-     - from: src/
-       to: ""  # Auto-naming (less predictable)
+  - from: src/
+    to: "" # Auto-naming (less predictable)
 ```
 
 ### 6. Validate Before Committing
@@ -513,7 +531,7 @@ vendors:
         default_target: "vendor/ui/"
         mapping:
           - from: src/components
-            to: ""  # Auto: vendor/ui/components
+            to: "" # Auto: vendor/ui/components
 ```
 
 ### Example 4: Multiple Vendors

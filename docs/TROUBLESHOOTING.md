@@ -172,10 +172,12 @@ The repository's license is not in the pre-approved list:
 **Solution:**
 
 1. **Review the license:**
+
    - License file is shown in `vendor/licenses/<vendor-name>.txt`
    - Or visit the repository to read the full license
 
 2. **Accept or reject:**
+
    - Accept: You take responsibility for compliance
    - Reject: Vendor operation is canceled
 
@@ -201,6 +203,7 @@ License shows as "UNKNOWN" or "NONE".
    Visit the repository and look for LICENSE or COPYING files
 
 2. **Proceed with caution:**
+
    - No license = all rights reserved by default
    - Contact repository owner about licensing
    - Consider using an alternative dependency
@@ -386,13 +389,13 @@ Multiple vendors are configured to copy files to the same destination path.
          - ref: main
            mapping:
              - from: src/utils
-               to: lib/vendor-a-utils  # Changed to avoid conflict
+               to: lib/vendor-a-utils # Changed to avoid conflict
      - name: vendor-b
        specs:
          - ref: main
            mapping:
              - from: pkg/utils
-               to: lib/vendor-b-utils  # Changed to avoid conflict
+               to: lib/vendor-b-utils # Changed to avoid conflict
    ```
 
 **Note:**
@@ -531,7 +534,7 @@ vendors:
     specs:
       - ref: main
         mapping:
-          - from: src/utils  # Must not be empty
+          - from: src/utils # Must not be empty
             to: lib/utils
 ```
 
@@ -556,6 +559,7 @@ The `sync` command appears to hang or takes minutes to complete.
    Look for "• Processing vendor-name..." message
 
 2. **For large repositories:**
+
    - Vendor only specific subdirectories, not root
    - Use tags instead of branch tips (faster shallow clone)
 
@@ -733,6 +737,7 @@ git-vendor sync
 5. **File limit exceeded (>1000 files per vendor)**
 
 **Cache is enabled for:**
+
 - Normal sync operations
 - Re-syncing unchanged vendors
 - Dry-run mode (validates cache, doesn't write)
@@ -1041,12 +1046,14 @@ git-vendor sync
    ```
 
 **When parallel helps:**
+
 - 4+ vendors
 - Fast network
 - CPU-bound operations (not network-bound)
 - SSD storage
 
 **When sequential is better:**
+
 - 1-2 vendors
 - Slow network
 - HDD storage
@@ -1071,6 +1078,7 @@ git-vendor sync
 **Solutions:**
 
 1. **This is a git timeout, not a worker timeout**
+
    - Git operations have 30-second context timeout
    - Parallel mode doesn't change timeout behavior
 
@@ -1143,6 +1151,7 @@ git-vendor watch
    ```
 
 2. **Save file properly:**
+
    - Ensure file is saved (not just edited in buffer)
    - Wait 1 second (debounce period)
 
@@ -1193,10 +1202,12 @@ Change detected, syncing...
 **Solutions:**
 
 1. **This is normal for rapid edits:**
+
    - Watch has 1-second debounce
    - Multiple edits within 1 second = one sync
 
 2. **Disable auto-save in editor:**
+
    - VSCode: `"files.autoSave": "off"`
    - Vim: No special config needed
    - Emacs: `(setq auto-save-default nil)`
@@ -1275,6 +1286,7 @@ git-vendor watch
 **Solutions:**
 
 1. **This is normal:**
+
    - File watching has some overhead
    - Should be <5% CPU when idle
    - Spikes during sync are expected
@@ -1314,6 +1326,7 @@ Git is not installed or not in system PATH.
 **Solution:**
 
 1. **Install Git:**
+
    - macOS: `brew install git`
    - Ubuntu/Debian: `sudo apt-get install git`
    - Windows: Download from <https://git-scm.com/>
@@ -1378,6 +1391,7 @@ Git clone fails with permission error.
    ```
 
 2. **Update terminal:**
+
    - Use a modern terminal emulator
    - iTerm2 (macOS), Windows Terminal (Windows), or any terminal with 256-color support
 
@@ -1504,6 +1518,7 @@ If you encounter an issue not covered here:
    <https://github.com/yourusername/git-vendor/issues>
 
 2. **Create a new issue with:**
+
    - Command you ran
    - Full error message
    - Contents of `vendor.yml` (sanitized)

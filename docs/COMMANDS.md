@@ -7,6 +7,7 @@ Complete reference for all git-vendor commands.
 git-vendor can be invoked as either `git-vendor` or `git vendor` - both work identically.
 
 **Examples:**
+
 ```bash
 # Standalone command
 git-vendor init
@@ -42,10 +43,10 @@ All examples in this document use `git-vendor`, but you can substitute `git vend
 
 ## Global Flags
 
-| Flag | Description |
-|------|-------------|
-| `--version` | Show version information |
-| `--help, -h` | Show help for command |
+| Flag            | Description                          |
+| --------------- | ------------------------------------ |
+| `--version`     | Show version information             |
+| `--help, -h`    | Show help for command                |
 | `--verbose, -v` | Show git commands (sync/update only) |
 
 ---
@@ -57,16 +58,19 @@ All examples in this document use `git-vendor`, but you can substitute `git vend
 Initialize vendor directory structure in your project.
 
 **Usage:**
+
 ```bash
 git-vendor init
 ```
 
 **Creates:**
+
 - `vendor/vendor.yml` - Configuration file
 - `vendor/vendor.lock` - Lock file with commit hashes
 - `vendor/licenses/` - Directory for cached license files
 
 **When to use:**
+
 - First time setting up git-vendor in a project
 - After cloning a repository that uses git-vendor
 
@@ -77,6 +81,7 @@ git-vendor init
 Add a new vendor dependency using an interactive wizard.
 
 **Usage:**
+
 ```bash
 git-vendor add
 ```
@@ -105,11 +110,13 @@ The tool automatically extracts the repository, ref, and path.
 Modify existing vendor configurations through an interactive wizard.
 
 **Usage:**
+
 ```bash
 git-vendor edit
 ```
 
 **Allows you to:**
+
 - Add/remove path mappings
 - Change tracked branches/tags
 - Update configuration settings
@@ -121,16 +128,19 @@ git-vendor edit
 Remove a vendor dependency.
 
 **Usage:**
+
 ```bash
 git-vendor remove <name>
 ```
 
 **Arguments:**
+
 - `<name>` - Name of the vendor to remove
 
 **Requires confirmation before deletion.**
 
 **Removes:**
+
 - Configuration entry from `vendor.yml`
 - Cached license file from `vendor/licenses/`
 
@@ -141,11 +151,13 @@ git-vendor remove <name>
 Display all configured vendor dependencies.
 
 **Usage:**
+
 ```bash
 git-vendor list
 ```
 
 **Shows:**
+
 - Repository URL
 - Tracked refs
 - Path mappings
@@ -158,22 +170,23 @@ git-vendor list
 Download vendored dependencies to their configured local paths.
 
 **Usage:**
+
 ```bash
 git-vendor sync [options] [vendor-name]
 ```
 
 **Options:**
 
-| Flag | Description |
-|------|-------------|
-| `--dry-run` | Preview what will be synced without making changes |
-| `--force` | Re-download files even if already synced |
-| `--no-cache` | Disable incremental sync cache (re-download and revalidate all files) |
-| `--group <name>` | Sync only vendors in the specified group |
-| `--parallel` | Enable parallel processing (3-5x faster) |
-| `--workers <N>` | Number of parallel workers (default: NumCPU, max 8) |
-| `--verbose, -v` | Show git commands as they run (useful for debugging) |
-| `<vendor-name>` | Sync only the specified vendor |
+| Flag             | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
+| `--dry-run`      | Preview what will be synced without making changes                    |
+| `--force`        | Re-download files even if already synced                              |
+| `--no-cache`     | Disable incremental sync cache (re-download and revalidate all files) |
+| `--group <name>` | Sync only vendors in the specified group                              |
+| `--parallel`     | Enable parallel processing (3-5x faster)                              |
+| `--workers <N>`  | Number of parallel workers (default: NumCPU, max 8)                   |
+| `--verbose, -v`  | Show git commands as they run (useful for debugging)                  |
+| `<vendor-name>`  | Sync only the specified vendor                                        |
 
 **Examples:**
 
@@ -222,16 +235,17 @@ git-vendor sync --parallel --workers 4
 Fetch the latest commits for all configured refs and update the lock file.
 
 **Usage:**
+
 ```bash
 git-vendor update [options]
 ```
 
 **Options:**
 
-| Flag | Description |
-|------|-------------|
-| `--parallel` | Enable parallel processing (3-5x faster) |
-| `--workers <N>` | Number of parallel workers (default: NumCPU, max 8) |
+| Flag            | Description                                          |
+| --------------- | ---------------------------------------------------- |
+| `--parallel`    | Enable parallel processing (3-5x faster)             |
+| `--workers <N>` | Number of parallel workers (default: NumCPU, max 8)  |
 | `--verbose, -v` | Show git commands as they run (useful for debugging) |
 
 **This command:**
@@ -270,6 +284,7 @@ git-vendor update --parallel --workers 4
 Check configuration integrity and detect path conflicts between vendors.
 
 **Usage:**
+
 ```bash
 git-vendor validate
 ```
@@ -313,16 +328,17 @@ Found 2 conflict(s)
 Check if local files are in sync with the lock file.
 
 **Usage:**
+
 ```bash
 git-vendor status [options]
 ```
 
 **Options:**
 
-| Flag | Description |
-|------|-------------|
-| `--json` | Output in JSON format for automation |
-| `--quiet, -q` | No output, exit code only |
+| Flag          | Description                          |
+| ------------- | ------------------------------------ |
+| `--json`      | Output in JSON format for automation |
+| `--quiet, -q` | No output, exit code only            |
 
 **This command verifies:**
 
@@ -360,6 +376,7 @@ Run 'git-vendor sync' to fix.
 ```
 
 **Exit codes:**
+
 - `0` - All vendors are synced
 - `1` - Some vendors need syncing
 
@@ -370,14 +387,15 @@ Run 'git-vendor sync' to fix.
 Check if newer commits are available for your vendored dependencies without updating them.
 
 **Usage:**
+
 ```bash
 git-vendor check-updates [options]
 ```
 
 **Options:**
 
-| Flag | Description |
-|------|-------------|
+| Flag     | Description                          |
+| -------- | ------------------------------------ |
 | `--json` | Output in JSON format for automation |
 
 **This command:**
@@ -416,6 +434,7 @@ Run 'git-vendor update' to fetch latest versions
 ```
 
 **Exit codes:**
+
 - `0` - All vendors are up to date
 - `1` - Updates available
 
@@ -426,11 +445,13 @@ Run 'git-vendor update' to fetch latest versions
 Show commit differences between the locked version and the latest available version.
 
 **Usage:**
+
 ```bash
 git-vendor diff <vendor>
 ```
 
 **Arguments:**
+
 - `<vendor>` - Name of the vendor to show diff for
 
 **This command displays:**
@@ -479,6 +500,7 @@ git-vendor diff charmbracelet/lipgloss
 Watch for changes to `vendor.yml` and automatically sync when the file is modified.
 
 **Usage:**
+
 ```bash
 git-vendor watch
 ```
@@ -519,11 +541,13 @@ git-vendor watch
 Generate shell completion scripts for command-line auto-completion.
 
 **Usage:**
+
 ```bash
 git-vendor completion <shell>
 ```
 
 **Arguments:**
+
 - `<shell>` - Shell type: `bash`, `zsh`, `fish`, or `powershell`
 
 **Supported shells:**
