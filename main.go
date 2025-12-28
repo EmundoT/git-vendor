@@ -136,7 +136,7 @@ func main() {
 		fmt.Println()
 		fmt.Println("Next steps:")
 		fmt.Println("  git-vendor sync      # Download files at locked versions")
-		fmt.Println("  git-vendor update    # Fetch latest commits and update lockfile")
+		fmt.Println("  git vendor update    # Fetch latest commits (also works)")
 
 	case "edit":
 		if !core.IsVendorInitialized() {
