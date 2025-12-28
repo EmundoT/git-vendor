@@ -14,6 +14,7 @@ type VendorSpec struct {
 	URL     string       `yaml:"url"`
 	License string       `yaml:"license"`
 	Groups  []string     `yaml:"groups,omitempty"` // Optional groups for batch operations
+	Hooks   *HookConfig  `yaml:"hooks,omitempty"`  // Optional pre/post sync hooks
 	Specs   []BranchSpec `yaml:"specs"`
 }
 
@@ -133,4 +134,22 @@ type VendorDiff struct {
 	NewDate     string
 	Commits     []CommitInfo
 	CommitCount int
+}
+
+// HookConfig defines pre/post sync shell commands for automation
+type HookConfig struct {
+	PreSync  string `yaml:"pre_sync,omitempty"`  // Shell command to run before sync
+	PostSync string `yaml:"post_sync,omitempty"` // Shell command to run after sync
+}
+
+// HookContext provides environment context for hook execution
+type HookContext struct {
+	VendorName  string            // Name of the vendor being synced
+	VendorURL   string            // URL of the vendor repository
+	Ref         string            // Git ref being synced
+	CommitHash  string            // Resolved commit hash
+	RootDir     string            // Project root directory
+	FilesCopied int               // Number of files copied
+	DirsCreated int               // Number of directories created
+	Environment map[string]string // Additional environment variables
 }
