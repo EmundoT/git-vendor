@@ -153,3 +153,9 @@ type HookContext struct {
 	DirsCreated int               // Number of directories created
 	Environment map[string]string // Additional environment variables
 }
+
+// ParallelOptions configures parallel processing behavior
+type ParallelOptions struct {
+	Enabled    bool // Whether parallel processing is enabled
+	MaxWorkers int  // Maximum concurrent workers (0 = use NumCPU)
+}

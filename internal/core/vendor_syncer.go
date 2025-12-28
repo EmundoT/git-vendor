@@ -250,9 +250,34 @@ func (s *VendorSyncer) SyncWithGroup(groupName string, force, noCache bool) erro
 	})
 }
 
+// SyncWithParallel performs sync with parallel processing
+func (s *VendorSyncer) SyncWithParallel(vendorName string, force, noCache bool, parallelOpts types.ParallelOptions) error {
+	// Check if lockfile exists, if not, run UpdateAll
+	lock, err := s.lockStore.Load()
+	if err != nil || len(lock.Vendors) == 0 {
+		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
+		if err := s.update.UpdateAll(); err != nil {
+			return err
+		}
+		fmt.Println()
+		fmt.Println("Lockfile created. Now syncing files...")
+	}
+	return s.sync.Sync(SyncOptions{
+		VendorName: vendorName,
+		Force:      force,
+		NoCache:    noCache,
+		Parallel:   parallelOpts,
+	})
+}
+
 // UpdateAll updates all vendors and regenerates lockfile
 func (s *VendorSyncer) UpdateAll() error {
 	return s.update.UpdateAll()
+}
+
+// UpdateAllWithParallel updates all vendors with parallel processing
+func (s *VendorSyncer) UpdateAllWithParallel(parallelOpts types.ParallelOptions) error {
+	return s.update.UpdateAllWithOptions(parallelOpts)
 }
 
 // GetConfig returns the vendor configuration

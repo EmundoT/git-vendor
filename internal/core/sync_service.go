@@ -15,7 +15,8 @@ type SyncOptions struct {
 	VendorName string // Empty = all vendors
 	GroupName  string // Empty = all groups, filters vendors by group
 	Force      bool
-	NoCache    bool // Disable incremental sync cache
+	NoCache    bool                  // Disable incremental sync cache
+	Parallel   types.ParallelOptions // Parallel processing options
 }
 
 // SyncService handles vendor synchronization operations
@@ -97,49 +98,108 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 		s.printSyncHeader(config, opts.VendorName)
 	}
 
-	// Calculate total vendors for progress
-	vendorCount := 0
+	// Filter vendors based on options
+	var vendorsToSync []types.VendorSpec
 	for _, v := range config.Vendors {
 		if s.shouldSyncVendor(v, opts) {
-			vendorCount++
+			vendorsToSync = append(vendorsToSync, v)
 		}
 	}
 
+	// Dry-run mode always uses sequential processing
+	if opts.DryRun {
+		return s.syncDryRun(vendorsToSync, lockMap)
+	}
+
+	// Use parallel or sequential sync based on options
+	if opts.Parallel.Enabled {
+		return s.syncParallel(vendorsToSync, lockMap, opts)
+	}
+
+	return s.syncSequential(vendorsToSync, lockMap, opts)
+}
+
+// syncDryRun performs dry-run preview (always sequential)
+func (s *SyncService) syncDryRun(vendors []types.VendorSpec, lockMap map[string]map[string]string) error {
+	progress := s.ui.StartProgress(len(vendors), "Previewing sync")
+	defer progress.Complete()
+
+	for _, v := range vendors {
+		s.previewSyncVendor(v, lockMap[v.Name])
+		progress.Increment(v.Name)
+	}
+
+	return nil
+}
+
+// syncSequential performs sequential sync (original implementation)
+func (s *SyncService) syncSequential(vendors []types.VendorSpec, lockMap map[string]map[string]string, opts SyncOptions) error {
 	// Start progress tracking
-	progress := s.ui.StartProgress(vendorCount, "Syncing vendors")
+	progress := s.ui.StartProgress(len(vendors), "Syncing vendors")
 	defer progress.Complete()
 
 	// Track total stats across all vendors
 	var totalStats CopyStats
 
 	// Sync vendors
-	for _, v := range config.Vendors {
-		// Skip vendors that don't match the filters
-		if !s.shouldSyncVendor(v, opts) {
-			continue
+	for _, v := range vendors {
+		// If force is true, pass nil to ignore lock and re-download
+		refs := lockMap[v.Name]
+		if opts.Force {
+			refs = nil
 		}
-
-		if opts.DryRun {
-			s.previewSyncVendor(v, lockMap[v.Name])
-			progress.Increment(v.Name)
-		} else {
-			// If force is true, pass nil to ignore lock and re-download
-			refs := lockMap[v.Name]
-			if opts.Force {
-				refs = nil
-			}
-			_, stats, err := s.syncVendor(v, refs, opts)
-			if err != nil {
-				progress.Fail(err)
-				return err
-			}
-			totalStats.Add(stats)
-			progress.Increment(fmt.Sprintf("✓ %s", v.Name))
+		_, stats, err := s.syncVendor(v, refs, opts)
+		if err != nil {
+			progress.Fail(err)
+			return err
 		}
+		totalStats.Add(stats)
+		progress.Increment(fmt.Sprintf("✓ %s", v.Name))
 	}
 
-	// Display summary (only in non-dry-run mode)
-	if !opts.DryRun && totalStats.FileCount > 0 {
+	// Display summary
+	if totalStats.FileCount > 0 {
+		fmt.Println()
+		fmt.Printf("Summary: Synced %s across all vendors\n", Pluralize(totalStats.FileCount, "file", "files"))
+	}
+
+	return nil
+}
+
+// syncParallel performs parallel sync using worker pool
+func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[string]map[string]string, opts SyncOptions) error {
+	// Start progress tracking
+	progress := s.ui.StartProgress(len(vendors), "Syncing vendors (parallel)")
+	defer progress.Complete()
+
+	// Create parallel executor
+	executor := NewParallelExecutor(opts.Parallel, s.ui)
+
+	// Define sync function for a single vendor
+	syncFunc := func(v types.VendorSpec, lockedRefs map[string]string, syncOpts SyncOptions) (map[string]string, CopyStats, error) {
+		updatedRefs, stats, err := s.syncVendor(v, lockedRefs, syncOpts)
+		if err != nil {
+			progress.Fail(err)
+			return nil, CopyStats{}, err
+		}
+		progress.Increment(fmt.Sprintf("✓ %s", v.Name))
+		return updatedRefs, stats, nil
+	}
+
+	// Execute parallel sync
+	results, err := executor.ExecuteParallelSync(vendors, lockMap, opts, syncFunc)
+	if err != nil {
+		return err
+	}
+
+	// Calculate total stats
+	var totalStats CopyStats
+	for _, result := range results {
+		totalStats.Add(result.Stats)
+	}
+
+	// Display summary
+	if totalStats.FileCount > 0 {
 		fmt.Println()
 		fmt.Printf("Summary: Synced %s across all vendors\n", Pluralize(totalStats.FileCount, "file", "files"))
 	}

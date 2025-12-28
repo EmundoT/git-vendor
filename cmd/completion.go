@@ -39,10 +39,10 @@ _git_vendor_completions() {
     # Command-specific options
     case "${prev}" in
         sync)
-            opts="--dry-run --force --no-cache --group --verbose -v"
+            opts="--dry-run --force --no-cache --group --parallel --workers --verbose -v"
             ;;
         update)
-            opts="--verbose -v"
+            opts="--parallel --workers --verbose -v"
             ;;
         remove)
             opts="--yes -y --quiet -q --json"
@@ -98,11 +98,15 @@ _git_vendor() {
                         '--force[Re-download even if synced]' \
                         '--no-cache[Skip incremental cache]' \
                         '--group[Sync vendor group]:group:' \
+                        '--parallel[Enable parallel processing]' \
+                        '--workers[Number of parallel workers]:workers:' \
                         '--verbose[Show git commands]' \
                         '-v[Show git commands]'
                     ;;
                 update)
                     _arguments \
+                        '--parallel[Enable parallel processing]' \
+                        '--workers[Number of parallel workers]:workers:' \
                         '--verbose[Show git commands]' \
                         '-v[Show git commands]'
                     ;;
@@ -148,9 +152,13 @@ func GenerateFishCompletion() string {
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from sync' -l force -d 'Re-download even if synced'")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from sync' -l no-cache -d 'Skip incremental cache'")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from sync' -l group -d 'Sync vendor group' -r")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from sync' -l parallel -d 'Enable parallel processing'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from sync' -l workers -d 'Number of parallel workers' -r")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from sync' -l verbose -s v -d 'Show git commands'")
 
 	completions = append(completions, "# update command flags")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from update' -l parallel -d 'Enable parallel processing'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from update' -l workers -d 'Number of parallel workers' -r")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from update' -l verbose -s v -d 'Show git commands'")
 
 	completions = append(completions, "# remove command flags")
@@ -195,13 +203,13 @@ Register-ArgumentCompleter -Native -CommandName git-vendor -ScriptBlock {
 
         switch ($subcommand) {
             'sync' {
-                @('--dry-run', '--force', '--no-cache', '--group', '--verbose', '-v') |
+                @('--dry-run', '--force', '--no-cache', '--group', '--parallel', '--workers', '--verbose', '-v') |
                     Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
                     }
             }
             'update' {
-                @('--verbose', '-v') |
+                @('--parallel', '--workers', '--verbose', '-v') |
                     Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
                     }
