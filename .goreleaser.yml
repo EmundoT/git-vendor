@@ -35,7 +35,7 @@ archives:
         format: zip
     files:
       - README.md
-      - TROUBLESHOOTING.md
+      - docs/TROUBLESHOOTING.md
 
 checksum:
   name_template: 'checksums.txt'

@@ -565,4 +565,4 @@ git-vendor completion powershell >> $PROFILE
 - [Configuration Reference](./CONFIGURATION.md) - vendor.yml and vendor.lock format
 - [Advanced Usage](./ADVANCED.md) - Hooks, groups, parallel processing
 - [Platform Support](./PLATFORMS.md) - GitHub, GitLab, Bitbucket details
-- [Troubleshooting](../TROUBLESHOOTING.md) - Common issues and solutions
+- [Troubleshooting](./TROUBLESHOOTING.md) - Common issues and solutions

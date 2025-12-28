@@ -91,7 +91,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
 
 **Documentation:**
 - Comprehensive README with quick start
-- TROUBLESHOOTING.md with 20+ common issues
+- docs/TROUBLESHOOTING.md with 20+ common issues
 - CONTRIBUTING.md with development workflow
 - CLAUDE.md for AI-assisted development
 - examples/ directory with 7 configuration examples
