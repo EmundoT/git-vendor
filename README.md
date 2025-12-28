@@ -13,6 +13,7 @@ A lightweight CLI tool for managing vendored dependencies from Git repositories 
 - **Interactive TUI**: User-friendly terminal interface with file browser
 - **Deterministic Locking**: Lock dependencies to specific commits for reproducibility
 - **Incremental Sync**: Smart caching system skips re-downloading unchanged files (80% faster re-syncs)
+- **Custom Hooks**: Run shell commands before/after sync for automation workflows
 - **Update Checker**: Check for available updates without modifying files
 - **Diff Command**: View commit history between locked and latest versions
 - **Watch Mode**: Auto-sync on config file changes for live development
@@ -513,6 +514,11 @@ vendors:
     url: https://github.com/owner/repo
     license: MIT
     groups: ["frontend", "ui"]  # Optional: organize vendors into groups
+    hooks:  # Optional: run shell commands before/after sync
+      pre_sync: echo "Preparing to sync example-lib..."
+      post_sync: |
+        npm install
+        npm run build
     specs:
       - ref: main
         default_target: ""
@@ -529,6 +535,9 @@ vendors:
 - `url`: Git repository URL
 - `license`: SPDX license identifier (auto-detected)
 - `groups`: (Optional) Array of group names for batch operations
+- `hooks`: (Optional) Shell commands for automation
+  - `pre_sync`: Shell command to run before sync
+  - `post_sync`: Shell command to run after sync (multiline supported with `|`)
 - `specs`: Array of refs to track (can track multiple branches/tags)
   - `ref`: Branch, tag, or commit hash
   - `default_target`: Optional default destination directory
@@ -662,6 +671,79 @@ The auto-naming logic:
 1. Uses the base name of the source path
 2. Respects `default_target` if set
 3. Falls back to vendor name for root paths
+
+### Custom Hooks (Automation)
+
+Run shell commands before and after vendor sync operations for workflow automation.
+
+**Configuration:**
+
+```yaml
+vendors:
+  - name: frontend-lib
+    url: https://github.com/owner/lib
+    license: MIT
+    hooks:
+      pre_sync: echo "Preparing to sync frontend-lib..."
+      post_sync: |
+        npm install
+        npm run build
+    specs:
+      - ref: main
+        mapping:
+          - from: src/
+            to: vendor/frontend-lib/
+```
+
+**Hook Types:**
+
+- `pre_sync`: Runs **before** git clone/sync operations
+- `post_sync`: Runs **after** successful sync completion
+
+**Features:**
+
+- Full shell support via `sh -c` (pipes, multiline scripts, etc.)
+- Multiline commands supported with YAML `|` syntax
+- Hooks run even for cache hits (when git clone is skipped)
+- Pre-sync hook failure stops the entire sync operation
+- Post-sync hook failure marks sync as failed
+
+**Environment Variables:**
+
+Hooks have access to the following environment variables:
+
+- `GIT_VENDOR_NAME`: Vendor name
+- `GIT_VENDOR_URL`: Repository URL
+- `GIT_VENDOR_REF`: Git ref being synced
+- `GIT_VENDOR_COMMIT`: Resolved commit hash
+- `GIT_VENDOR_ROOT`: Project root directory (`vendor/` directory)
+- `GIT_VENDOR_FILES_COPIED`: Number of files copied
+
+**Example - Build automation:**
+
+```yaml
+hooks:
+  post_sync: |
+    cd vendor/frontend-lib
+    npm install
+    npm run build
+```
+
+**Example - Notifications:**
+
+```yaml
+hooks:
+  pre_sync: echo "📦 Syncing $GIT_VENDOR_NAME from $GIT_VENDOR_URL"
+  post_sync: echo "✅ Synced $GIT_VENDOR_FILES_COPIED files at commit $GIT_VENDOR_COMMIT"
+```
+
+**Security Considerations:**
+
+- Hooks execute arbitrary shell commands with your user permissions
+- No sandboxing or privilege restrictions
+- Same trust model as npm scripts, git hooks, or Makefile targets
+- Commands run in the project root directory
+- Only use hooks with vendor configurations you trust
 
 ## Using in CI/CD
 
