@@ -33,11 +33,6 @@ func createTestConfig(vendors ...types.VendorSpec) types.VendorConfig {
 	return types.VendorConfig{Vendors: vendors}
 }
 
-// createTestLock creates a vendor lock with the given entries
-func createTestLock(entries ...types.LockDetails) types.VendorLock {
-	return types.VendorLock{Vendors: entries}
-}
-
 // createTestLockEntry creates a lock entry for testing
 func createTestLockEntry(name, ref, hash string) types.LockDetails {
 	return types.LockDetails{

@@ -224,7 +224,7 @@ func TestFallbackChecker_LicenseFileFound(t *testing.T) {
 
 	// Mock: git clone
 	git.EXPECT().Clone("/tmp/test123", "https://github.com/example/repo", gomock.Any()).
-		DoAndReturn(func(dir, url string, opts *types.CloneOptions) error {
+		DoAndReturn(func(_, _ string, opts *types.CloneOptions) error {
 			// Verify clone options
 			if opts.Depth != 1 || opts.NoCheckout {
 				t.Errorf("Expected depth=1, no-checkout=false, got depth=%d, no-checkout=%v",

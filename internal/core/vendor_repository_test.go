@@ -268,7 +268,7 @@ func TestSaveVendor_NewVendor(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
 
 	// Execute
-	err := syncer.SaveVendor(vendor)
+	err := syncer.SaveVendor(&vendor)
 
 	// Verify
 	assertNoError(t, err, "SaveVendor should succeed for new vendor")
@@ -311,7 +311,7 @@ func TestSaveVendor_UpdateExisting(t *testing.T) {
 
 	// Execute - update URL
 	updatedVendor := createTestVendorSpec("existing-vendor", "https://github.com/owner/new-repo", "develop")
-	err := syncer.SaveVendor(updatedVendor)
+	err := syncer.SaveVendor(&updatedVendor)
 
 	// Verify
 	assertNoError(t, err, "SaveVendor should succeed for existing vendor")
@@ -330,7 +330,7 @@ func TestSaveVendor_ConfigSaveFails(t *testing.T) {
 
 	// Execute
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
-	err := syncer.SaveVendor(vendor)
+	err := syncer.SaveVendor(&vendor)
 
 	// Verify
 	assertError(t, err, "SaveVendor should fail when config save fails")

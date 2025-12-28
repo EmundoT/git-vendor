@@ -6,7 +6,7 @@ import (
 )
 
 // TestNoOpProgressTracker verifies no-op tracker doesn't panic
-func TestNoOpProgressTracker(t *testing.T) {
+func TestNoOpProgressTracker(_ *testing.T) {
 	tracker := NewNoOpProgressTracker()
 
 	// Should not panic
@@ -19,7 +19,7 @@ func TestNoOpProgressTracker(t *testing.T) {
 
 // TestTextProgressTracker verifies text tracker basic functionality
 // Output is manually inspected, not asserted
-func TestTextProgressTracker(t *testing.T) {
+func TestTextProgressTracker(_ *testing.T) {
 	tracker := NewTextProgressTracker(5, "Test operation")
 
 	tracker.Increment("Step 1")
@@ -30,7 +30,7 @@ func TestTextProgressTracker(t *testing.T) {
 }
 
 // TestTextProgressTrackerFailure verifies failure handling
-func TestTextProgressTrackerFailure(t *testing.T) {
+func TestTextProgressTrackerFailure(_ *testing.T) {
 	tracker := NewTextProgressTracker(3, "Test operation")
 
 	tracker.Increment("Step 1")

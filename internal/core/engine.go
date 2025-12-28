@@ -155,12 +155,12 @@ func (m *Manager) RemoveVendor(name string) error {
 }
 
 // SaveVendor saves or updates a vendor spec
-func (m *Manager) SaveVendor(spec types.VendorSpec) error {
+func (m *Manager) SaveVendor(spec *types.VendorSpec) error {
 	return m.syncer.SaveVendor(spec)
 }
 
 // AddVendor adds a new vendor with license compliance check
-func (m *Manager) AddVendor(spec types.VendorSpec) error {
+func (m *Manager) AddVendor(spec *types.VendorSpec) error {
 	return m.syncer.AddVendor(spec)
 }
 

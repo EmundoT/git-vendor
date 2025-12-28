@@ -56,17 +56,24 @@ func (s *SilentUICallback) IsAutoApprove() bool { return false }
 func (s *SilentUICallback) FormatJSON(_ JSONOutput) error { return nil }
 
 // StartProgress implements UICallback for silent operation (no-op).
-func (s *SilentUICallback) StartProgress(total int, label string) types.ProgressTracker {
+func (s *SilentUICallback) StartProgress(_ int, _ string) types.ProgressTracker {
 	return &NoOpProgressTracker{}
 }
 
 // NoOpProgressTracker is a no-op implementation for testing
 type NoOpProgressTracker struct{}
 
-func (t *NoOpProgressTracker) Increment(message string) {}
-func (t *NoOpProgressTracker) SetTotal(total int)       {}
-func (t *NoOpProgressTracker) Complete()                {}
-func (t *NoOpProgressTracker) Fail(err error)           {}
+// Increment does nothing (no-op implementation).
+func (t *NoOpProgressTracker) Increment(_ string) {}
+
+// SetTotal does nothing (no-op implementation).
+func (t *NoOpProgressTracker) SetTotal(_ int) {}
+
+// Complete does nothing (no-op implementation).
+func (t *NoOpProgressTracker) Complete() {}
+
+// Fail does nothing (no-op implementation).
+func (t *NoOpProgressTracker) Fail(_ error) {}
 
 // VendorSyncer orchestrates vendor operations using domain services
 type VendorSyncer struct {
@@ -143,7 +150,7 @@ func (s *VendorSyncer) Init() error {
 }
 
 // AddVendor adds a new vendor with license compliance check
-func (s *VendorSyncer) AddVendor(spec types.VendorSpec) error {
+func (s *VendorSyncer) AddVendor(spec *types.VendorSpec) error {
 	// Check if vendor already exists
 	exists, err := s.repository.Exists(spec.Name)
 	if err != nil {
@@ -163,8 +170,8 @@ func (s *VendorSyncer) AddVendor(spec types.VendorSpec) error {
 }
 
 // SaveVendor saves or updates a vendor spec
-func (s *VendorSyncer) SaveVendor(spec types.VendorSpec) error {
-	if err := s.repository.Save(spec); err != nil {
+func (s *VendorSyncer) SaveVendor(spec *types.VendorSpec) error {
+	if err := s.repository.Save(*spec); err != nil {
 		return err
 	}
 	return s.update.UpdateAll()
@@ -413,9 +420,9 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 	}, nil
 }
 
-// syncVendor is exposed for testing - delegates to sync service
-func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]string, CopyStats, error) {
-	return s.sync.syncVendor(v, lockedRefs, opts)
+// syncVendor is exposed for testing - delegates to sync service with default options
+func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
+	return s.sync.syncVendor(v, lockedRefs, SyncOptions{})
 }
 
 // CheckUpdates checks for available updates for all vendors

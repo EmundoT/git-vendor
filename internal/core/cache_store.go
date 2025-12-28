@@ -16,7 +16,7 @@ import (
 // CacheStore handles incremental sync cache I/O operations
 type CacheStore interface {
 	Load(vendorName, ref string) (types.IncrementalSyncCache, error)
-	Save(cache types.IncrementalSyncCache) error
+	Save(cache *types.IncrementalSyncCache) error
 	Delete(vendorName, ref string) error
 	ComputeFileChecksum(path string) (string, error)
 	BuildCache(vendorName, ref, commitHash string, files []string) (types.IncrementalSyncCache, error)
@@ -84,7 +84,7 @@ func (s *FileCacheStore) Load(vendorName, ref string) (types.IncrementalSyncCach
 }
 
 // Save writes the cache file for a vendor@ref
-func (s *FileCacheStore) Save(cache types.IncrementalSyncCache) error {
+func (s *FileCacheStore) Save(cache *types.IncrementalSyncCache) error {
 	// Ensure cache directory exists
 	cacheDir := s.cacheDir()
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
@@ -121,7 +121,7 @@ func (s *FileCacheStore) ComputeFileChecksum(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {

@@ -56,7 +56,7 @@ func (c *GitLabAPIChecker) CheckLicense(repoURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("GitLab API request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Handle 404 - repository not found or no license
 	if resp.StatusCode == http.StatusNotFound {

@@ -17,7 +17,7 @@ func (p *GenericProvider) Name() string {
 }
 
 // Supports always returns true as this is the fallback provider
-func (p *GenericProvider) Supports(url string) bool {
+func (p *GenericProvider) Supports(_ string) bool {
 	return true
 }
 

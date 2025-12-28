@@ -16,7 +16,7 @@ func (s *VendorSyncer) WatchConfig(callback func() error) error {
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %w", err)
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	configPath := s.configStore.Path()
 

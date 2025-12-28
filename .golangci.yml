@@ -1,3 +1,5 @@
+version: 2
+
 linters-settings:
   govet:
     enable-all: false
@@ -74,13 +76,6 @@ issues:
     - text: "avoid meaningless package names"
       linters:
         - revive
-    # Exclude errcheck for deferred cleanup (common pattern)
-    - text: "Error return value of.*RemoveAll.*is not checked"
-      linters:
-        - errcheck
-    - text: "Error return value of.*Remove.*is not checked"
-      linters:
-        - errcheck
     # Exclude errcheck for UI/TUI code where errors are not critical
     - path: internal/tui/
       text: "Error return value.*is not checked"

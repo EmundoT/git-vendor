@@ -123,7 +123,7 @@ func main() {
 			return
 		}
 
-		if err := manager.AddVendor(*spec); err != nil {
+		if err := manager.AddVendor(spec); err != nil {
 			tui.PrintError("Failed", err.Error())
 			os.Exit(1)
 		}
@@ -174,7 +174,7 @@ func main() {
 			return
 		}
 
-		if err := manager.SaveVendor(*updatedSpec); err != nil {
+		if err := manager.SaveVendor(updatedSpec); err != nil {
 			tui.PrintError("Error", err.Error())
 		} else {
 			tui.PrintSuccess("Saved " + updatedSpec.Name)
@@ -395,7 +395,10 @@ func main() {
 				parallel = true
 			case arg == "--workers":
 				if i+1 < len(args) {
-					fmt.Sscanf(args[i+1], "%d", &workers)
+					if _, err := fmt.Sscanf(args[i+1], "%d", &workers); err != nil {
+						callback.ShowError("Invalid Flag", fmt.Sprintf("--workers requires a valid number, got: %s", args[i+1]))
+						os.Exit(1)
+					}
 					i++ // Skip next arg
 				} else {
 					callback.ShowError("Invalid Flag", "--workers requires a number")
@@ -438,8 +441,9 @@ func main() {
 				fmt.Println("Run 'git-vendor sync' to apply changes.")
 			}
 		} else {
-			// Use parallel sync if requested
-			if parallel {
+			// Choose sync method based on flags
+			switch {
+			case parallel:
 				parallelOpts := types.ParallelOptions{
 					Enabled:    true,
 					MaxWorkers: workers,
@@ -448,13 +452,13 @@ func main() {
 					callback.ShowError("Sync Failed", err.Error())
 					os.Exit(1)
 				}
-			} else if groupName != "" {
+			case groupName != "":
 				// Use group sync if group is specified
 				if err := manager.SyncWithGroup(groupName, force, noCache); err != nil {
 					callback.ShowError("Sync Failed", err.Error())
 					os.Exit(1)
 				}
-			} else {
+			default:
 				// Regular sync
 				if err := manager.SyncWithOptions(vendorName, force, noCache); err != nil {
 					callback.ShowError("Sync Failed", err.Error())
@@ -483,15 +487,18 @@ func main() {
 
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
-			switch {
-			case arg == "--verbose" || arg == "-v":
+			switch arg {
+			case "--verbose", "-v":
 				core.Verbose = true
 				manager.UpdateVerboseMode(true)
-			case arg == "--parallel":
+			case "--parallel":
 				parallel = true
-			case arg == "--workers":
+			case "--workers":
 				if i+1 < len(args) {
-					fmt.Sscanf(args[i+1], "%d", &workers)
+					if _, err := fmt.Sscanf(args[i+1], "%d", &workers); err != nil {
+						callback.ShowError("Invalid Flag", fmt.Sprintf("--workers requires a valid number, got: %s", args[i+1]))
+						os.Exit(1)
+					}
 					i++ // Skip next arg
 				} else {
 					callback.ShowError("Invalid Flag", "--workers requires a number")
@@ -864,8 +871,8 @@ func main() {
 		}
 
 		// Display diffs
-		for _, diff := range diffs {
-			fmt.Print(core.FormatDiffOutput(diff))
+		for i := range diffs {
+			fmt.Print(core.FormatDiffOutput(&diffs[i]))
 			fmt.Println()
 		}
 
