@@ -403,4 +403,4 @@ ssh-add -l
 
 - [Commands Reference](./COMMANDS.md) - All available commands
 - [Configuration Reference](./CONFIGURATION.md) - vendor.yml format
-- [Troubleshooting](../TROUBLESHOOTING.md) - Common issues
+- [Troubleshooting](./TROUBLESHOOTING.md) - Common issues

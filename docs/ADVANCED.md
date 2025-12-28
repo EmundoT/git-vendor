@@ -788,4 +788,4 @@ mapping:
 - [Commands Reference](./COMMANDS.md) - All available commands
 - [Configuration Reference](./CONFIGURATION.md) - vendor.yml format
 - [Platform Support](./PLATFORMS.md) - GitHub, GitLab, Bitbucket
-- [Troubleshooting](../TROUBLESHOOTING.md) - Common issues
+- [Troubleshooting](./TROUBLESHOOTING.md) - Common issues

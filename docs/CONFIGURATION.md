@@ -579,4 +579,4 @@ vendors:
 - [Commands Reference](./COMMANDS.md) - All available commands
 - [Advanced Usage](./ADVANCED.md) - Hooks, groups, parallel processing
 - [Validation](./COMMANDS.md#validate) - Configuration validation
-- [Troubleshooting](../TROUBLESHOOTING.md) - Common configuration issues
+- [Troubleshooting](./TROUBLESHOOTING.md) - Common configuration issues

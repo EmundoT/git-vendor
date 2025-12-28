@@ -328,7 +328,7 @@ vendors:
 - **[Advanced Usage](./docs/ADVANCED.md)** - Hooks, groups, parallel processing, caching, watch mode
 - **[Configuration Reference](./docs/CONFIGURATION.md)** - vendor.yml and vendor.lock format
 - **[Architecture](./docs/ARCHITECTURE.md)** - Technical design and extension points
-- **[Troubleshooting](./TROUBLESHOOTING.md)** - Common issues and solutions
+- **[Troubleshooting](./docs/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[Contributing](./CONTRIBUTING.md)** - Development setup and guidelines
 - **[Changelog](./CHANGELOG.md)** - Release history
 
@@ -454,4 +454,4 @@ Built with:
 
 ---
 
-**Need help?** Check [Troubleshooting](./TROUBLESHOOTING.md) or [open an issue](https://github.com/EmundoT/git-vendor/issues).
+**Need help?** Check [Troubleshooting](./docs/TROUBLESHOOTING.md) or [open an issue](https://github.com/EmundoT/git-vendor/issues).
