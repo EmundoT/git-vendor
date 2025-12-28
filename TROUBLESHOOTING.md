@@ -603,6 +603,700 @@ Git operations fail with network or timeout errors.
 
 ---
 
+## Cache Issues
+
+### Issue: Sync still downloading files after running recently
+
+**Symptoms:**
+
+```text
+• Syncing vendor-name...
+  Cloning repository...
+  (Expected to see "Cache hit, skipping clone")
+```
+
+**Cause:**
+
+- Incremental sync cache disabled or cleared
+- Commit hash changed (lockfile updated)
+- File contents changed at same commit
+- Cache corruption
+
+**Solutions:**
+
+1. **Check if cache exists:**
+
+   ```bash
+   ls -la vendor/.cache/
+   # Should show <vendor-name>.json files
+   ```
+
+2. **Verify commit hasn't changed:**
+
+   ```bash
+   cat vendor/vendor.lock
+   # Check commit_hash for your vendor
+   ```
+
+3. **Clear and rebuild cache:**
+
+   ```bash
+   rm -rf vendor/.cache/
+   git-vendor sync
+   # First run will be slow, subsequent runs fast
+   ```
+
+4. **Check if --no-cache or --force was used:**
+   - `--no-cache` disables incremental cache
+   - `--force` re-downloads all files
+   - Remove these flags for normal caching
+
+---
+
+### Issue: Cache checksum mismatch
+
+**Symptoms:**
+
+```text
+Warning: Cache checksum mismatch for file.go
+Re-downloading...
+```
+
+**Cause:**
+
+- File was manually edited in vendored location
+- Cache corruption
+- Filesystem race condition
+
+**Solutions:**
+
+1. **Don't edit vendored files:**
+   Vendored files should be read-only (git-vendor will overwrite changes)
+
+2. **Clear cache for vendor:**
+
+   ```bash
+   rm vendor/.cache/<vendor-name>.json
+   git-vendor sync <vendor-name>
+   ```
+
+3. **If persistent, report as bug:**
+   Cache corruption should not happen - please file an issue with:
+   - Cache file content (vendor/.cache/<vendor-name>.json)
+   - Operating system
+   - File system type
+
+---
+
+### Issue: How to clear cache completely
+
+**Purpose:**
+Force complete re-download of all vendors (useful for debugging or disk space issues)
+
+**Solution:**
+
+```bash
+# Clear all cache
+rm -rf vendor/.cache/
+
+# Or clear specific vendor
+rm vendor/.cache/<vendor-name>.json
+
+# Re-sync (will be slower first time)
+git-vendor sync
+```
+
+**Note:** Cache auto-invalidates when commit hashes change, so manual clearing is rarely needed.
+
+---
+
+### Issue: When is cache bypassed?
+
+**Cache is disabled for:**
+
+1. **--force flag:**
+
+   ```bash
+   git-vendor sync --force  # Always re-downloads
+   ```
+
+2. **--no-cache flag:**
+
+   ```bash
+   git-vendor sync --no-cache  # Disables cache
+   ```
+
+3. **First sync (no cache file exists)**
+
+4. **Commit hash changed in lockfile**
+
+5. **File limit exceeded (>1000 files per vendor)**
+
+**Cache is enabled for:**
+- Normal sync operations
+- Re-syncing unchanged vendors
+- Dry-run mode (validates cache, doesn't write)
+
+---
+
+## Hook Debugging
+
+### Issue: pre_sync hook failed
+
+**Symptoms:**
+
+```text
+✖ Error syncing vendor-name
+  pre_sync hook failed: exit status 1
+  Output: <hook error message>
+```
+
+**Cause:**
+
+- Hook command not found
+- Hook script has bugs
+- Missing dependencies
+- Wrong working directory
+
+**Solutions:**
+
+1. **Test hook manually:**
+
+   ```bash
+   # Hooks run from project root
+   cd /path/to/project
+
+   # Set environment variables
+   export GIT_VENDOR_NAME="vendor-name"
+   export GIT_VENDOR_URL="https://github.com/owner/repo"
+   export GIT_VENDOR_REF="main"
+   export GIT_VENDOR_COMMIT="abc123..."
+   export GIT_VENDOR_ROOT="$(pwd)"
+
+   # Run hook command
+   sh -c "echo 'Testing pre_sync hook...'"
+   ```
+
+2. **Check if command exists:**
+
+   ```bash
+   which <command>
+   # Example: which npm, which make
+   ```
+
+3. **Fix vendor.yml syntax:**
+
+   ```yaml
+   # ✅ Correct
+   hooks:
+     pre_sync: echo "Starting sync"
+
+   # ✅ Multi-line correct
+   hooks:
+     pre_sync: |
+       npm install
+       npm run build
+
+   # ❌ Wrong (missing pipe for multiline)
+   hooks:
+     pre_sync:
+       npm install
+   ```
+
+4. **Check hook output:**
+   Hook stdout/stderr is displayed - look for error messages
+
+5. **Use absolute paths:**
+
+   ```yaml
+   # ✅ Better
+   hooks:
+     pre_sync: /usr/local/bin/npm install
+
+   # ⚠️ May fail if npm not in PATH
+   hooks:
+     pre_sync: npm install
+   ```
+
+---
+
+### Issue: post_sync hook failed
+
+**Symptoms:**
+
+```text
+✖ Error syncing vendor-name
+  post_sync hook failed: exit status 1
+  (Files already copied to destination)
+```
+
+**Cause:**
+
+- Same as pre_sync issues
+- Hook depends on files that weren't copied
+- Build command failed
+
+**Solutions:**
+
+1. **Files are already copied:**
+   Even if post_sync fails, vendored files are in place
+
+2. **Test hook manually:**
+
+   ```bash
+   # Navigate to project root
+   cd /path/to/project
+
+   # Set environment variables
+   export GIT_VENDOR_NAME="vendor-name"
+   export GIT_VENDOR_FILES_COPIED="5"
+
+   # Run hook
+   sh -c "cd vendor/ui && npm run build"
+   ```
+
+3. **Common build failures:**
+
+   - Missing dependencies: `npm install`, `go mod download`
+   - Wrong directory: Use `cd` in hook
+   - Missing tools: Install required tools
+
+4. **Example working hooks:**
+
+   ```yaml
+   # Example 1: npm build
+   hooks:
+     post_sync: |
+       cd vendor/frontend
+       npm ci
+       npm run build
+
+   # Example 2: Go codegen
+   hooks:
+     post_sync: go generate ./vendor/...
+
+   # Example 3: Cleanup
+   hooks:
+     post_sync: rm vendor/lib/test_*.go
+   ```
+
+---
+
+### Issue: Hook environment variables not set
+
+**Symptoms:**
+
+Hook references `$GIT_VENDOR_NAME` but it's empty
+
+**Cause:**
+
+- Hook runs in subshell via `sh -c`
+- Environment variables are set by git-vendor before execution
+
+**Solution:**
+
+**Available environment variables:**
+
+- `GIT_VENDOR_NAME` - Vendor name
+- `GIT_VENDOR_URL` - Repository URL
+- `GIT_VENDOR_REF` - Git ref (branch/tag)
+- `GIT_VENDOR_COMMIT` - Resolved commit hash
+- `GIT_VENDOR_ROOT` - Project root directory
+- `GIT_VENDOR_FILES_COPIED` - Number of files copied (post_sync only)
+
+**Example usage:**
+
+```yaml
+hooks:
+  pre_sync: echo "Syncing $GIT_VENDOR_NAME from $GIT_VENDOR_URL"
+  post_sync: |
+    echo "Copied $GIT_VENDOR_FILES_COPIED files"
+    echo "Commit: $GIT_VENDOR_COMMIT"
+```
+
+---
+
+### Issue: Hook runs even when cache hits
+
+**Symptoms:**
+
+```text
+Cache hit, skipping clone
+Running post_sync hook...
+```
+
+**Expected behavior:**
+This is intentional - hooks run even for cache hits
+
+**Rationale:**
+
+- Build artifacts may be missing even if source files are cached
+- Allows rebuilding without full re-sync
+- Use `--no-cache` to force full sync if needed
+
+**Solutions:**
+
+1. **If you want hook to run only on actual downloads:**
+
+   Check `$GIT_VENDOR_FILES_COPIED`:
+
+   ```yaml
+   hooks:
+     post_sync: |
+       if [ "$GIT_VENDOR_FILES_COPIED" -gt 0 ]; then
+         npm run build
+       else
+         echo "Cache hit, skipping build"
+       fi
+   ```
+
+2. **If you want to disable hooks temporarily:**
+
+   Comment out in vendor.yml:
+
+   ```yaml
+   hooks:
+     # pre_sync: echo "disabled"
+     # post_sync: npm run build
+   ```
+
+---
+
+### Issue: Testing hooks without syncing
+
+**Purpose:**
+Debug hook commands without running full sync
+
+**Solution:**
+
+```bash
+# 1. Extract hook command from vendor.yml
+cat vendor/vendor.yml
+
+# 2. Set environment variables
+export GIT_VENDOR_NAME="my-vendor"
+export GIT_VENDOR_URL="https://github.com/owner/repo"
+export GIT_VENDOR_REF="main"
+export GIT_VENDOR_COMMIT="abc123"
+export GIT_VENDOR_ROOT="$(pwd)"
+export GIT_VENDOR_FILES_COPIED="10"
+
+# 3. Run hook manually
+sh -c "npm install && npm run build"
+
+# 4. Check exit code
+echo $?  # 0 = success, non-zero = failure
+```
+
+---
+
+## Parallel Processing
+
+### Issue: Parallel sync slower than sequential
+
+**Symptoms:**
+
+```bash
+git-vendor sync --parallel
+# Takes 20 seconds
+
+git-vendor sync
+# Takes 15 seconds
+```
+
+**Cause:**
+
+- Only one vendor (no benefit from parallelization)
+- Disk I/O bottleneck (SSD helps)
+- Worker overhead exceeds benefit for small vendors
+- Network is the bottleneck, not CPU
+
+**Solutions:**
+
+1. **Use parallel only for multiple vendors:**
+
+   ```bash
+   # ✅ Beneficial (4+ vendors)
+   git-vendor sync --parallel
+
+   # ❌ No benefit (1-2 vendors)
+   git-vendor sync  # Sequential is fine
+   ```
+
+2. **Adjust worker count:**
+
+   ```bash
+   # Default: NumCPU (max 8)
+   git-vendor sync --parallel
+
+   # Custom worker count
+   git-vendor sync --parallel --workers 4
+   ```
+
+3. **Profile with verbose mode:**
+
+   ```bash
+   git-vendor sync --parallel --verbose
+   # Look for bottlenecks in git operations
+   ```
+
+**When parallel helps:**
+- 4+ vendors
+- Fast network
+- CPU-bound operations (not network-bound)
+- SSD storage
+
+**When sequential is better:**
+- 1-2 vendors
+- Slow network
+- HDD storage
+- Limited bandwidth
+
+---
+
+### Issue: Worker pool timeout
+
+**Symptoms:**
+
+```text
+✖ Error: context deadline exceeded
+```
+
+**Cause:**
+
+- Vendor taking too long to sync (>30 seconds for directory listing)
+- Network timeout
+- Very large repository
+
+**Solutions:**
+
+1. **This is a git timeout, not a worker timeout**
+   - Git operations have 30-second context timeout
+   - Parallel mode doesn't change timeout behavior
+
+2. **Try sequential mode:**
+
+   ```bash
+   git-vendor sync  # No --parallel flag
+   ```
+
+3. **See "Performance Issues" section for timeout solutions**
+
+---
+
+### Issue: When to use --parallel flag
+
+**Use parallel when:**
+
+✅ You have 4+ vendors
+✅ Fast network connection
+✅ Multi-core CPU
+✅ SSD storage
+
+**Don't use parallel when:**
+
+❌ 1-3 vendors (minimal benefit)
+❌ Slow network (network is bottleneck)
+❌ Single-core CPU
+❌ Using --dry-run (auto-disabled)
+
+**Example:**
+
+```bash
+# Project with 10 vendors on fast network
+git-vendor sync --parallel
+# ✅ 3-5x faster
+
+# Project with 2 vendors
+git-vendor sync
+# ✅ Simpler, minimal difference
+```
+
+---
+
+## Watch Mode
+
+### Issue: Watch not detecting changes
+
+**Symptoms:**
+
+```bash
+git-vendor watch
+# Edit vendor/vendor.yml
+# No sync triggered
+```
+
+**Cause:**
+
+- File not saved to disk
+- Editor using atomic saves (creates temp file)
+- Wrong file being edited
+- Watch crashed silently
+
+**Solutions:**
+
+1. **Verify watch is running:**
+
+   ```text
+   👀 Watching vendor/vendor.yml for changes...
+   Press Ctrl+C to stop.
+   ```
+
+2. **Save file properly:**
+   - Ensure file is saved (not just edited in buffer)
+   - Wait 1 second (debounce period)
+
+3. **Check which file watch monitors:**
+
+   ```bash
+   # Watches this file only:
+   ls -la vendor/vendor.yml
+   ```
+
+4. **Test with manual edit:**
+
+   ```bash
+   # Terminal 1
+   git-vendor watch
+
+   # Terminal 2
+   echo "# test" >> vendor/vendor.yml
+   # Should trigger sync after 1 second
+   ```
+
+5. **Restart watch:**
+
+   ```bash
+   # Stop with Ctrl+C
+   # Start again
+   git-vendor watch
+   ```
+
+---
+
+### Issue: Watch triggering too frequently
+
+**Symptoms:**
+
+```text
+Change detected, syncing...
+Change detected, syncing...
+Change detected, syncing...
+```
+
+**Cause:**
+
+- Editor creating multiple file events
+- Backup files being created
+- Auto-save enabled
+
+**Solutions:**
+
+1. **This is normal for rapid edits:**
+   - Watch has 1-second debounce
+   - Multiple edits within 1 second = one sync
+
+2. **Disable auto-save in editor:**
+   - VSCode: `"files.autoSave": "off"`
+   - Vim: No special config needed
+   - Emacs: `(setq auto-save-default nil)`
+
+3. **Use manual sync during heavy editing:**
+
+   ```bash
+   # Stop watch (Ctrl+C)
+   # Edit vendor.yml
+   # Manual sync when done
+   git-vendor sync
+   ```
+
+---
+
+### Issue: Watch exited after error
+
+**Symptoms:**
+
+```text
+👀 Watching vendor/vendor.yml for changes...
+Change detected, syncing...
+✖ Error syncing vendor-name
+  [Watch exits]
+```
+
+**Cause:**
+
+- Watch exits on first sync error
+- Invalid vendor.yml syntax
+- Vendor sync failed
+
+**Solutions:**
+
+1. **Fix the error:**
+
+   ```bash
+   # Check what failed
+   git-vendor sync
+   # Fix issue in vendor.yml
+   ```
+
+2. **Restart watch:**
+
+   ```bash
+   git-vendor watch
+   ```
+
+3. **Validate before watching:**
+
+   ```bash
+   git-vendor validate  # Check for errors
+   git-vendor watch     # Start watching
+   ```
+
+**Future improvement:**
+Watch mode could continue running after errors (not implemented yet)
+
+---
+
+### Issue: High CPU usage in watch mode
+
+**Symptoms:**
+
+```bash
+git-vendor watch
+# CPU usage 10-20% continuously
+```
+
+**Cause:**
+
+- File watcher polling (depends on OS)
+- Multiple watch events
+- This is generally expected behavior
+
+**Solutions:**
+
+1. **This is normal:**
+   - File watching has some overhead
+   - Should be <5% CPU when idle
+   - Spikes during sync are expected
+
+2. **If CPU >20% when idle:**
+
+   - Check if other processes are watching same file
+   - Restart watch mode
+   - Report as bug with OS details
+
+3. **Alternative: Don't use watch:**
+
+   ```bash
+   # Manual sync when needed
+   git-vendor sync
+
+   # Or use git hooks
+   # Create .git/hooks/post-checkout
+   ```
+
+---
+
 ## Git Issues
 
 ### Error: "git not found"

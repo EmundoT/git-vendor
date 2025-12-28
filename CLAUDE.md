@@ -28,9 +28,10 @@ go run main.go <command>
 The codebase follows clean architecture principles with proper separation of concerns:
 
 1. **main.go** - Command dispatcher and CLI interface
-   - Routes commands (init, add, edit, remove, list, sync, update, validate)
+   - Routes commands (init, add, edit, remove, list, sync, update, validate, status, check-updates, diff, watch, completion)
    - Handles argument parsing and basic validation
    - Entry point for all user interactions
+   - Version management (receives ldflags from GoReleaser, injects into version package)
 
 2. **internal/core/** - Business logic layer (dependency injection pattern)
    - **engine.go**: `Manager` facade - public API that delegates to VendorSyncer
@@ -42,6 +43,10 @@ The codebase follows clean architecture principles with proper separation of con
    - **lock_store.go**: `LockStore` interface - vendor.lock I/O
    - **hook_service.go**: `HookExecutor` interface - Pre/post sync shell hooks
    - **cache_store.go**: `CacheStore` interface - Incremental sync cache
+   - **parallel_executor.go**: `ParallelExecutor` - Worker pool for concurrent vendor processing
+   - **diff_service.go**: Diff service - Commit comparison between locked and latest versions
+   - **watch_service.go**: Watch service - File monitoring for auto-sync on config changes
+   - **update_checker.go**: Update checker - Check for available updates without modifying files
    - **mocks_test.go**: Mock implementations for testing
 
 3. **internal/tui/wizard.go** - Interactive user interface
@@ -54,6 +59,11 @@ The codebase follows clean architecture principles with proper separation of con
    - VendorConfig, VendorSpec, BranchSpec, PathMapping
    - VendorLock, LockDetails
    - PathConflict
+
+5. **internal/version/version.go** - Version management
+   - Receives version information from main.go (injected via ldflags)
+   - GetVersion() returns version string
+   - GetFullVersion() returns version with build info
 
 ### Data Model (internal/types/types.go)
 
@@ -350,6 +360,7 @@ go test -v ./...
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
+- `github.com/fsnotify/fsnotify` - file system watching (watch mode)
 
 **Testing:**
 - `github.com/golang/mock` - Mock generation (gomock/mockgen)
@@ -361,7 +372,12 @@ go test -v ./...
 ### Concurrency Considerations
 
 - Git operations use 30-second timeout contexts for directory listing
-- No parallel vendor processing (sequential in UpdateAll)
+- Optional parallel vendor processing via --parallel flag
+  - Worker pool pattern with configurable worker count
+  - Default workers: runtime.NumCPU() (max 8)
+  - Thread-safe git operations (unique temp dirs per vendor)
+  - Thread-safe lockfile writes (collect results, write once at end)
+  - Automatically disabled for dry-run mode
 - File copying is synchronous
 
 ## Gotchas
@@ -377,6 +393,10 @@ go test -v ./...
 9. **Edit mode**: Changes aren't saved until user selects "💾 Save & Exit"
 10. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing
 11. **Branch names with slashes**: Cannot parse from URL due to ambiguity - use base URL and enter ref manually
+12. **Incremental sync cache**: Stored in vendor/.cache/, auto-invalidates on commit hash changes, 1000 file limit per vendor
+13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts
+14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
+15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
 
 ## Quick Reference
 
@@ -391,6 +411,11 @@ git-vendor list                      # List all vendors
 git-vendor sync [options] [vendor]   # Sync dependencies
 git-vendor update [options]          # Update lockfile
 git-vendor validate                  # Validate config and detect conflicts
+git-vendor status                    # Check if local files match lockfile
+git-vendor check-updates             # Preview available updates
+git-vendor diff <vendor>             # Show commit history between locked and latest
+git-vendor watch                     # Auto-sync on config changes
+git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/powershell)
 ```
 
 ### Sync Command Flags
@@ -398,6 +423,10 @@ git-vendor validate                  # Validate config and detect conflicts
 ```bash
 --dry-run         # Preview without changes
 --force           # Re-download even if synced
+--no-cache        # Disable incremental sync cache
+--group <name>    # Sync only vendors in specified group
+--parallel        # Enable parallel processing
+--workers <N>     # Set custom worker count (requires --parallel)
 --verbose, -v     # Show git commands
 <vendor-name>     # Sync only specified vendor
 ```
@@ -405,6 +434,8 @@ git-vendor validate                  # Validate config and detect conflicts
 ### Update Command Flags
 
 ```bash
+--parallel        # Enable parallel processing
+--workers <N>     # Set custom worker count (requires --parallel)
 --verbose, -v     # Show git commands
 ```
 
