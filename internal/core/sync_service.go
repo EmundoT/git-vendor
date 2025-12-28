@@ -601,5 +601,5 @@ func (s *SyncService) updateCache(vendorName string, spec types.BranchSpec, comm
 	}
 
 	// Save cache
-	return s.cache.Save(cache)
+	return s.cache.Save(&cache)
 }

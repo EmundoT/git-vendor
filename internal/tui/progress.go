@@ -132,19 +132,23 @@ func NewBubbletaeProgressTracker(total int, label string) *BubbletaeProgressTrac
 	return tracker
 }
 
+// Increment updates progress with a message.
 func (t *BubbletaeProgressTracker) Increment(message string) {
 	t.program.Send(progressIncrementMsg{message: message})
 }
 
+// SetTotal sets the total count for the progress tracker.
 func (t *BubbletaeProgressTracker) SetTotal(total int) {
 	t.program.Send(progressSetTotalMsg{total: total})
 }
 
+// Complete marks the operation as complete.
 func (t *BubbletaeProgressTracker) Complete() {
 	t.program.Send(progressCompleteMsg{})
 	time.Sleep(100 * time.Millisecond) // Allow final render
 }
 
+// Fail marks the operation as failed with an error.
 func (t *BubbletaeProgressTracker) Fail(err error) {
 	t.program.Send(progressFailMsg{err: err})
 	time.Sleep(100 * time.Millisecond) // Allow final render
@@ -171,6 +175,7 @@ func NewTextProgressTracker(total int, label string) *TextProgressTracker {
 	}
 }
 
+// Increment updates progress with a message.
 func (t *TextProgressTracker) Increment(message string) {
 	t.current++
 	msg := fmt.Sprintf("  [%d/%d]", t.current, t.total)
@@ -180,14 +185,17 @@ func (t *TextProgressTracker) Increment(message string) {
 	fmt.Println(msg)
 }
 
+// SetTotal sets the total count for the progress tracker.
 func (t *TextProgressTracker) SetTotal(total int) {
 	t.total = total
 }
 
+// Complete marks the operation as complete.
 func (t *TextProgressTracker) Complete() {
 	fmt.Printf("✓ %s: Completed (%d/%d)\n", t.label, t.current, t.total)
 }
 
+// Fail marks the operation as failed with an error.
 func (t *TextProgressTracker) Fail(err error) {
 	fmt.Printf("✗ %s: Failed - %v\n", t.label, err)
 }
@@ -204,7 +212,14 @@ func NewNoOpProgressTracker() *NoOpProgressTracker {
 	return &NoOpProgressTracker{}
 }
 
-func (t *NoOpProgressTracker) Increment(message string) {}
-func (t *NoOpProgressTracker) SetTotal(total int)       {}
-func (t *NoOpProgressTracker) Complete()                {}
-func (t *NoOpProgressTracker) Fail(err error)           {}
+// Increment does nothing (no-op implementation).
+func (t *NoOpProgressTracker) Increment(_ string) {}
+
+// SetTotal does nothing (no-op implementation).
+func (t *NoOpProgressTracker) SetTotal(_ int) {}
+
+// Complete does nothing (no-op implementation).
+func (t *NoOpProgressTracker) Complete() {}
+
+// Fail does nothing (no-op implementation).
+func (t *NoOpProgressTracker) Fail(_ error) {}

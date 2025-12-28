@@ -1,3 +1,4 @@
+// Package providers implements git platform-specific URL parsing and operations.
 package providers
 
 import (

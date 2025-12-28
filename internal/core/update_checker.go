@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"time"
 
 	"git-vendor/internal/types"
 )
@@ -122,55 +121,4 @@ func (c *UpdateChecker) fetchLatestHash(url, ref string) (string, error) {
 	}
 
 	return hash, nil
-}
-
-// formatTimeSince formats the time since last update in a human-readable way
-func formatTimeSince(timestamp string) string {
-	t, err := time.Parse(time.RFC3339, timestamp)
-	if err != nil {
-		return "unknown"
-	}
-
-	duration := time.Since(t)
-
-	switch {
-	case duration < time.Minute:
-		return "just now"
-	case duration < time.Hour:
-		mins := int(duration.Minutes())
-		if mins == 1 {
-			return "1 minute ago"
-		}
-		return fmt.Sprintf("%d minutes ago", mins)
-	case duration < 24*time.Hour:
-		hours := int(duration.Hours())
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
-	case duration < 7*24*time.Hour:
-		days := int(duration.Hours() / 24)
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
-	case duration < 30*24*time.Hour:
-		weeks := int(duration.Hours() / 24 / 7)
-		if weeks == 1 {
-			return "1 week ago"
-		}
-		return fmt.Sprintf("%d weeks ago", weeks)
-	case duration < 365*24*time.Hour:
-		months := int(duration.Hours() / 24 / 30)
-		if months == 1 {
-			return "1 month ago"
-		}
-		return fmt.Sprintf("%d months ago", months)
-	default:
-		years := int(duration.Hours() / 24 / 365)
-		if years == 1 {
-			return "1 year ago"
-		}
-		return fmt.Sprintf("%d years ago", years)
-	}
 }

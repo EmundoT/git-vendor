@@ -65,7 +65,7 @@ func (c *capturingUICallback) ShowWarning(title, message string) {
 	c.warningMsg = title + ": " + message
 }
 
-func (c *capturingUICallback) AskConfirmation(title, message string) bool {
+func (c *capturingUICallback) AskConfirmation(_, _ string) bool {
 	return c.confirmResp
 }
 
@@ -85,10 +85,10 @@ func (c *capturingUICallback) IsAutoApprove() bool {
 	return false
 }
 
-func (c *capturingUICallback) FormatJSON(output JSONOutput) error {
+func (c *capturingUICallback) FormatJSON(_ JSONOutput) error {
 	return nil
 }
 
-func (c *capturingUICallback) StartProgress(total int, label string) types.ProgressTracker {
+func (c *capturingUICallback) StartProgress(_ int, _ string) types.ProgressTracker {
 	return &NoOpProgressTracker{}
 }
