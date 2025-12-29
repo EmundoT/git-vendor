@@ -422,7 +422,7 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 
 // syncVendor is exposed for testing - delegates to sync service with default options
 func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
-	return s.sync.syncVendor(v, lockedRefs, SyncOptions{})
+	return s.sync.syncVendor(&v, lockedRefs, SyncOptions{})
 }
 
 // CheckUpdates checks for available updates for all vendors
