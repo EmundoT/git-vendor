@@ -21,7 +21,7 @@ func NewFileCopyService(fs FileSystem) *FileCopyService {
 }
 
 // CopyMappings copies all files according to path mappings for a vendor spec
-func (s *FileCopyService) CopyMappings(tempDir string, vendor types.VendorSpec, spec types.BranchSpec) (CopyStats, error) {
+func (s *FileCopyService) CopyMappings(tempDir string, vendor *types.VendorSpec, spec types.BranchSpec) (CopyStats, error) {
 	var totalStats CopyStats
 
 	for _, mapping := range spec.Mapping {
@@ -36,7 +36,7 @@ func (s *FileCopyService) CopyMappings(tempDir string, vendor types.VendorSpec, 
 }
 
 // copyMapping copies a single path mapping
-func (s *FileCopyService) copyMapping(tempDir string, vendor types.VendorSpec, spec types.BranchSpec, mapping types.PathMapping) (CopyStats, error) {
+func (s *FileCopyService) copyMapping(tempDir string, vendor *types.VendorSpec, spec types.BranchSpec, mapping types.PathMapping) (CopyStats, error) {
 	// Clean the source path (remove blob/tree prefixes)
 	srcClean := s.cleanSourcePath(mapping.From, spec.Ref)
 	srcPath := filepath.Join(tempDir, srcClean)
@@ -85,7 +85,7 @@ func (s *FileCopyService) cleanSourcePath(path, ref string) string {
 }
 
 // computeDestPath computes the destination path for a mapping
-func (s *FileCopyService) computeDestPath(mapping types.PathMapping, spec types.BranchSpec, vendor types.VendorSpec) string {
+func (s *FileCopyService) computeDestPath(mapping types.PathMapping, spec types.BranchSpec, vendor *types.VendorSpec) string {
 	destPath := mapping.To
 
 	// Use auto-path computation if destination not explicitly specified

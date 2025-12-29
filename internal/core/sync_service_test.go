@@ -1030,7 +1030,7 @@ func TestPreviewSyncVendor_LockedRefs(t *testing.T) {
 
 	// Execute: preview with locked refs
 	// Note: This function prints to stdout, so we're just verifying no panic
-	syncService.previewSyncVendor(vendor, lockedRefs)
+	syncService.previewSyncVendor(&vendor, lockedRefs)
 
 	// Verify: no panic (output contains "locked: abc1234" and "locked: def0987")
 	// Since we can't easily capture stdout in unit tests without additional infrastructure,
@@ -1059,7 +1059,7 @@ func TestPreviewSyncVendor_UnlockedRefs(t *testing.T) {
 	syncService := syncer.sync
 
 	// Execute: preview with nil lockedRefs (unlocked mode)
-	syncService.previewSyncVendor(vendor, nil)
+	syncService.previewSyncVendor(&vendor, nil)
 
 	// Verify: no panic (output shows "not synced")
 }
@@ -1084,7 +1084,7 @@ func TestPreviewSyncVendor_NoMappings(t *testing.T) {
 	syncService := syncer.sync
 
 	// Execute: preview with no mappings
-	syncService.previewSyncVendor(vendor, nil)
+	syncService.previewSyncVendor(&vendor, nil)
 
 	// Verify: no panic (output shows "(no paths configured)")
 }

@@ -101,7 +101,7 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 	// Filter vendors based on options
 	var vendorsToSync []types.VendorSpec
 	for _, v := range config.Vendors {
-		if s.shouldSyncVendor(v, opts) {
+		if s.shouldSyncVendor(&v, opts) {
 			vendorsToSync = append(vendorsToSync, v)
 		}
 	}
@@ -125,7 +125,7 @@ func (s *SyncService) syncDryRun(vendors []types.VendorSpec, lockMap map[string]
 	defer progress.Complete()
 
 	for _, v := range vendors {
-		s.previewSyncVendor(v, lockMap[v.Name])
+		s.previewSyncVendor(&v, lockMap[v.Name])
 		progress.Increment(v.Name)
 	}
 
@@ -255,7 +255,7 @@ func (s *SyncService) validateGroupExists(config types.VendorConfig, groupName s
 }
 
 // shouldSyncVendor checks if a vendor should be synced based on filters
-func (s *SyncService) shouldSyncVendor(v types.VendorSpec, opts SyncOptions) bool {
+func (s *SyncService) shouldSyncVendor(v *types.VendorSpec, opts SyncOptions) bool {
 	// If vendor name filter is set, only sync matching vendor
 	if opts.VendorName != "" && v.Name != opts.VendorName {
 		return false
@@ -292,7 +292,7 @@ func (s *SyncService) printSyncHeader(config types.VendorConfig, vendorName stri
 }
 
 // previewSyncVendor shows what would be synced in dry-run mode
-func (s *SyncService) previewSyncVendor(v types.VendorSpec, lockedRefs map[string]string) {
+func (s *SyncService) previewSyncVendor(v *types.VendorSpec, lockedRefs map[string]string) {
 	fmt.Printf("✓ %s\n", v.Name)
 
 	for _, spec := range v.Specs {
@@ -496,7 +496,7 @@ func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.Bra
 
 	// Copy files according to mappings and collect stats
 	fmt.Printf("  ⠿ Copying files...\n")
-	stats, err := s.fileCopy.CopyMappings(tempDir, v, spec)
+	stats, err := s.fileCopy.CopyMappings(tempDir, &v, spec)
 	if err != nil {
 		return "", CopyStats{}, err
 	}
