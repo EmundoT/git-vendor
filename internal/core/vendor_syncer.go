@@ -186,7 +186,7 @@ func (s *VendorSyncer) RemoveVendor(name string) error {
 
 	// Remove license file
 	licensePath := filepath.Join(s.rootDir, LicenseDir, name+".txt")
-	defer func() { _ = s.fs.Remove(licensePath) }()
+	_ = s.fs.Remove(licensePath)
 
 	// Update lockfile
 	return s.update.UpdateAll()
