@@ -148,7 +148,7 @@ func (s *SyncService) syncSequential(vendors []types.VendorSpec, lockMap map[str
 		if opts.Force {
 			refs = nil
 		}
-		_, stats, err := s.syncVendor(v, refs, opts)
+		_, stats, err := s.syncVendor(&v, refs, opts)
 		if err != nil {
 			progress.Fail(err)
 			return err
@@ -177,7 +177,7 @@ func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[strin
 
 	// Define sync function for a single vendor
 	syncFunc := func(v types.VendorSpec, lockedRefs map[string]string, syncOpts SyncOptions) (map[string]string, CopyStats, error) {
-		updatedRefs, stats, err := s.syncVendor(v, lockedRefs, syncOpts)
+		updatedRefs, stats, err := s.syncVendor(&v, lockedRefs, syncOpts)
 		if err != nil {
 			progress.Fail(err)
 			return nil, CopyStats{}, err
@@ -194,8 +194,8 @@ func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[strin
 
 	// Calculate total stats
 	var totalStats CopyStats
-	for _, result := range results {
-		totalStats.Add(result.Stats)
+	for i := range results {
+		totalStats.Add(results[i].Stats)
 	}
 
 	// Display summary
@@ -322,7 +322,7 @@ func (s *SyncService) previewSyncVendor(v *types.VendorSpec, lockedRefs map[stri
 
 // syncVendor syncs a single vendor
 // Returns a map of ref to commit hash and total stats for all synced refs
-func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]string, CopyStats, error) {
+func (s *SyncService) syncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]string, CopyStats, error) {
 	// Check cache for all refs first (if cache enabled)
 	canSkipClone := false
 	if !opts.NoCache && !opts.Force && lockedRefs != nil {
@@ -444,7 +444,7 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 }
 
 // syncRef syncs a single ref for a vendor
-func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string, opts SyncOptions) (string, CopyStats, error) {
+func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string, opts SyncOptions) (string, CopyStats, error) {
 	targetCommit := ""
 	isLocked := false
 
@@ -496,7 +496,7 @@ func (s *SyncService) syncRef(tempDir string, v types.VendorSpec, spec types.Bra
 
 	// Copy files according to mappings and collect stats
 	fmt.Printf("  ⠿ Copying files...\n")
-	stats, err := s.fileCopy.CopyMappings(tempDir, &v, spec)
+	stats, err := s.fileCopy.CopyMappings(tempDir, v, spec)
 	if err != nil {
 		return "", CopyStats{}, err
 	}
