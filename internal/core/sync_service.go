@@ -360,7 +360,7 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 				RootDir:     s.rootDir,
 				FilesCopied: totalStats.FileCount,
 			}
-			if err := s.hooks.ExecutePostSync(v, ctx); err != nil {
+			if err := s.hooks.ExecutePostSync(v, &ctx); err != nil {
 				return nil, CopyStats{}, fmt.Errorf("post-sync hook failed: %w", err)
 			}
 		}
@@ -375,7 +375,7 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 			VendorURL:  v.URL,
 			RootDir:    s.rootDir,
 		}
-		if err := s.hooks.ExecutePreSync(v, ctx); err != nil {
+		if err := s.hooks.ExecutePreSync(v, &ctx); err != nil {
 			return nil, CopyStats{}, fmt.Errorf("pre-sync hook failed: %w", err)
 		}
 	}
@@ -435,7 +435,7 @@ func (s *SyncService) syncVendor(v types.VendorSpec, lockedRefs map[string]strin
 			RootDir:     s.rootDir,
 			FilesCopied: totalStats.FileCount,
 		}
-		if err := s.hooks.ExecutePostSync(v, ctx); err != nil {
+		if err := s.hooks.ExecutePostSync(v, &ctx); err != nil {
 			return nil, CopyStats{}, fmt.Errorf("post-sync hook failed: %w", err)
 		}
 	}

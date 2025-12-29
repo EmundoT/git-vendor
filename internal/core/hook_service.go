@@ -13,10 +13,10 @@ import (
 //go:generate mockgen -source=hook_service.go -destination=hook_executor_mock_test.go -package=core
 type HookExecutor interface {
 	// ExecutePreSync runs pre-sync hook if configured
-	ExecutePreSync(vendor types.VendorSpec, ctx types.HookContext) error
+	ExecutePreSync(vendor types.VendorSpec, ctx *types.HookContext) error
 
 	// ExecutePostSync runs post-sync hook if configured
-	ExecutePostSync(vendor types.VendorSpec, ctx types.HookContext) error
+	ExecutePostSync(vendor types.VendorSpec, ctx *types.HookContext) error
 }
 
 // hookService implements HookExecutor for shell command execution
@@ -32,7 +32,7 @@ func NewHookService(ui UICallback) HookExecutor {
 }
 
 // ExecutePreSync runs the pre-sync hook if configured
-func (h *hookService) ExecutePreSync(vendor types.VendorSpec, ctx types.HookContext) error {
+func (h *hookService) ExecutePreSync(vendor types.VendorSpec, ctx *types.HookContext) error {
 	if vendor.Hooks == nil || vendor.Hooks.PreSync == "" {
 		return nil
 	}
@@ -42,7 +42,7 @@ func (h *hookService) ExecutePreSync(vendor types.VendorSpec, ctx types.HookCont
 }
 
 // ExecutePostSync runs the post-sync hook if configured
-func (h *hookService) ExecutePostSync(vendor types.VendorSpec, ctx types.HookContext) error {
+func (h *hookService) ExecutePostSync(vendor types.VendorSpec, ctx *types.HookContext) error {
 	if vendor.Hooks == nil || vendor.Hooks.PostSync == "" {
 		return nil
 	}
@@ -52,7 +52,7 @@ func (h *hookService) ExecutePostSync(vendor types.VendorSpec, ctx types.HookCon
 }
 
 // executeHook runs a shell command with environment context
-func (h *hookService) executeHook(command string, ctx types.HookContext) error {
+func (h *hookService) executeHook(command string, ctx *types.HookContext) error {
 	// Build environment variables
 	env := h.buildEnvironment(ctx)
 
@@ -77,7 +77,7 @@ func (h *hookService) executeHook(command string, ctx types.HookContext) error {
 }
 
 // buildEnvironment creates environment variables for hook execution
-func (h *hookService) buildEnvironment(ctx types.HookContext) []string {
+func (h *hookService) buildEnvironment(ctx *types.HookContext) []string {
 	// Start with current environment
 	env := os.Environ()
 
