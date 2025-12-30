@@ -54,7 +54,7 @@ func (r *VendorRepository) Exists(name string) (bool, error) {
 }
 
 // Save adds or updates a vendor
-func (r *VendorRepository) Save(vendor types.VendorSpec) error {
+func (r *VendorRepository) Save(vendor *types.VendorSpec) error {
 	config, err := r.configStore.Load()
 	if err != nil {
 		// If config doesn't exist, create empty one
@@ -64,10 +64,10 @@ func (r *VendorRepository) Save(vendor types.VendorSpec) error {
 	index := FindVendorIndex(config.Vendors, vendor.Name)
 	if index >= 0 {
 		// Update existing vendor
-		config.Vendors[index] = vendor
+		config.Vendors[index] = *vendor
 	} else {
 		// Add new vendor
-		config.Vendors = append(config.Vendors, vendor)
+		config.Vendors = append(config.Vendors, *vendor)
 	}
 
 	return r.configStore.Save(config)

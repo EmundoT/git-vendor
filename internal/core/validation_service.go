@@ -41,7 +41,7 @@ func (s *ValidationService) ValidateConfig() error {
 		names[vendor.Name] = true
 
 		// Validate vendor
-		if err := s.validateVendor(vendor); err != nil {
+		if err := s.validateVendor(&vendor); err != nil {
 			return err
 		}
 	}
@@ -50,7 +50,7 @@ func (s *ValidationService) ValidateConfig() error {
 }
 
 // validateVendor validates a single vendor spec
-func (s *ValidationService) validateVendor(vendor types.VendorSpec) error {
+func (s *ValidationService) validateVendor(vendor *types.VendorSpec) error {
 	// Validate vendor has URL
 	if vendor.URL == "" {
 		return fmt.Errorf("vendor %s has no URL", vendor.Name)

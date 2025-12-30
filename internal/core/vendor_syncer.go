@@ -171,7 +171,7 @@ func (s *VendorSyncer) AddVendor(spec *types.VendorSpec) error {
 
 // SaveVendor saves or updates a vendor spec
 func (s *VendorSyncer) SaveVendor(spec *types.VendorSpec) error {
-	if err := s.repository.Save(*spec); err != nil {
+	if err := s.repository.Save(spec); err != nil {
 		return err
 	}
 	return s.update.UpdateAll()
@@ -186,7 +186,7 @@ func (s *VendorSyncer) RemoveVendor(name string) error {
 
 	// Remove license file
 	licensePath := filepath.Join(s.rootDir, LicenseDir, name+".txt")
-	_ = s.fs.Remove(licensePath)
+	_ = s.fs.Remove(licensePath) //nolint:errcheck // cleanup operation, error not critical
 
 	// Update lockfile
 	return s.update.UpdateAll()
@@ -421,6 +421,8 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 }
 
 // syncVendor is exposed for testing - delegates to sync service with default options
+//
+//nolint:gocritic // test wrapper maintains value signature for compatibility
 func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
 	return s.sync.syncVendor(&v, lockedRefs, SyncOptions{})
 }

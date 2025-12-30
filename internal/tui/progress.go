@@ -31,11 +31,11 @@ type progressModel struct {
 	width   int
 }
 
-func (m progressModel) Init() tea.Cmd {
+func (m *progressModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -55,7 +55,7 @@ func (m progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m progressModel) View() string {
+func (m *progressModel) View() string {
 	if m.done {
 		return progressStyleSuccess.Render(fmt.Sprintf("✓ %s (completed: %d/%d)", m.label, m.current, m.total))
 	}
@@ -111,7 +111,7 @@ type BubbletaeProgressTracker struct {
 
 // NewBubbletaeProgressTracker creates a new bubbletea progress tracker
 func NewBubbletaeProgressTracker(total int, label string) *BubbletaeProgressTracker {
-	m := progressModel{
+	m := &progressModel{
 		current: 0,
 		total:   total,
 		label:   label,

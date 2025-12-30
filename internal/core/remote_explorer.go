@@ -33,7 +33,7 @@ func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error)
 		return nil, err
 	}
 	defer func() {
-		_ = e.fs.RemoveAll(tempDir)
+		_ = e.fs.RemoveAll(tempDir) //nolint:errcheck // cleanup in defer
 	}()
 
 	// Clone with filter=blob:none to avoid downloading file contents

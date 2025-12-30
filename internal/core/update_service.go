@@ -131,18 +131,18 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 
 	// Build new lockfile from results
 	lock := types.VendorLock{}
-	for _, result := range results {
-		if result.Error != nil {
+	for i := range results {
+		if results[i].Error != nil {
 			// Skip failed vendors
 			continue
 		}
 
 		// Add lock entries for each ref
-		for ref, hash := range result.UpdatedRefs {
-			licenseFile := filepath.Join(s.rootDir, LicenseDir, result.Vendor.Name+".txt")
+		for ref, hash := range results[i].UpdatedRefs {
+			licenseFile := filepath.Join(s.rootDir, LicenseDir, results[i].Vendor.Name+".txt")
 
 			lock.Vendors = append(lock.Vendors, types.LockDetails{
-				Name:        result.Vendor.Name,
+				Name:        results[i].Vendor.Name,
 				Ref:         ref,
 				CommitHash:  hash,
 				LicensePath: licenseFile,

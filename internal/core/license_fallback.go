@@ -31,7 +31,7 @@ func (c *FallbackLicenseChecker) CheckLicense(repoURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer func() { _ = c.fs.RemoveAll(tempDir) }()
+	defer func() { _ = c.fs.RemoveAll(tempDir) }() //nolint:errcheck // cleanup in defer
 
 	// Shallow clone (depth=1) to minimize download
 	opts := &types.CloneOptions{
