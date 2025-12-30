@@ -90,7 +90,7 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 		check(err)
 
 		if addToExisting {
-			return RunEditVendorWizard(mgr, existing)
+			return RunEditVendorWizard(mgr, &existing)
 		}
 	}
 
@@ -129,13 +129,13 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 	}
 
 	// Enter Edit Loop immediately for the new vendor
-	return RunEditVendorWizard(mgr, spec)
+	return RunEditVendorWizard(mgr, &spec)
 }
 
 // --- EDIT WIZARD (The Core Loop) ---
 
 // RunEditVendorWizard launches the interactive wizard for editing an existing vendor.
-func RunEditVendorWizard(mgr interface{}, vendor types.VendorSpec) *types.VendorSpec {
+func RunEditVendorWizard(mgr interface{}, vendor *types.VendorSpec) *types.VendorSpec {
 	manager := mgr.(VendorManager)
 
 	for {
@@ -181,7 +181,7 @@ func RunEditVendorWizard(mgr interface{}, vendor types.VendorSpec) *types.Vendor
 		if selection == "save" {
 			// Show conflict warnings before saving
 			ShowConflictWarnings(manager, vendor.Name)
-			return &vendor
+			return vendor
 		}
 
 		if selection == "new" {

@@ -169,7 +169,7 @@ func main() {
 			}
 		}
 
-		updatedSpec := tui.RunEditVendorWizard(manager, targetVendor)
+		updatedSpec := tui.RunEditVendorWizard(manager, &targetVendor)
 		if updatedSpec == nil {
 			return
 		}

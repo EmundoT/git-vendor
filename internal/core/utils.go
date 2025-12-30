@@ -42,7 +42,7 @@ func ForEachVendor(config types.VendorConfig, fn func(types.VendorSpec) error) e
 
 // ForEachMapping iterates over all path mappings in a vendor.
 // This replaces duplicate triple-nested loops (2 instances in vendor_syncer.go).
-func ForEachMapping(vendor types.VendorSpec, fn func(spec types.BranchSpec, mapping types.PathMapping) error) error {
+func ForEachMapping(vendor *types.VendorSpec, fn func(spec types.BranchSpec, mapping types.PathMapping) error) error {
 	for _, spec := range vendor.Specs {
 		for _, mapping := range spec.Mapping {
 			if err := fn(spec, mapping); err != nil {

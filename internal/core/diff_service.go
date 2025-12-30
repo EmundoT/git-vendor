@@ -58,7 +58,7 @@ func (s *VendorSyncer) DiffVendor(vendorName string) ([]types.VendorDiff, error)
 			if err != nil {
 				return fmt.Errorf("failed to create temp dir: %w", err)
 			}
-			defer func() { _ = s.fs.RemoveAll(tempDir) }()
+			defer func() { _ = s.fs.RemoveAll(tempDir) }() //nolint:errcheck // cleanup in defer
 
 			// Initialize repo
 			if err := s.gitClient.Init(tempDir); err != nil {
