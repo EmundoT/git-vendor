@@ -11,8 +11,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Building and Running
 
 ```bash
-# Build the project
-go build -o git-vendor
+# Build optimized binary (recommended - 34% smaller)
+make build
+
+# Build development binary (with debug symbols)
+make build-dev
+
+# Or build manually
+go build -ldflags="-s -w" -o git-vendor  # Optimized
+go build -o git-vendor                    # Debug build
 
 # Run directly
 ./git-vendor <command>
