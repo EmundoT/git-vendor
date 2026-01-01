@@ -70,6 +70,18 @@ test-property:
 	@echo "Running property-based tests..."
 	go test -v -run Property ./internal/core/
 
+.PHONY: build
+build:
+	@echo "Building optimized binary..."
+	go build -ldflags="-s -w" -o git-vendor
+	@echo "Done! Binary: git-vendor"
+
+.PHONY: build-dev
+build-dev:
+	@echo "Building development binary (with debug info)..."
+	go build -o git-vendor
+	@echo "Done! Binary: git-vendor"
+
 .PHONY: clean
 clean:
 	@echo "Cleaning..."
