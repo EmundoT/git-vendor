@@ -72,7 +72,7 @@ The codebase follows clean architecture principles with proper separation of con
    - PathConflict
 
 5. **internal/version/version.go** - Version management
-   - Receives version information from main.go (injected via ldflags)
+   - Version information injected directly via ldflags during builds
    - GetVersion() returns version string
    - GetFullVersion() returns version with build info
 
@@ -326,25 +326,21 @@ Git operations use the `GitClient` interface (git_operations.go):
 
 ### Test Coverage
 
-The codebase has **63.9% test coverage** with comprehensive tests:
-
 **Test Infrastructure:**
 
 - Auto-generated mocks using MockGen (gomock framework)
-- Test files organized by service (9 focused test files)
+- Test files organized by service
 - `testhelpers_gomock_test.go`: Gomock setup helpers
 - `testhelpers.go`: Common test utilities
 
-**Well-Tested Areas:**
+**Coverage:**
 
-- syncVendor: 89.7% coverage (15 test cases)
-- UpdateAll: 100% coverage (10 test cases)
-- Sync/SyncDryRun/SyncWithOptions: 100% coverage (12 test cases)
-- FetchRepoDir: 84.6% coverage
-- SaveVendor/RemoveVendor: 100% coverage
-- ValidateConfig: 95.7% coverage (11 test cases)
-- DetectConflicts: 86.1% coverage
-- Config/Lock I/O: 100% coverage (13 test cases)
+Critical paths (sync, update, validation) have high test coverage, while uncovered areas are primarily I/O wrappers and OS-dependent operations.
+
+```bash
+# Check current coverage
+go test -cover ./internal/core
+```
 
 **Running Tests:**
 

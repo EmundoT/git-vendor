@@ -12,13 +12,8 @@ import (
 	"strings"
 )
 
-// Version information (injected by GoReleaser via ldflags during release builds)
-// For development builds, these default to "dev", "none", and "unknown"
-var (
-	versionString = "dev"
-	commit        = "none"
-	date          = "unknown"
-)
+// Version information is managed in internal/version package
+// GoReleaser injects version info directly via ldflags
 
 // parseCommonFlags extracts common non-interactive flags from args
 // Returns: flags, remainingArgs
@@ -57,13 +52,6 @@ func countSynced(statuses []types.VendorStatus) int {
 	return count
 }
 
-// init populates the version package with build information
-func init() {
-	version.Version = versionString
-	version.Commit = commit
-	version.Date = date
-}
-
 func main() {
 	if len(os.Args) < 2 {
 		tui.PrintHelp()
@@ -80,9 +68,9 @@ func main() {
 
 	// Handle version flag
 	if command == "--version" {
-		fmt.Printf("git-vendor %s\n", versionString)
-		fmt.Printf("  commit: %s\n", commit)
-		fmt.Printf("  built:  %s\n", date)
+		fmt.Printf("git-vendor %s\n", version.Version)
+		fmt.Printf("  commit: %s\n", version.Commit)
+		fmt.Printf("  built:  %s\n", version.Date)
 		os.Exit(0)
 	}
 
