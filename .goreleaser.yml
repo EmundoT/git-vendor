@@ -18,9 +18,9 @@ builds:
       - -mod=mod
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
+      - -X github.com/EmundoT/git-vendor/internal/version.Version={{.Version}}
+      - -X github.com/EmundoT/git-vendor/internal/version.Commit={{.Commit}}
+      - -X github.com/EmundoT/git-vendor/internal/version.Date={{.Date}}
     binary: git-vendor
 
 archives:
