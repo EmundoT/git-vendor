@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // CacheStore handles incremental sync cache I/O operations

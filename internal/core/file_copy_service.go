@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // FileCopyService handles copying files according to path mappings

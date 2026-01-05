@@ -1354,11 +1354,28 @@ Git clone fails with permission error.
 
 **Solution:**
 
-1. **Verify repository is public:**
+1. **Verify repository exists:**
    Try accessing it in a web browser
 
-2. **For private repositories:**
-   Currently git-vendor only supports public repositories. Use HTTPS URLs for public access.
+2. **For private repositories, configure authentication:**
+
+   **GitHub/GitLab:**
+   ```bash
+   export GITHUB_TOKEN=your_token_here
+   # or
+   export GITLAB_TOKEN=your_token_here
+   ```
+
+   **Other Git servers (SSH):**
+   ```bash
+   # Ensure SSH key is loaded
+   ssh-add ~/.ssh/id_rsa
+
+   # Use SSH URL
+   git-vendor add git@server.com:org/repo.git
+   ```
+
+   See [PLATFORMS.md](./PLATFORMS.md) for detailed authentication guide.
 
 3. **Check URL spelling:**
    Ensure the URL is correct

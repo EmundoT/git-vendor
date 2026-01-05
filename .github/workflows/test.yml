@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        go: ['1.21']
+        go: ['1.23']
 
     steps:
     - name: Checkout code
@@ -70,7 +70,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.23'
 
     - name: Install mockgen
       run: go install github.com/golang/mock/mockgen@latest
@@ -95,7 +95,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.23'
 
     - name: Build
       run: go build -ldflags="-s -w" -v -o git-vendor

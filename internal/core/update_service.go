@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // UpdateService handles update operations and lockfile regeneration

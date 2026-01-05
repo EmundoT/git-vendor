@@ -3,8 +3,8 @@ package version
 
 import "fmt"
 
-// Version information - set by main package
-// These variables are populated from main.go which receives values via ldflags during GoReleaser builds
+// Version information - injected by GoReleaser via ldflags during builds
+// Default values are used for development builds (go run, go build)
 var (
 	Version = "dev"
 	Commit  = "none"

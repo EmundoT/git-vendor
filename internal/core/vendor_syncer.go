@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // UICallback handles user interaction during vendor operations

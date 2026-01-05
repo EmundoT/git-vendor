@@ -4,8 +4,8 @@ import (
 	"os"
 	"os/exec"
 
-	"git-vendor/internal/core/providers"
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/core/providers"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // Constants for the new "Clean Root" structure

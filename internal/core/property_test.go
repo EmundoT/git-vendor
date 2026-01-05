@@ -6,7 +6,7 @@ import (
 	"testing"
 	"testing/quick"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 	"gopkg.in/yaml.v3"
 )
 

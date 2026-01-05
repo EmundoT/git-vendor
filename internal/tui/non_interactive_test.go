@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"git-vendor/internal/core"
+	"github.com/EmundoT/git-vendor/internal/core"
 )
 
 func TestNonInteractiveTUICallback_ShowError_Quiet(t *testing.T) {

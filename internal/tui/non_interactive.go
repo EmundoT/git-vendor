@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"git-vendor/internal/core"
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/core"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // NonInteractiveTUICallback handles non-interactive mode output

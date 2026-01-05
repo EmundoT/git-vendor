@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 	"github.com/golang/mock/gomock"
 )
 
