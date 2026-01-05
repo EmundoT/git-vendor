@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // DiffVendor compares the locked version with the latest available version

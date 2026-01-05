@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"sync"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // VendorResult represents the result of processing a single vendor

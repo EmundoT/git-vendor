@@ -2,9 +2,9 @@ package tui
 
 import (
 	"fmt"
-	"git-vendor/internal/core"
-	"git-vendor/internal/types"
-	"git-vendor/internal/version"
+	"github.com/EmundoT/git-vendor/internal/core"
+	"github.com/EmundoT/git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/version"
 	"os"
 	"path"
 	"strings"

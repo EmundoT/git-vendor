@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // ============================================================================

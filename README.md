@@ -323,7 +323,7 @@ vendors:
 
 _Interactive file browser for selecting paths to vendor_
 
-> Note: Screenshot coming in next release
+> Note: TUI screenshot will be added in a future release
 
 ---
 
@@ -433,7 +433,7 @@ A: Use the base repository URL in the wizard and manually enter the ref name (e.
 Contributions welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 
 - Development setup
-- Testing requirements (maintain >60% coverage)
+- Testing requirements and guidelines
 - Code style guidelines
 - Pull request process
 

@@ -17,12 +17,12 @@ git-vendor supports multiple Git hosting platforms with automatic detection and 
 
 ## Supported Platforms Overview
 
-| Platform        | Smart URLs | License API   | Authentication | Private Repos    |
-| --------------- | ---------- | ------------- | -------------- | ---------------- |
-| **GitHub**      | ✅ Yes     | ✅ API        | `GITHUB_TOKEN` | ✅ Yes           |
-| **GitLab**      | ✅ Yes     | ✅ API        | `GITLAB_TOKEN` | ✅ Yes           |
-| **Bitbucket**   | ✅ Yes     | ❌ File-based | N/A            | ❌ No            |
-| **Generic Git** | ❌ No      | ❌ File-based | SSH/HTTPS      | ✅ Yes (via SSH) |
+| Platform        | Smart URLs | License API   | Authentication | Private Repos        |
+| --------------- | ---------- | ------------- | -------------- | -------------------- |
+| **GitHub**      | ✅ Yes     | ✅ API        | `GITHUB_TOKEN` | ✅ Yes (API + Git)   |
+| **GitLab**      | ✅ Yes     | ✅ API        | `GITLAB_TOKEN` | ✅ Yes (API + Git)   |
+| **Bitbucket**   | ✅ Yes     | ❌ File-based | SSH/HTTPS      | ✅ Yes (Git creds)   |
+| **Generic Git** | ❌ No      | ❌ File-based | SSH/HTTPS      | ✅ Yes (Git creds)   |
 
 ---
 
@@ -161,7 +161,7 @@ git-vendor add https://gitlab.com/your-org/private-repo
 
 - **Smart URL Parsing**: Automatically extracts repository, ref, and path from `/src/` links
 - **File-based License Detection**: Reads LICENSE file from repository
-- **Public repositories only**: No private repository support currently
+- **Private Repository Support**: Via SSH keys or HTTPS credentials (no API token required)
 
 ### Examples
 
@@ -253,7 +253,7 @@ git-vendor add https://git.company.com/team/repo.git
 **Purpose:**
 
 - Access private repositories
-- Increase rate limit from 60/hr to 5000/hr
+- Significantly increase API rate limits (authenticated requests have much higher quotas)
 
 **Setup:**
 

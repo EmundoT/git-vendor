@@ -3,7 +3,7 @@ package core
 import (
 	"fmt"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // VendorRepository handles vendor CRUD operations

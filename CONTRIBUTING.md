@@ -79,7 +79,7 @@
 
 - Write clear commit messages following [Conventional Commits](https://www.conventionalcommits.org/)
 - Ensure all tests pass
-- Maintain or improve test coverage (target: >60%)
+- Maintain or improve test coverage (check current: `make coverage`)
 - Update documentation if adding features
 - Add tests for bug fixes
 - Keep PRs focused on a single concern
@@ -173,20 +173,9 @@ All PRs must pass:
 
 ## Release Process
 
-Releases are automated via GitHub Actions:
+Releases are managed by maintainers using GoReleaser. See [RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md) for detailed instructions.
 
-1. Tag a new version:
-
-   ```bash
-   git tag -a v1.2.3 -m "Release v1.2.3"
-   git push origin v1.2.3
-   ```
-
-2. GitHub Actions will:
-   - Run all tests
-   - Build binaries for all platforms
-   - Create GitHub release
-   - Attach binaries and checksums
+**For contributors:** Focus on writing good conventional commit messages. These are used to auto-generate release notes.
 
 ## Questions?
 

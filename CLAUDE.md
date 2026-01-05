@@ -386,8 +386,8 @@ go test -v ./...
 
 **Environment Variables (Optional):**
 
-- `GITHUB_TOKEN` - GitHub personal access token (increases rate limit from 60/hr to 5000/hr)
-- `GITLAB_TOKEN` - GitLab personal access token (enables private repos and higher rate limits)
+- `GITHUB_TOKEN` - GitHub personal access token (significantly increases API rate limit and enables private repo access)
+- `GITLAB_TOKEN` - GitLab personal access token (enables private repos and increases API rate limits)
 
 ### Concurrency Considerations
 

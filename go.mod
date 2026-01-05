@@ -1,4 +1,4 @@
-module git-vendor
+module github.com/EmundoT/git-vendor
 
 go 1.23
 

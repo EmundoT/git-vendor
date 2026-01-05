@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // GitClient handles git command operations

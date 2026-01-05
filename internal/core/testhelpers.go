@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // ============================================================================

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // FindVendor returns the vendor with matching name, or nil if not found.

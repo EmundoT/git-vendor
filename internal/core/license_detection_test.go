@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"git-vendor/internal/core/providers"
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/core/providers"
+	"github.com/EmundoT/git-vendor/internal/types"
 	"github.com/golang/mock/gomock"
 )
 

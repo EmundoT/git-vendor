@@ -4,8 +4,8 @@ package tui
 import (
 	"os"
 
-	"git-vendor/internal/core"
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/core"
+	"github.com/EmundoT/git-vendor/internal/types"
 
 	"github.com/charmbracelet/huh"
 	"github.com/mattn/go-isatty"

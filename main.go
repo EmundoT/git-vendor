@@ -3,11 +3,11 @@ package main
 
 import (
 	"fmt"
-	"git-vendor/cmd"
-	"git-vendor/internal/core"
-	"git-vendor/internal/tui"
-	"git-vendor/internal/types"
-	"git-vendor/internal/version"
+	"github.com/EmundoT/git-vendor/cmd"
+	"github.com/EmundoT/git-vendor/internal/core"
+	"github.com/EmundoT/git-vendor/internal/tui"
+	"github.com/EmundoT/git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/version"
 	"os"
 	"strings"
 )
@@ -792,6 +792,7 @@ func main() {
 				}
 
 				fmt.Println("Run 'git-vendor update' to fetch latest versions")
+				os.Exit(1)
 			}
 		}
 

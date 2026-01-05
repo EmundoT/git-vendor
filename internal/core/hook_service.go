@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // HookExecutor handles pre/post sync hook execution

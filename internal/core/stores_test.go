@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // ============================================================================

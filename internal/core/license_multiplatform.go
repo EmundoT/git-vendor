@@ -1,7 +1,7 @@
 package core
 
 import (
-	"git-vendor/internal/core/providers"
+	"github.com/EmundoT/git-vendor/internal/core/providers"
 )
 
 // MultiPlatformLicenseChecker implements LicenseChecker interface

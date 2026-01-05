@@ -5,9 +5,9 @@
 package core
 
 import (
-	types "git-vendor/internal/types"
 	reflect "reflect"
 
+	types "github.com/EmundoT/git-vendor/internal/types"
 	gomock "github.com/golang/mock/gomock"
 )
 

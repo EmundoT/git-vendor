@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // SyncOptions configures sync operation behavior

@@ -461,7 +461,7 @@ plugins:
 
 - Mock-based via gomock
 - Interface-driven (easy to mock)
-- 65% code coverage
+- Comprehensive coverage of critical paths (check current: `make coverage`)
 
 ### Integration Tests
 

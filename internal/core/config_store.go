@@ -2,7 +2,7 @@
 package core
 
 import (
-	"git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // ConfigStore handles vendor.yml I/O operations
