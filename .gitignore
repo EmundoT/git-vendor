@@ -39,3 +39,4 @@ internal/core/*_mock_test.go
 
 # Claude Code local settings
 .claude/settings.local.json
+dist/
