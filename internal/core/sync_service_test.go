@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -1087,6 +1088,438 @@ func TestPreviewSyncVendor_NoMappings(t *testing.T) {
 	syncService.previewSyncVendor(&vendor, nil)
 
 	// Verify: no panic (output shows "(no paths configured)")
+}
+
+// ============================================================================
+// Group Filtering Tests - Test vendor group filtering functionality
+// ============================================================================
+
+func TestSync_GroupFilter_SingleGroup(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	// Create vendors with different groups
+	vendorConfig := &types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:    "vendor-a",
+				URL:     "https://github.com/test/repo-a",
+				License: "MIT",
+				Groups:  []string{"frontend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-a/"}},
+				}},
+			},
+			{
+				Name:    "vendor-b",
+				URL:     "https://github.com/test/repo-b",
+				License: "MIT",
+				Groups:  []string{"backend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-b/"}},
+				}},
+			},
+			{
+				Name:    "vendor-c",
+				URL:     "https://github.com/test/repo-c",
+				License: "MIT",
+				Groups:  []string{"frontend", "backend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-c/"}},
+				}},
+			},
+		},
+	}
+
+	lockData := &types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "hash-a"},
+			{Name: "vendor-b", Ref: "main", CommitHash: "hash-b"},
+			{Name: "vendor-c", Ref: "main", CommitHash: "hash-c"},
+		},
+	}
+
+	config.EXPECT().Load().Return(*vendorConfig, nil)
+	lock.EXPECT().Load().Return(*lockData, nil)
+
+	// Expect syncs for vendor-a and vendor-c only (have "frontend" group)
+	// vendor-a expectations
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/vendor-a", nil)
+	git.EXPECT().Init("/tmp/vendor-a").Return(nil)
+	git.EXPECT().AddRemote("/tmp/vendor-a", "origin", "https://github.com/test/repo-a").Return(nil)
+	git.EXPECT().Fetch("/tmp/vendor-a", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/vendor-a", "hash-a").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/vendor-a").Return("hash-a", nil)
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 5, ByteCount: 500}, nil)
+	fs.EXPECT().RemoveAll("/tmp/vendor-a").Return(nil)
+
+	// vendor-c expectations
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/vendor-c", nil)
+	git.EXPECT().Init("/tmp/vendor-c").Return(nil)
+	git.EXPECT().AddRemote("/tmp/vendor-c", "origin", "https://github.com/test/repo-c").Return(nil)
+	git.EXPECT().Fetch("/tmp/vendor-c", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/vendor-c", "hash-c").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/vendor-c").Return("hash-c", nil)
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 3, ByteCount: 300}, nil)
+	fs.EXPECT().RemoveAll("/tmp/vendor-c").Return(nil)
+
+	// NO expectations for vendor-b (should be skipped due to group filter)
+
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+
+	opts := SyncOptions{
+		GroupName: "frontend",
+	}
+
+	err := syncer.sync.Sync(opts)
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// gomock will automatically verify that vendor-b mocks were NOT called
+}
+
+func TestSync_GroupFilter_BackendGroup(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendorConfig := &types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:    "vendor-a",
+				URL:     "https://github.com/test/repo-a",
+				License: "MIT",
+				Groups:  []string{"frontend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-a/"}},
+				}},
+			},
+			{
+				Name:    "vendor-b",
+				URL:     "https://github.com/test/repo-b",
+				License: "MIT",
+				Groups:  []string{"backend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-b/"}},
+				}},
+			},
+			{
+				Name:    "vendor-c",
+				URL:     "https://github.com/test/repo-c",
+				License: "MIT",
+				Groups:  []string{"frontend", "backend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-c/"}},
+				}},
+			},
+		},
+	}
+
+	lockData := &types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "hash-a"},
+			{Name: "vendor-b", Ref: "main", CommitHash: "hash-b"},
+			{Name: "vendor-c", Ref: "main", CommitHash: "hash-c"},
+		},
+	}
+
+	config.EXPECT().Load().Return(*vendorConfig, nil)
+	lock.EXPECT().Load().Return(*lockData, nil)
+
+	// Expect syncs for vendor-b and vendor-c only (have "backend" group)
+	// vendor-b expectations
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/vendor-b", nil)
+	git.EXPECT().Init("/tmp/vendor-b").Return(nil)
+	git.EXPECT().AddRemote("/tmp/vendor-b", "origin", "https://github.com/test/repo-b").Return(nil)
+	git.EXPECT().Fetch("/tmp/vendor-b", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/vendor-b", "hash-b").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/vendor-b").Return("hash-b", nil)
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 5, ByteCount: 500}, nil)
+	fs.EXPECT().RemoveAll("/tmp/vendor-b").Return(nil)
+
+	// vendor-c expectations
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/vendor-c", nil)
+	git.EXPECT().Init("/tmp/vendor-c").Return(nil)
+	git.EXPECT().AddRemote("/tmp/vendor-c", "origin", "https://github.com/test/repo-c").Return(nil)
+	git.EXPECT().Fetch("/tmp/vendor-c", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/vendor-c", "hash-c").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/vendor-c").Return("hash-c", nil)
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 3, ByteCount: 300}, nil)
+	fs.EXPECT().RemoveAll("/tmp/vendor-c").Return(nil)
+
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+
+	opts := SyncOptions{
+		GroupName: "backend",
+	}
+
+	err := syncer.sync.Sync(opts)
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+}
+
+func TestSync_GroupFilter_NonexistentGroup(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendorConfig := &types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:    "vendor-a",
+				URL:     "https://github.com/test/repo-a",
+				License: "MIT",
+				Groups:  []string{"frontend", "backend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-a/"}},
+				}},
+			},
+		},
+	}
+
+	lockData := &types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "hash-a"},
+		},
+	}
+
+	config.EXPECT().Load().Return(*vendorConfig, nil)
+	lock.EXPECT().Load().Return(*lockData, nil)
+
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+
+	opts := SyncOptions{
+		GroupName: "mobile", // This group doesn't exist
+	}
+
+	err := syncer.sync.Sync(opts)
+
+	// Should return error
+	if err == nil {
+		t.Fatal("Expected error for nonexistent group, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "group 'mobile' not found") {
+		t.Errorf("Expected 'group not found' error, got: %v", err)
+	}
+}
+
+func TestSync_GroupFilter_VendorWithoutGroups(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendorConfig := &types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:    "vendor-with-group",
+				URL:     "https://github.com/test/repo-a",
+				License: "MIT",
+				Groups:  []string{"frontend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-a/"}},
+				}},
+			},
+			{
+				Name:    "vendor-without-group",
+				URL:     "https://github.com/test/repo-b",
+				License: "MIT",
+				Groups:  nil, // No groups
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-b/"}},
+				}},
+			},
+		},
+	}
+
+	lockData := &types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-with-group", Ref: "main", CommitHash: "hash-a"},
+			{Name: "vendor-without-group", Ref: "main", CommitHash: "hash-b"},
+		},
+	}
+
+	config.EXPECT().Load().Return(*vendorConfig, nil)
+	lock.EXPECT().Load().Return(*lockData, nil)
+
+	// Only vendor-with-group should be synced
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/vendor-a", nil)
+	git.EXPECT().Init("/tmp/vendor-a").Return(nil)
+	git.EXPECT().AddRemote("/tmp/vendor-a", "origin", "https://github.com/test/repo-a").Return(nil)
+	git.EXPECT().Fetch("/tmp/vendor-a", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/vendor-a", "hash-a").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/vendor-a").Return("hash-a", nil)
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 5, ByteCount: 500}, nil)
+	fs.EXPECT().RemoveAll("/tmp/vendor-a").Return(nil)
+
+	// NO expectations for vendor-without-group
+
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+
+	opts := SyncOptions{
+		GroupName: "frontend",
+	}
+
+	err := syncer.sync.Sync(opts)
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+}
+
+func TestSync_GroupFilter_MultipleGroups(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendorConfig := &types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:    "multi-group-vendor",
+				URL:     "https://github.com/test/repo",
+				License: "MIT",
+				Groups:  []string{"frontend", "backend", "mobile"}, // Multiple groups
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib/"}},
+				}},
+			},
+		},
+	}
+
+	lockData := &types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "multi-group-vendor", Ref: "main", CommitHash: "hash-a"},
+		},
+	}
+
+	config.EXPECT().Load().Return(*vendorConfig, nil)
+	lock.EXPECT().Load().Return(*lockData, nil)
+
+	// Should be synced (matches "mobile" group)
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/vendor", nil)
+	git.EXPECT().Init("/tmp/vendor").Return(nil)
+	git.EXPECT().AddRemote("/tmp/vendor", "origin", "https://github.com/test/repo").Return(nil)
+	git.EXPECT().Fetch("/tmp/vendor", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/vendor", "hash-a").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/vendor").Return("hash-a", nil)
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 5, ByteCount: 500}, nil)
+	fs.EXPECT().RemoveAll("/tmp/vendor").Return(nil)
+
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+
+	opts := SyncOptions{
+		GroupName: "mobile", // Vendor has this group among others
+	}
+
+	err := syncer.sync.Sync(opts)
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+}
+
+func TestSync_GroupFilter_EmptyGroupName(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendorConfig := &types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:    "vendor-a",
+				URL:     "https://github.com/test/repo-a",
+				License: "MIT",
+				Groups:  []string{"frontend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-a/"}},
+				}},
+			},
+			{
+				Name:    "vendor-b",
+				URL:     "https://github.com/test/repo-b",
+				License: "MIT",
+				Groups:  []string{"backend"},
+				Specs: []types.BranchSpec{{
+					Ref:     "main",
+					Mapping: []types.PathMapping{{From: "src/", To: "lib-b/"}},
+				}},
+			},
+		},
+	}
+
+	lockData := &types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "hash-a"},
+			{Name: "vendor-b", Ref: "main", CommitHash: "hash-b"},
+		},
+	}
+
+	config.EXPECT().Load().Return(*vendorConfig, nil)
+	lock.EXPECT().Load().Return(*lockData, nil)
+
+	// Both vendors should be synced (no group filter)
+	// vendor-a expectations
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/vendor-a", nil)
+	git.EXPECT().Init("/tmp/vendor-a").Return(nil)
+	git.EXPECT().AddRemote("/tmp/vendor-a", "origin", "https://github.com/test/repo-a").Return(nil)
+	git.EXPECT().Fetch("/tmp/vendor-a", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/vendor-a", "hash-a").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/vendor-a").Return("hash-a", nil)
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 5, ByteCount: 500}, nil)
+	fs.EXPECT().RemoveAll("/tmp/vendor-a").Return(nil)
+
+	// vendor-b expectations
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/vendor-b", nil)
+	git.EXPECT().Init("/tmp/vendor-b").Return(nil)
+	git.EXPECT().AddRemote("/tmp/vendor-b", "origin", "https://github.com/test/repo-b").Return(nil)
+	git.EXPECT().Fetch("/tmp/vendor-b", 1, "main").Return(nil)
+	git.EXPECT().Checkout("/tmp/vendor-b", "hash-b").Return(nil)
+	git.EXPECT().GetHeadHash("/tmp/vendor-b").Return("hash-b", nil)
+	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 3, ByteCount: 300}, nil)
+	fs.EXPECT().RemoveAll("/tmp/vendor-b").Return(nil)
+
+	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+
+	opts := SyncOptions{
+		GroupName: "", // Empty = no filter
+	}
+
+	err := syncer.sync.Sync(opts)
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
 }
 
 // ============================================================================
