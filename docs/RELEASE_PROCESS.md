@@ -11,7 +11,25 @@ Guide for releasing new versions of git-vendor.
 - GoReleaser installed (`goreleaser`)
 - GitHub CLI (`gh`) installed and authenticated
 - Push access to repository
-- Repository must be public for releases
+- **Repository must be public for releases** (see below)
+
+### Making Repository Public (First-Time Setup)
+
+**IMPORTANT:** GoReleaser requires a public repository. If your repository is private, make it public before creating releases.
+
+```bash
+# Option 1: GitHub CLI (recommended)
+gh repo edit EmundoT/git-vendor --visibility public
+
+# Verify it worked
+gh repo view EmundoT/git-vendor --json isPrivate -q .isPrivate
+# Should output: false
+
+# Option 2: GitHub Web UI
+# Navigate to Settings > Danger Zone > Change visibility > Change to public
+```
+
+**Note:** This is a one-time action. Once public, the repository remains public for all future releases.
 
 ## Standard Release Workflow
 
@@ -48,7 +66,8 @@ See CHANGELOG.md for details."
 git push origin v1.0.0
 
 # 3. Run GoReleaser (fully automated)
-export GITHUB_TOKEN=$(gh auth token)
+# Extract token from gh auth status (gh auth token is not a valid command)
+export GITHUB_TOKEN=$(gh auth status --show-token 2>&1 | grep "Token:" | awk '{print $3}')
 goreleaser release --clean
 
 # 4. Verify release on GitHub
@@ -176,14 +195,64 @@ git push origin v1.0.0
 
 ### "refusing to create a release from a dirty working tree"
 
-**Cause:** Uncommitted changes in working tree
+**Cause:** Uncommitted changes or untracked files in working tree
 
 **Fix:**
 ```bash
-git status
+git status  # Check what's dirty
+
+# Option 1: Commit changes
 git add -A && git commit -m "Pre-release cleanup"
-# OR
+
+# Option 2: Stash changes
 git stash
+
+# Option 3: Temporarily move untracked files (e.g., docs not ready to commit)
+mv docs/DRAFT.md /tmp/DRAFT.md
+# After release: mv /tmp/DRAFT.md docs/DRAFT.md
+```
+
+### "net/http: invalid header field value for 'Authorization'"
+
+**Cause:** `GITHUB_TOKEN` contains invalid characters (usually from using `gh auth token` which is not a valid command)
+
+**Fix:**
+```bash
+# Use the correct method to extract token
+export GITHUB_TOKEN=$(gh auth status --show-token 2>&1 | grep "Token:" | awk '{print $3}')
+goreleaser release --clean
+```
+
+**Note:** `gh auth token` is NOT a valid gh CLI command despite appearing in many tutorials. Always use `gh auth status --show-token` to extract the token.
+
+### "422 Validation Failed - already_exists" for release assets
+
+**Cause:** GoReleaser partially succeeded in a previous run and assets already exist on the release
+
+**What happened:**
+- GoReleaser successfully created the GitHub release
+- GoReleaser uploaded some or all assets
+- An error occurred (network issue, rate limit, etc.)
+- Retrying fails because assets can't be overwritten
+
+**Fix:**
+```bash
+# Check if release already exists with assets
+gh release view v1.0.0
+
+# If assets are complete, you're done! Verify and proceed to post-release verification
+gh release view v1.0.0
+
+# If assets are incomplete, delete the release and retry
+gh release delete v1.0.0 --yes
+git push origin :refs/tags/v1.0.0  # Delete the tag from remote
+git tag -d v1.0.0                   # Delete local tag
+
+# Then recreate tag and release
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+export GITHUB_TOKEN=$(gh auth status --show-token 2>&1 | grep "Token:" | awk '{print $3}')
+goreleaser release --clean
 ```
 
 ### Auto-generated changelog looks incomplete
@@ -279,7 +348,8 @@ gh release delete v1.0.0 --yes && git push origin :refs/tags/v1.0.0
 # Standard release workflow
 git tag -a v1.0.0 -m "Release v1.0.0"
 git push origin v1.0.0
-GITHUB_TOKEN=$(gh auth token) goreleaser release --clean
+export GITHUB_TOKEN=$(gh auth status --show-token 2>&1 | grep "Token:" | awk '{print $3}')
+goreleaser release --clean
 
 # Snapshot build (local testing, no publishing)
 goreleaser release --snapshot --clean
@@ -287,8 +357,10 @@ goreleaser release --snapshot --clean
 # View release
 gh release view v1.0.0
 
-# Download assets
-gh release download v1.0.0
+# Download and test binary
+gh release download v1.0.0 -p "*linux_amd64*"
+tar -xzf git-vendor_*_linux_amd64.tar.gz
+./git-vendor --version
 ```
 
 ---
