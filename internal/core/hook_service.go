@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )
@@ -56,8 +57,15 @@ func (h *hookService) executeHook(command string, ctx *types.HookContext) error 
 	// Build environment variables
 	env := h.buildEnvironment(ctx)
 
-	// Execute command via shell for proper multiline and pipe support
-	cmd := exec.Command("sh", "-c", command)
+	// Execute command via platform-appropriate shell
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		// Windows: Use cmd.exe /c for command execution
+		cmd = exec.Command("cmd", "/c", command)
+	} else {
+		// Unix (Linux/macOS): Use sh -c for command execution
+		cmd = exec.Command("sh", "-c", command)
+	}
 	cmd.Env = env
 	cmd.Dir = ctx.RootDir
 
