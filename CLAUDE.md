@@ -234,7 +234,10 @@ Pre and post-sync shell command execution via `HookExecutor` (hook_service.go):
 - Pre-sync hooks run before git clone/sync operations
 - Post-sync hooks run after successful sync completion
 - Environment variable injection for hook context
-- Executed via `sh -c` for full shell support (pipes, multiline, etc.)
+- **Cross-platform shell execution:**
+  - Unix/Linux/macOS: `sh -c command`
+  - Windows: `cmd /c command`
+- Full shell support for pipes, redirections, and multiline commands
 - Runs in project root directory with current user permissions
 
 **Configuration Example:**

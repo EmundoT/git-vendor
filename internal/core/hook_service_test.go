@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -82,10 +83,20 @@ func TestHookService_EnvironmentVariables(t *testing.T) {
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "env_output.txt")
 
+	// Build platform-appropriate command to list environment variables
+	var command string
+	if runtime.GOOS == "windows" {
+		// Windows: Use 'set' to list env vars, 'findstr' to filter
+		command = "set | findstr GIT_VENDOR > " + outputFile
+	} else {
+		// Unix: Use 'env' to list env vars, 'grep' to filter
+		command = "env | grep GIT_VENDOR > " + outputFile
+	}
+
 	vendor := &types.VendorSpec{
 		Name: "env-test",
 		Hooks: &types.HookConfig{
-			PreSync: "env | grep GIT_VENDOR > " + outputFile,
+			PreSync: command,
 		},
 	}
 
@@ -142,10 +153,20 @@ func TestHookService_MultilineCommand(t *testing.T) {
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "multiline_output.txt")
 
+	// Build platform-appropriate multiline command
+	var command string
+	if runtime.GOOS == "windows" {
+		// Windows: Use echo without quotes, & to chain commands
+		command = "echo line1 > " + outputFile + " & echo line2 >> " + outputFile
+	} else {
+		// Unix: Use echo with quotes, newline to chain commands
+		command = "echo 'line1' > " + outputFile + "\necho 'line2' >> " + outputFile
+	}
+
 	vendor := &types.VendorSpec{
 		Name: "multiline-test",
 		Hooks: &types.HookConfig{
-			PreSync: "echo 'line1' > " + outputFile + "\necho 'line2' >> " + outputFile,
+			PreSync: command,
 		},
 	}
 
@@ -277,10 +298,20 @@ func TestHookService_WorkingDirectory(t *testing.T) {
 	tempDir := t.TempDir()
 	outputFile := filepath.Join(tempDir, "pwd_output.txt")
 
+	// Build platform-appropriate command to get current directory
+	var command string
+	if runtime.GOOS == "windows" {
+		// Windows: Use 'cd' to print current directory
+		command = "cd > " + outputFile
+	} else {
+		// Unix: Use 'pwd' to print current directory
+		command = "pwd > " + outputFile
+	}
+
 	vendor := &types.VendorSpec{
 		Name: "pwd-test",
 		Hooks: &types.HookConfig{
-			PreSync: "pwd > " + outputFile,
+			PreSync: command,
 		},
 	}
 
