@@ -44,11 +44,11 @@ jobs:
 
     - name: Run tests (Windows - no coverage due to path issues)
       if: runner.os == 'Windows'
-      run: go test -mod=mod -v -race ./...
+      run: go test -mod=mod -v -race -tags=integration ./...
 
     - name: Run tests (Unix)
       if: runner.os != 'Windows'
-      run: go test -mod=mod -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+      run: go test -mod=mod -v -race -tags=integration -coverprofile=coverage.txt -covermode=atomic ./...
 
     - name: Upload coverage
       if: runner.os != 'Windows'
