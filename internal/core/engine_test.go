@@ -162,3 +162,57 @@ func TestIsVendorInitialized(t *testing.T) {
 		t.Error("Expected vendor to not be initialized after removal")
 	}
 }
+
+// ============================================================================
+// Manager Delegation Method Tests
+// ============================================================================
+
+func TestManager_ParseSmartURL(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	syncer := createMockSyncer(
+		NewMockGitClient(ctrl),
+		NewMockFileSystem(ctrl),
+		NewMockConfigStore(ctrl),
+		NewMockLockStore(ctrl),
+		NewMockLicenseChecker(ctrl),
+		&SilentUICallback{},
+	)
+	manager := NewManagerWithSyncer(syncer)
+
+	// Test GitHub URL parsing through Manager delegation
+	base, ref, path := manager.ParseSmartURL("https://github.com/owner/repo/blob/main/src/file.go")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	if ref != "main" {
+		t.Errorf("Expected ref 'main', got '%s'", ref)
+	}
+	if path != "src/file.go" {
+		t.Errorf("Expected path 'src/file.go', got '%s'", path)
+	}
+}
+
+func TestManager_UpdateVerboseMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	syncer := createMockSyncer(
+		NewMockGitClient(ctrl),
+		NewMockFileSystem(ctrl),
+		NewMockConfigStore(ctrl),
+		NewMockLockStore(ctrl),
+		NewMockLicenseChecker(ctrl),
+		&SilentUICallback{},
+	)
+	manager := NewManagerWithSyncer(syncer)
+
+	// UpdateVerboseMode should create a new git client
+	manager.UpdateVerboseMode(true)
+
+	// Verify git client was updated (by checking it's not nil)
+	if manager.syncer.gitClient == nil {
+		t.Error("Expected git client to be updated")
+	}
+}
