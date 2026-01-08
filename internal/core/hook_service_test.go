@@ -189,11 +189,17 @@ func TestHookService_MultilineCommand(t *testing.T) {
 		t.Fatalf("Failed to read output file: %v", err)
 	}
 
-	output := strings.TrimSpace(string(content))
-	expectedOutput := "line1\nline2"
+	// Split into lines and trim each line (Windows echo adds trailing spaces)
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("Expected 2 lines, got %d", len(lines))
+	}
 
-	if output != expectedOutput {
-		t.Errorf("Expected output:\n%s\nGot:\n%s", expectedOutput, output)
+	if strings.TrimSpace(lines[0]) != "line1" {
+		t.Errorf("Expected first line 'line1', got %q", lines[0])
+	}
+	if strings.TrimSpace(lines[1]) != "line2" {
+		t.Errorf("Expected second line 'line2', got %q", lines[1])
 	}
 }
 
