@@ -369,3 +369,151 @@ func TestNonInteractiveTUICallback_StyleTitle(t *testing.T) {
 		t.Errorf("Expected StyleTitle to return plain text '%s', got '%s'", input, result)
 	}
 }
+
+func TestNonInteractiveTUICallback_ShowWarning_Normal(t *testing.T) {
+	// Capture stderr
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	callback := NewNonInteractiveTUICallback(core.NonInteractiveFlags{
+		Mode: core.OutputNormal,
+	})
+
+	callback.ShowWarning("Test Warning", "This is a warning")
+
+	_ = w.Close()
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	expected := "Warning: Test Warning - This is a warning\n"
+	if buf.String() != expected {
+		t.Errorf("Expected output '%s', got '%s'", expected, buf.String())
+	}
+}
+
+func TestNonInteractiveTUICallback_ShowWarning_Quiet(t *testing.T) {
+	// Capture stderr
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	callback := NewNonInteractiveTUICallback(core.NonInteractiveFlags{
+		Mode: core.OutputQuiet,
+	})
+
+	callback.ShowWarning("Test Warning", "This should not appear")
+
+	_ = w.Close()
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if buf.String() != "" {
+		t.Errorf("Expected no output in quiet mode, got: %s", buf.String())
+	}
+}
+
+func TestNonInteractiveTUICallback_ShowLicenseCompliance_Normal(t *testing.T) {
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	callback := NewNonInteractiveTUICallback(core.NonInteractiveFlags{
+		Mode: core.OutputNormal,
+	})
+
+	callback.ShowLicenseCompliance("Apache-2.0")
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	expected := "License Verified: Apache-2.0\n"
+	if buf.String() != expected {
+		t.Errorf("Expected output '%s', got '%s'", expected, buf.String())
+	}
+}
+
+func TestNonInteractiveTUICallback_ShowLicenseCompliance_Quiet(t *testing.T) {
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	callback := NewNonInteractiveTUICallback(core.NonInteractiveFlags{
+		Mode: core.OutputQuiet,
+	})
+
+	callback.ShowLicenseCompliance("MIT")
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if buf.String() != "" {
+		t.Errorf("Expected no output in quiet mode, got: %s", buf.String())
+	}
+}
+
+func TestNonInteractiveTUICallback_StartProgress_Normal(t *testing.T) {
+	callback := NewNonInteractiveTUICallback(core.NonInteractiveFlags{
+		Mode: core.OutputNormal,
+	})
+
+	tracker := callback.StartProgress(10, "Test Progress")
+
+	if tracker == nil {
+		t.Fatal("Expected progress tracker to be created")
+	}
+
+	// Verify it's a TextProgressTracker (not NoOp)
+	_, isNoOp := tracker.(*NoOpProgressTracker)
+	if isNoOp {
+		t.Error("Expected TextProgressTracker in normal mode, got NoOpProgressTracker")
+	}
+}
+
+func TestNonInteractiveTUICallback_StartProgress_Quiet(t *testing.T) {
+	callback := NewNonInteractiveTUICallback(core.NonInteractiveFlags{
+		Mode: core.OutputQuiet,
+	})
+
+	tracker := callback.StartProgress(10, "Test Progress")
+
+	if tracker == nil {
+		t.Fatal("Expected progress tracker to be created")
+	}
+
+	// Verify it's a NoOpProgressTracker in quiet mode
+	_, isNoOp := tracker.(*NoOpProgressTracker)
+	if !isNoOp {
+		t.Error("Expected NoOpProgressTracker in quiet mode")
+	}
+}
+
+func TestNonInteractiveTUICallback_StartProgress_JSON(t *testing.T) {
+	callback := NewNonInteractiveTUICallback(core.NonInteractiveFlags{
+		Mode: core.OutputJSON,
+	})
+
+	tracker := callback.StartProgress(10, "Test Progress")
+
+	if tracker == nil {
+		t.Fatal("Expected progress tracker to be created")
+	}
+
+	// Verify it's a NoOpProgressTracker in JSON mode
+	_, isNoOp := tracker.(*NoOpProgressTracker)
+	if !isNoOp {
+		t.Error("Expected NoOpProgressTracker in JSON mode")
+	}
+}
