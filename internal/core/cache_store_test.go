@@ -9,6 +9,140 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// ============================================================================
+// Cache Error Tests
+// ============================================================================
+
+// TestCacheStore_Load_CorruptedJSON tests loading a corrupted cache file
+func TestCacheStore_Load_CorruptedJSON(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(fs, tempDir)
+
+	// Create cache directory
+	cacheDir := filepath.Join(tempDir, VendorDir, ".cache")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("Failed to create cache dir: %v", err)
+	}
+
+	// Write corrupted JSON to cache file
+	cachePath := filepath.Join(cacheDir, "test-vendor-main.json")
+	corruptedData := []byte("{invalid json content}")
+	if err := os.WriteFile(cachePath, corruptedData, 0644); err != nil {
+		t.Fatalf("Failed to write corrupted cache: %v", err)
+	}
+
+	// Attempt to load corrupted cache
+	cache, err := cacheStore.Load("test-vendor", "main")
+
+	// Should return error for corrupted cache
+	if err == nil {
+		t.Fatal("Expected error for corrupted cache file")
+	}
+
+	// Cache should be empty
+	if cache.VendorName != "" {
+		t.Error("Expected empty cache on corruption")
+	}
+}
+
+// TestCacheStore_Load_NonExistent tests loading a cache that doesn't exist (cache miss)
+func TestCacheStore_Load_NonExistent(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(fs, tempDir)
+
+	// Load cache that doesn't exist
+	cache, err := cacheStore.Load("nonexistent-vendor", "v1.0")
+
+	// Should not error for cache miss (returns empty cache)
+	if err != nil {
+		t.Fatalf("Should not error for cache miss, got: %v", err)
+	}
+
+	// Cache should be empty (cache miss)
+	if cache.VendorName != "" {
+		t.Error("Expected empty cache for cache miss")
+	}
+	if cache.CommitHash != "" {
+		t.Error("Expected empty commit hash for cache miss")
+	}
+}
+
+// TestCacheStore_Delete_NonExistent tests deleting a cache that doesn't exist
+func TestCacheStore_Delete_NonExistent(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(fs, tempDir)
+
+	// Delete cache that doesn't exist (should not error)
+	err := cacheStore.Delete("nonexistent-vendor", "main")
+
+	if err != nil {
+		t.Errorf("Should not error when deleting non-existent cache, got: %v", err)
+	}
+}
+
+// TestCacheStore_ComputeFileChecksum_NonExistent tests checksum of missing file
+func TestCacheStore_ComputeFileChecksum_NonExistent(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(fs, tempDir)
+
+	// Compute checksum of non-existent file
+	nonExistentPath := filepath.Join(tempDir, "nonexistent.txt")
+	_, err := cacheStore.ComputeFileChecksum(nonExistentPath)
+
+	// Should error for non-existent file
+	if err == nil {
+		t.Fatal("Expected error for non-existent file")
+	}
+}
+
+// TestCacheStore_BuildCache_WithFiles tests building cache with multiple files
+func TestCacheStore_BuildCache_WithFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(fs, tempDir)
+
+	// Create test files
+	file1 := filepath.Join(tempDir, "file1.go")
+	file2 := filepath.Join(tempDir, "file2.go")
+	if err := os.WriteFile(file1, []byte("package main"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	if err := os.WriteFile(file2, []byte("func main() {}"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Build cache
+	cache, err := cacheStore.BuildCache("test-vendor", "main", "abc123", []string{file1, file2})
+
+	// Verify cache was built successfully
+	if err != nil {
+		t.Fatalf("Failed to build cache: %v", err)
+	}
+	if cache.VendorName != "test-vendor" {
+		t.Errorf("Expected VendorName 'test-vendor', got '%s'", cache.VendorName)
+	}
+	if cache.Ref != "main" {
+		t.Errorf("Expected Ref 'main', got '%s'", cache.Ref)
+	}
+	if cache.CommitHash != "abc123" {
+		t.Errorf("Expected CommitHash 'abc123', got '%s'", cache.CommitHash)
+	}
+	if len(cache.Files) != 2 {
+		t.Errorf("Expected 2 files in cache, got %d", len(cache.Files))
+	}
+
+	// Verify file checksums were computed
+	for _, fileChecksum := range cache.Files {
+		if fileChecksum.Hash == "" {
+			t.Errorf("Expected non-empty checksum for file %s", fileChecksum.Path)
+		}
+	}
+}
+
 // TestCacheStore_SaveAndLoad tests basic cache save and load functionality
 func TestCacheStore_SaveAndLoad(t *testing.T) {
 	// Create temp directory for cache
