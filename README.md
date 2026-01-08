@@ -17,11 +17,14 @@ A CLI tool for vendoring specific files/directories from Git repositories with d
 - [Core Concepts](#core-concepts)
 - [Common Commands](#common-commands)
 - [Example Use Cases](#example-use-cases)
+- [Screenshot](#screenshot)
 - [Documentation](#documentation)
 - [Comparison](#comparison)
 - [FAQ](#faq)
+- [Who Should Use This?](#who-should-use-this)
 - [Contributing](#contributing)
 - [License](#license)
+- [Credits](#credits)
 
 ---
 
@@ -319,8 +322,6 @@ vendors:
 
 ## Screenshot
 
-![Interactive TUI](./docs/images/tui-placeholder.png)
-
 _Interactive file browser for selecting paths to vendor_
 
 > Note: TUI screenshot will be added in a future release
@@ -381,30 +382,39 @@ _Interactive file browser for selecting paths to vendor_
 ## FAQ
 
 **Q: How is this different from git submodules?**
+
 A: Submodules vendor entire repos; git-vendor vendors specific files/directories with granular control. Plus, no nested `.git` directories - vendored files are plain copies.
 
 **Q: Can I vendor from private repositories?**
+
 A: Yes! Set `GITHUB_TOKEN` or `GITLAB_TOKEN` environment variables for private GitHub/GitLab repos. For generic Git, use SSH keys.
 
 **Q: How do I update dependencies?**
+
 A: Run `git-vendor update` to fetch latest commits and update `vendor.lock`, then `git-vendor sync` to download the new versions.
 
 **Q: Does it work with non-GitHub repositories?**
+
 A: Yes! Supports GitHub, GitLab, Bitbucket, and any Git server (HTTPS/SSH/Git protocol).
 
 **Q: How does license compliance work?**
+
 A: git-vendor auto-detects licenses via API (GitHub/GitLab) or LICENSE file (others) and caches them in `vendor/licenses/` for audit. Pre-approved licenses (MIT, Apache-2.0, BSD, etc.) are automatically accepted.
 
 **Q: Can I automate vendoring in CI/CD?**
+
 A: Yes! Use `--yes --quiet` flags for non-interactive mode. Commit both `vendor.yml` and `vendor.lock` for deterministic CI builds. [See CI/CD guide →](./docs/ADVANCED.md#cicd-integration)
 
 **Q: Why is re-syncing so much faster after the first time?**
+
 A: git-vendor uses incremental caching with SHA-256 file checksums. If files haven't changed, it skips git operations entirely (80% faster). Use `--force` to bypass the cache.
 
 **Q: Can I vendor multiple versions of the same library?**
+
 A: Yes! Use multi-ref tracking to vendor v1.0 and v2.0 to different local paths. [See example →](#3-track-multiple-versions)
 
 **Q: What if I need to vendor from a repository with a branch name containing slashes?**
+
 A: Use the base repository URL in the wizard and manually enter the ref name (e.g., `feature/new-api`). Smart URL parsing doesn't support slash-containing branch names due to ambiguity.
 
 ---
