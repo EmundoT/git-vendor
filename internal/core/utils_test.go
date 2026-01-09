@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -287,7 +288,10 @@ func TestComputeAutoPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ComputeAutoPath(tt.sourcePath, tt.defaultTarget, tt.fallbackName)
-			if result != tt.expectedResult {
+			// Normalize path separators for cross-platform comparison
+			normalizedResult := filepath.ToSlash(result)
+			normalizedExpected := filepath.ToSlash(tt.expectedResult)
+			if normalizedResult != normalizedExpected {
 				t.Errorf("ComputeAutoPath(%q, %q, %q) = %q, want %q",
 					tt.sourcePath, tt.defaultTarget, tt.fallbackName, result, tt.expectedResult)
 			}
