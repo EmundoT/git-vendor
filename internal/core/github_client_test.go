@@ -12,33 +12,12 @@ import (
 // ============================================================================
 
 func TestGitHubLicenseChecker_CheckLicense(t *testing.T) {
-	// Mock GitHub API server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request headers
-		if r.Header.Get("User-Agent") != "git-vendor-cli" {
-			t.Errorf("Expected User-Agent header 'git-vendor-cli', got '%s'", r.Header.Get("User-Agent"))
-		}
+	t.Skip("Requires refactoring github_client.go to accept configurable API base URL")
 
-		// Return mock license response
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"license": {"spdx_id": "MIT"}}`))
-	}))
-	defer server.Close()
-
-	// Create checker with test server URL
-	checker := NewGitHubLicenseChecker(server.Client(), []string{"MIT"})
-
-	// Test: CheckLicense with valid GitHub URL
-	// Note: We'll need to use the test server URL, but the function extracts owner/repo
-	// So we test with a real URL and intercept the HTTP call
-	license, err := checker.CheckLicense("https://github.com/owner/repo")
-	if err != nil {
-		t.Fatalf("CheckLicense() error = %v", err)
-	}
-
-	// Note: This will fail because it goes to real GitHub API
-	// We need to modify the test to intercept the actual API call
-	_ = license
+	// This test creates a mock server but CheckLicense() hardcodes api.github.com,
+	// so it hits the real GitHub API and can fail with rate limits.
+	// To properly test this, we'd need to refactor CheckLicense to accept
+	// a configurable API base URL parameter.
 }
 
 func TestGitHubLicenseChecker_CheckLicense_WithMockServer(t *testing.T) {
