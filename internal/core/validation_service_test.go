@@ -725,3 +725,247 @@ func TestDetectConflicts_Comprehensive(t *testing.T) {
 		}
 	})
 }
+
+// ============================================================================
+// Edge Case Tests for Coverage
+// ============================================================================
+
+// TestValidateConfig_LoadError tests error handling when config fails to load
+func TestValidateConfig_LoadError(t *testing.T) {
+	tempDir := t.TempDir()
+	vendorDir := filepath.Join(tempDir, "vendor")
+	_ = os.MkdirAll(vendorDir, 0755)
+
+	m := newTestManager(vendorDir)
+
+	// Delete vendor.yml to cause load error
+	configPath := filepath.Join(vendorDir, "vendor.yml")
+	_ = os.Remove(configPath)
+
+	// ValidateConfig should fail with load error
+	err := m.ValidateConfig()
+	if err == nil {
+		t.Error("Expected error when config cannot be loaded, got nil")
+	}
+}
+
+// TestDetectConflicts_LoadError tests error handling when config fails to load
+func TestDetectConflicts_LoadError(t *testing.T) {
+	tempDir := t.TempDir()
+	vendorDir := filepath.Join(tempDir, "vendor")
+	_ = os.MkdirAll(vendorDir, 0755)
+
+	m := newTestManager(vendorDir)
+
+	// Delete vendor.yml to cause load error
+	configPath := filepath.Join(vendorDir, "vendor.yml")
+	_ = os.Remove(configPath)
+
+	// DetectConflicts with missing config returns empty conflicts (not an error)
+	conflicts, err := m.DetectConflicts()
+	if err != nil {
+		t.Fatalf("DetectConflicts() unexpected error = %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Errorf("Expected no conflicts for missing config, got %d", len(conflicts))
+	}
+}
+
+// TestBuildPathOwnershipMap_DotDestination tests auto-path with "." destination
+func TestBuildPathOwnershipMap_DotDestination(t *testing.T) {
+	tempDir := t.TempDir()
+	vendorDir := filepath.Join(tempDir, "vendor")
+	m := newTestManager(vendorDir)
+	_ = os.MkdirAll(vendorDir, 0755)
+
+	// Config with "." as destination (should use auto-path)
+	config := types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "test-vendor",
+				URL:  "https://github.com/test/repo",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "src/file.go", To: "."},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := m.saveConfig(config); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	// This should not cause any errors
+	conflicts, err := m.DetectConflicts()
+	if err != nil {
+		t.Fatalf("DetectConflicts() error = %v", err)
+	}
+
+	// No conflicts expected
+	if len(conflicts) != 0 {
+		t.Errorf("Expected no conflicts, got %d", len(conflicts))
+	}
+}
+
+// TestIsSubPath_EdgeCases tests edge cases in path overlap detection
+func TestIsSubPath_EdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	vendorDir := filepath.Join(tempDir, "vendor")
+	m := newTestManager(vendorDir)
+	_ = os.MkdirAll(vendorDir, 0755)
+
+	tests := []struct {
+		name           string
+		path1          string
+		path2          string
+		expectConflict bool
+	}{
+		{
+			name:           "Same paths",
+			path1:          "lib",
+			path2:          "lib",
+			expectConflict: true, // Same path, different vendors = conflict
+		},
+		{
+			name:           "Parent-child relationship",
+			path1:          "lib",
+			path2:          "lib/subdir",
+			expectConflict: true,
+		},
+		{
+			name:           "Child-parent relationship",
+			path1:          "lib/subdir",
+			path2:          "lib",
+			expectConflict: true,
+		},
+		{
+			name:           "Sibling paths",
+			path1:          "lib1",
+			path2:          "lib2",
+			expectConflict: false,
+		},
+		{
+			name:           "Nested deep paths",
+			path1:          "vendor/lib/pkg",
+			path2:          "vendor/lib/pkg/subpkg",
+			expectConflict: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{
+						Name: "vendor1",
+						URL:  "https://github.com/test/repo1",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "src", To: tt.path1},
+								},
+							},
+						},
+					},
+					{
+						Name: "vendor2",
+						URL:  "https://github.com/test/repo2",
+						Specs: []types.BranchSpec{
+							{
+								Ref: "main",
+								Mapping: []types.PathMapping{
+									{From: "pkg", To: tt.path2},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			if err := m.saveConfig(config); err != nil {
+				t.Fatalf("Failed to save config: %v", err)
+			}
+
+			conflicts, err := m.DetectConflicts()
+			if err != nil {
+				t.Fatalf("DetectConflicts() error = %v", err)
+			}
+
+			hasConflict := len(conflicts) > 0
+			if hasConflict != tt.expectConflict {
+				t.Errorf("Expected conflict=%v, got conflict=%v (conflicts: %d)",
+					tt.expectConflict, hasConflict, len(conflicts))
+			}
+		})
+	}
+}
+
+// TestDetectConflicts_MultipleOwnersPerPath tests multiple owners for a single path
+func TestDetectConflicts_MultipleOwnersPerPath(t *testing.T) {
+	tempDir := t.TempDir()
+	vendorDir := filepath.Join(tempDir, "vendor")
+	m := newTestManager(vendorDir)
+	_ = os.MkdirAll(vendorDir, 0755)
+
+	// Three vendors mapping to the same path
+	config := types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "vendor1",
+				URL:  "https://github.com/test/repo1",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "src", To: "lib"},
+						},
+					},
+				},
+			},
+			{
+				Name: "vendor2",
+				URL:  "https://github.com/test/repo2",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "pkg", To: "lib"},
+						},
+					},
+				},
+			},
+			{
+				Name: "vendor3",
+				URL:  "https://github.com/test/repo3",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "mod", To: "lib"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := m.saveConfig(config); err != nil {
+		t.Fatalf("Failed to save config: %v", err)
+	}
+
+	conflicts, err := m.DetectConflicts()
+	if err != nil {
+		t.Fatalf("DetectConflicts() error = %v", err)
+	}
+
+	// Should have 3 conflicts: v1-v2, v1-v3, v2-v3
+	if len(conflicts) != 3 {
+		t.Errorf("Expected 3 conflicts for 3 vendors mapping to same path, got %d", len(conflicts))
+	}
+}
