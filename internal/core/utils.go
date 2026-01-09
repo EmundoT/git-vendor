@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )
@@ -66,8 +67,8 @@ func ComputeAutoPath(sourcePath, defaultTarget, fallbackName string) string {
 	// Get basename from source path
 	autoName := filepath.Base(sourcePath)
 
-	// Handle edge cases: empty, ".", "/"
-	if autoName == "" || autoName == "." || autoName == "/" {
+	// Handle edge cases: empty, ".", "/", "\\" (root/separator on any OS)
+	if autoName == "" || autoName == "." || autoName == "/" || autoName == "\\" || strings.Trim(autoName, `/\`) == "" {
 		if fallbackName != "" {
 			return fallbackName
 		}
