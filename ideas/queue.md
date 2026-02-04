@@ -1,0 +1,101 @@
+# Ideas Queue
+
+> Feature ideas for git-vendor organized by roadmap phase. Items with `[spec]` have detailed implementation specs in `ideas/specs/in-progress/`.
+
+## Phase 1: Foundation Hardening (P0)
+
+| ID | Status | Title | Brief | Spec |
+|----|--------|-------|-------|------|
+| 001 | pending | Lockfile Schema Versioning | Add `schema_version` field to vendor.lock, handle version compatibility | [spec](specs/in-progress/001-lockfile-schema-versioning.md) |
+| 002 | pending | Verify Command Hardening | Bulletproof integrity check: detect modified, added, deleted files with JSON output | [spec](specs/in-progress/002-verify-command-hardening.md) |
+| 003 | pending | Lockfile Metadata Enrichment | Add license_spdx, source_version_tag, vendored_at, vendored_by to lock entries | [spec](specs/in-progress/003-lockfile-metadata-enrichment.md) |
+| 004 | pending | Comprehensive Test Suite | Achieve ≥80% coverage with integration tests for all commands | - |
+| 005 | pending | Documentation Overhaul | Rewrite README, create docs/ with COMMANDS.md, CI_CD.md, SECURITY.md | - |
+
+## Phase 2: Supply Chain Intelligence (P0)
+
+| ID | Status | Title | Brief | Spec |
+|----|--------|-------|-------|------|
+| 010 | pending | SBOM Generation | `git vendor sbom` - Generate CycloneDX and SPDX format SBOMs from lockfile | [spec](specs/in-progress/010-sbom-generation.md) |
+| 011 | pending | CVE/Vulnerability Scanning | `git vendor scan` - Query OSV.dev API for known vulnerabilities | [spec](specs/in-progress/011-cve-vulnerability-scanning.md) |
+| 012 | pending | Drift Detection | `git vendor drift` - Compare vendored files against origin, detect local and upstream changes | - |
+| 013 | pending | License Policy Enforcement | `git vendor license` - Configurable policy file with allow/deny/warn lists | - |
+
+## Phase 3: Ecosystem Integration (P1)
+
+| ID | Status | Title | Brief | Spec |
+|----|--------|-------|-------|------|
+| 020 | pending | Unified Audit Command | `git vendor audit` - Run verify + scan + license + drift, produce HTML/JSON report | - |
+| 021 | pending | Dependency Graph Visualization | `git vendor graph` - Generate Mermaid, DOT, HTML, JSON dependency graphs | - |
+| 022 | pending | GitHub Action | git-vendor-action for CI/CD with PR comments, check status, SBOM artifacts | - |
+| 023 | pending | Compliance Evidence Reports | `git vendor compliance` - Generate EO 14028, NIST, DORA, CRA, SOC 2 evidence docs | - |
+| 024 | pending | Migration Metrics | `git vendor metrics` - Track extraction progress for monolith decomposition | - |
+
+## MEDIUM Priority (P1)
+
+| ID | Status | Title | Brief | Spec |
+|----|--------|-------|-------|------|
+| 030 | pending | Output Format Standardization | Ensure all commands support --format table|json and --output file flags | - |
+| 031 | pending | Configuration Hierarchy | Implement CLI flags > env vars > project config > user config > defaults | - |
+| 032 | pending | Caching Strategy | Implement .git-vendor-cache/ for CVE scan results and upstream repo state | - |
+| 033 | pending | Error Message Standardization | Implement Error/Context/Fix format for all user-facing errors | - |
+| 034 | pending | Man Pages | Generate man pages for all commands using go-md2man or similar | - |
+
+## LOW Priority (P2)
+
+| ID | Status | Title | Brief | Spec |
+|----|--------|-------|-------|------|
+| 040 | pending | Sigstore/Cosign Integration | Cryptographic signing of lockfiles for advanced provenance | - |
+| 041 | pending | Plugin/Hook System | Pre-add, post-sync, pre-verify event hooks for extensibility | - |
+| 042 | pending | API Mode | `git vendor serve` for integration with other tools | - |
+| 043 | pending | Multi-Repo Lockfile Aggregation | Aggregate lockfiles across multiple repositories | - |
+| 044 | pending | GitLab CI Template | Provide .gitlab-ci.yml snippet for GitLab users | - |
+
+## Backlog (Unprioritized)
+
+| ID | Status | Title | Brief | Spec |
+|----|--------|-------|-------|------|
+| 050 | pending | Dependency-Track Integration | Ensure SBOM output works seamlessly with Dependency-Track | - |
+| 051 | pending | Grype/Trivy Integration | Test and document integration with popular vulnerability scanners | - |
+| 052 | pending | GRC Platform Integration | Document RegScale, Drata, Vanta compliance evidence ingestion | - |
+| 053 | pending | Awesome Go Submission | Prepare and submit to Awesome Go list once features mature | - |
+| 054 | pending | Show HN Post | Prepare Show HN submission for SBOM or CVE scanning release | - |
+| 055 | pending | Lockfile Migration Command | `git vendor migrate` - Add missing metadata to existing lockfiles | - |
+| 056 | pending | Golden File Tests | Output format tests comparing against known-good JSON/Mermaid/HTML | - |
+| 057 | pending | E2E Test Script | Install from scratch, vendor real dep, run all commands, verify output | - |
+| 058 | pending | Compatibility Test Matrix | Test against Go 1.21+, Git 2.30+, Linux/macOS/Windows | - |
+
+---
+
+## Priority Reference
+
+| Priority | Meaning | Source |
+|----------|---------|--------|
+| **P0** | Must have - regulatory/security requirement | ROADMAP Section 2.2 |
+| **P1** | Should have - adoption driver | ROADMAP Section 2.2 |
+| **P2** | Nice to have - extensibility | ROADMAP Section 14 |
+
+## Dependency Map
+
+Per ROADMAP.md Section 12:
+
+```
+001 (Schema Versioning)
+  └── 003 (Metadata Enrichment)
+       ├── 010 (SBOM Generation)
+       ├── 011 (CVE Scanning)
+       ├── 013 (License Policy)
+       ├── 021 (Dependency Graph)
+       └── 024 (Migration Metrics)
+
+002 (Verify Hardening)
+  └── 012 (Drift Detection)
+       └── 024 (Migration Metrics)
+
+010 + 011 + 012 + 013
+  └── 020 (Audit Command)
+       ├── 022 (GitHub Action)
+       └── 023 (Compliance Reports)
+```
+
+**Critical Path:** 001 → 003 → 010 → 011 → 020 → 022
