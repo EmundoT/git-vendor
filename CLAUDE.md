@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**CRITICAL: ALWAYS USE THE PRIVATE REMOTE**
+ALWAYS USE THE `private` remote ex. git pull private main or git push private main
+
 ## Project Overview
 
 `git-vendor` is a CLI tool for managing vendored dependencies from Git repositories. It provides an interactive TUI for selecting specific files/directories from remote repos and syncing them to your local project with deterministic locking.
