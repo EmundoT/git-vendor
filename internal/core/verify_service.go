@@ -142,11 +142,12 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 
 	// Compute totals and result
 	result.Summary.TotalFiles = len(result.Files)
-	if result.Summary.Modified > 0 || result.Summary.Deleted > 0 {
+	switch {
+	case result.Summary.Modified > 0 || result.Summary.Deleted > 0:
 		result.Summary.Result = "FAIL"
-	} else if result.Summary.Added > 0 {
+	case result.Summary.Added > 0:
 		result.Summary.Result = "WARN"
-	} else {
+	default:
 		result.Summary.Result = "PASS"
 	}
 
@@ -225,12 +226,16 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 			// Check if this file is in expected files
 			if _, exists := expectedFiles[path]; !exists {
 				// This is an added file
-				hash, _ := s.cache.ComputeFileChecksum(path)
+				hash, hashErr := s.cache.ComputeFileChecksum(path)
+				var hashPtr *string
+				if hashErr == nil {
+					hashPtr = &hash
+				}
 				added = append(added, types.FileStatus{
 					Path:       path,
 					Vendor:     nil, // Unknown vendor for added files
 					Status:     "added",
-					ActualHash: &hash,
+					ActualHash: hashPtr,
 				})
 			}
 
