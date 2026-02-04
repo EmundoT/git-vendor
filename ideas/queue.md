@@ -6,7 +6,7 @@
 
 | ID | Status | Title | Brief | Spec |
 |----|--------|-------|-------|------|
-| 001 | pending | Lockfile Schema Versioning | Add `schema_version` field to vendor.lock, handle version compatibility | [spec](specs/in-progress/001-lockfile-schema-versioning.md) |
+| 001 | completed | Lockfile Schema Versioning | Add `schema_version` field to vendor.lock, handle version compatibility | [spec](specs/complete/001-lockfile-schema-versioning.md) |
 | 002 | pending | Verify Command Hardening | Bulletproof integrity check: detect modified, added, deleted files with JSON output | [spec](specs/in-progress/002-verify-command-hardening.md) |
 | 003 | pending | Lockfile Metadata Enrichment | Add license_spdx, source_version_tag, vendored_at, vendored_by to lock entries | [spec](specs/in-progress/003-lockfile-metadata-enrichment.md) |
 | 004 | pending | Comprehensive Test Suite | Achieve ≥80% coverage with integration tests for all commands | - |
