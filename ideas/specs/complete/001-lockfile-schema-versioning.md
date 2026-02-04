@@ -1,6 +1,6 @@
 # Spec 001: Lockfile Schema Versioning
 
-> **Status:** In Progress
+> **Status:** Complete
 > **Priority:** P0 - Foundation
 > **Effort:** 2-3 days
 > **Dependencies:** None
