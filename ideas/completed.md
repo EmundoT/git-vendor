@@ -7,6 +7,7 @@
 | ID | Priority | Completed | Title | Brief | Spec |
 |----|----------|-----------|-------|-------|------|
 | 001 | P0 | 2026-02-04 | Lockfile Schema Versioning | Added `schema_version` field with backward compatibility | [spec](specs/complete/001-lockfile-schema-versioning.md) |
+| 002 | P0 | 2026-02-04 | Verify Command Hardening | Bulletproof integrity check: detect modified, added, deleted files with JSON output | [spec](specs/complete/002-verify-command-hardening.md) |
 
 ---
 

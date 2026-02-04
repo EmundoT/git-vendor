@@ -13,6 +13,7 @@ type UpdateService struct {
 	configStore ConfigStore
 	lockStore   LockStore
 	syncService *SyncService
+	cache       CacheStore
 	ui          UICallback
 	rootDir     string
 }
@@ -22,6 +23,7 @@ func NewUpdateService(
 	configStore ConfigStore,
 	lockStore LockStore,
 	syncService *SyncService,
+	cache CacheStore,
 	ui UICallback,
 	rootDir string,
 ) *UpdateService {
@@ -29,6 +31,7 @@ func NewUpdateService(
 		configStore: configStore,
 		lockStore:   lockStore,
 		syncService: syncService,
+		cache:       cache,
 		ui:          ui,
 		rootDir:     rootDir,
 	}
@@ -77,12 +80,16 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 		for ref, hash := range updatedRefs {
 			licenseFile := filepath.Join(s.rootDir, LicenseDir, v.Name+".txt")
 
+			// Compute file hashes for all destination files
+			fileHashes := s.computeFileHashes(&v, ref)
+
 			lock.Vendors = append(lock.Vendors, types.LockDetails{
 				Name:        v.Name,
 				Ref:         ref,
 				CommitHash:  hash,
 				LicensePath: licenseFile,
 				Updated:     time.Now().Format(time.RFC3339),
+				FileHashes:  fileHashes,
 			})
 
 			s.ui.ShowSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, hash[:7]))
@@ -141,16 +148,55 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 		for ref, hash := range results[i].UpdatedRefs {
 			licenseFile := filepath.Join(s.rootDir, LicenseDir, results[i].Vendor.Name+".txt")
 
+			// Compute file hashes for all destination files
+			fileHashes := s.computeFileHashes(&results[i].Vendor, ref)
+
 			lock.Vendors = append(lock.Vendors, types.LockDetails{
 				Name:        results[i].Vendor.Name,
 				Ref:         ref,
 				CommitHash:  hash,
 				LicensePath: licenseFile,
 				Updated:     time.Now().Format(time.RFC3339),
+				FileHashes:  fileHashes,
 			})
 		}
 	}
 
 	// Save the new lockfile
 	return s.lockStore.Save(lock)
+}
+
+// computeFileHashes calculates SHA-256 hashes for all destination files of a vendor
+func (s *UpdateService) computeFileHashes(vendor *types.VendorSpec, ref string) map[string]string {
+	fileHashes := make(map[string]string)
+
+	// Find the matching spec for this ref
+	var matchingSpec *types.BranchSpec
+	for i := range vendor.Specs {
+		if vendor.Specs[i].Ref == ref {
+			matchingSpec = &vendor.Specs[i]
+			break
+		}
+	}
+
+	if matchingSpec == nil {
+		return fileHashes
+	}
+
+	// Iterate through mappings and compute hashes
+	for _, mapping := range matchingSpec.Mapping {
+		destPath := mapping.To
+		if destPath == "" {
+			// Use auto-computed path
+			destPath = ComputeAutoPath(mapping.From, matchingSpec.DefaultTarget, vendor.Name)
+		}
+
+		// Compute hash for this file
+		hash, err := s.cache.ComputeFileChecksum(destPath)
+		if err == nil {
+			fileHashes[destPath] = hash
+		}
+	}
+
+	return fileHashes
 }

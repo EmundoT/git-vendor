@@ -2,14 +2,16 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+
 	"github.com/EmundoT/git-vendor/cmd"
 	"github.com/EmundoT/git-vendor/internal/core"
 	"github.com/EmundoT/git-vendor/internal/tui"
 	"github.com/EmundoT/git-vendor/internal/types"
 	"github.com/EmundoT/git-vendor/internal/version"
-	"os"
-	"strings"
 )
 
 // Version information is managed in internal/version package
@@ -617,6 +619,91 @@ func main() {
 			fmt.Println("• Config syntax: OK")
 			fmt.Println("• Path conflicts: None")
 			fmt.Printf("• Vendors: %s\n", core.Pluralize(len(cfg.Vendors), "vendor", "vendors"))
+		}
+
+	case "verify":
+		// Parse command-specific flags
+		format := "table" // default format
+		for _, arg := range os.Args[2:] {
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			}
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Run verification
+		result, err := manager.Verify()
+		if err != nil {
+			tui.PrintError("Verification Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			// Table format
+			fmt.Println("Verifying vendored dependencies...")
+			fmt.Println()
+
+			for _, f := range result.Files {
+				var symbol, status string
+				switch f.Status {
+				case "verified":
+					symbol = "\u2713" // checkmark
+					status = "[OK]"
+				case "modified":
+					symbol = "\u2717" // x mark
+					status = "[MODIFIED]"
+				case "added":
+					symbol = "?"
+					status = "[ADDED]"
+				case "deleted":
+					symbol = "\u2717" // x mark
+					status = "[DELETED]"
+				}
+				fmt.Printf("%s %-50s %s\n", symbol, f.Path, status)
+			}
+
+			fmt.Println()
+			fmt.Printf("Summary: %d files checked\n", result.Summary.TotalFiles)
+			fmt.Printf("  \u2713 %d verified\n", result.Summary.Verified)
+			if result.Summary.Modified > 0 || result.Summary.Deleted > 0 {
+				fmt.Printf("  \u2717 %d errors (%d modified, %d deleted)\n",
+					result.Summary.Modified+result.Summary.Deleted,
+					result.Summary.Modified, result.Summary.Deleted)
+			}
+			if result.Summary.Added > 0 {
+				fmt.Printf("  ? %d warnings (%d added)\n", result.Summary.Added, result.Summary.Added)
+			}
+			fmt.Println()
+			fmt.Printf("Result: %s\n", result.Summary.Result)
+		}
+
+		// Exit code based on result
+		// 0=PASS, 1=FAIL, 2=WARN
+		switch result.Summary.Result {
+		case "PASS":
+			os.Exit(0)
+		case "WARN":
+			os.Exit(2)
+		default: // FAIL
+			os.Exit(1)
 		}
 
 	case "status":
