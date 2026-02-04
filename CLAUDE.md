@@ -437,6 +437,7 @@ git-vendor list                      # List all vendors
 git-vendor sync [options] [vendor]   # Sync dependencies
 git-vendor update [options]          # Update lockfile
 git-vendor validate                  # Validate config and detect conflicts
+git-vendor verify [options]          # Verify files against lockfile hashes
 git-vendor status                    # Check if local files match lockfile
 git-vendor check-updates             # Preview available updates
 git-vendor diff <vendor>             # Show commit history between locked and latest
@@ -465,6 +466,18 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 --verbose, -v     # Show git commands
 ```
 
+### Verify Command Flags
+
+```bash
+--format=<fmt>    # Output format: table (default) or json
+# Exit codes: 0=PASS, 1=FAIL (modified/deleted), 2=WARN (added)
+```
+
+**Behavior:** The verify command checks all vendored files against the SHA-256 hashes stored in the lockfile. It detects:
+- **Modified files**: Hash mismatch between expected and actual
+- **Deleted files**: Files in lockfile but missing from disk
+- **Added files**: Files in vendor directories but not in lockfile
+
 ### File Paths
 
 - Config: `vendor/vendor.yml`
@@ -480,6 +493,13 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `UpdateAll()` - Update all vendors, regenerate lockfile
 - `DetectConflicts()` - Find path conflicts between vendors
 - `ValidateConfig()` - Comprehensive config validation
+- `Verify()` - Verify vendored files against lockfile hashes
+
+**verify_service.go:**
+
+- `Verify()` - Core verification logic, returns VerifyResult
+- `buildExpectedFilesFromCache()` - Cache fallback for lockfiles without hashes
+- `findAddedFiles()` - Scan vendor dirs for files not in lockfile
 
 **git_operations.go:**
 

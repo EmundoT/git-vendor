@@ -239,6 +239,11 @@ func (m *Manager) CheckUpdates() ([]types.UpdateCheckResult, error) {
 	return m.syncer.CheckUpdates()
 }
 
+// Verify checks all vendored files against the lockfile
+func (m *Manager) Verify() (*types.VerifyResult, error) {
+	return m.syncer.Verify()
+}
+
 // DiffVendor shows commit differences between locked and latest versions
 func (m *Manager) DiffVendor(vendorName string) ([]types.VendorDiff, error) {
 	return m.syncer.DiffVendor(vendorName)
