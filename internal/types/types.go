@@ -33,7 +33,8 @@ type PathMapping struct {
 
 // VendorLock represents the lock file (vendor.lock) storing resolved commit hashes.
 type VendorLock struct {
-	Vendors []LockDetails `yaml:"vendors"`
+	SchemaVersion string        `yaml:"schema_version,omitempty"`
+	Vendors       []LockDetails `yaml:"vendors"`
 }
 
 // LockDetails contains the locked state for a specific vendor and ref.
