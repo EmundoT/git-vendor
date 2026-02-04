@@ -6,7 +6,7 @@
 
 | ID | Priority | Completed | Title | Brief | Spec |
 |----|----------|-----------|-------|-------|------|
-| - | - | - | *No completed features yet* | - | - |
+| 002 | P0 | 2026-02-04 | Verify Command Hardening | Bulletproof integrity check: detect modified, added, deleted files with JSON output | [spec](specs/complete/002-verify-command-hardening.md) |
 
 ---
 
