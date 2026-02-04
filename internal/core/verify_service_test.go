@@ -336,7 +336,10 @@ func TestVerify_AddedFile(t *testing.T) {
 
 	// Compute hashes using relative paths
 	realCache := NewFileCacheStore(NewOSFileSystem(), ".")
-	expectedHash, _ := realCache.ComputeFileChecksum(expectedFilePath)
+	expectedHash, err := realCache.ComputeFileChecksum(expectedFilePath)
+	if err != nil {
+		t.Fatalf("Failed to compute expected hash: %v", err)
+	}
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
