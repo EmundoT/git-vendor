@@ -84,6 +84,7 @@ type VendorSyncer struct {
 	validation     *ValidationService
 	explorer       *RemoteExplorer
 	updateChecker  *UpdateChecker
+	verifyService  *VerifyService
 	configStore    ConfigStore
 	lockStore      LockStore
 	gitClient      GitClient
@@ -114,10 +115,11 @@ func NewVendorSyncer(
 	cache := NewFileCacheStore(fs, rootDir)
 	hooks := NewHookService(ui)
 	sync := NewSyncService(configStore, lockStore, gitClient, fs, fileCopy, license, cache, hooks, ui, rootDir)
-	update := NewUpdateService(configStore, lockStore, sync, ui, rootDir)
+	update := NewUpdateService(configStore, lockStore, sync, cache, ui, rootDir)
 	validation := NewValidationService(configStore)
 	explorer := NewRemoteExplorer(gitClient, fs)
 	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
+	verifyService := NewVerifyService(configStore, lockStore, cache, fs, rootDir)
 
 	return &VendorSyncer{
 		repository:     repository,
@@ -127,6 +129,7 @@ func NewVendorSyncer(
 		validation:     validation,
 		explorer:       explorer,
 		updateChecker:  updateChecker,
+		verifyService:  verifyService,
 		configStore:    configStore,
 		lockStore:      lockStore,
 		gitClient:      gitClient,
@@ -430,4 +433,9 @@ func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]stri
 // CheckUpdates checks for available updates for all vendors
 func (s *VendorSyncer) CheckUpdates() ([]types.UpdateCheckResult, error) {
 	return s.updateChecker.CheckUpdates()
+}
+
+// Verify checks all vendored files against the lockfile
+func (s *VendorSyncer) Verify() (*types.VerifyResult, error) {
+	return s.verifyService.Verify()
 }
