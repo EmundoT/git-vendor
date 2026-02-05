@@ -823,7 +823,10 @@ func main() {
 
 			for _, dep := range result.Dependencies {
 				// Show dependency header
-				version := dep.Commit[:7]
+				version := dep.Commit
+				if len(version) > 7 {
+					version = version[:7]
+				}
 				if dep.Version != nil {
 					version = *dep.Version
 				}
@@ -892,23 +895,20 @@ func main() {
 			fmt.Println()
 		}
 
-		// Exit code based on result and threshold
-		// 0=PASS, 1=FAIL (vulns found at/above threshold), 2=WARN (some deps not scanned)
-		if failOn != "" && result.Summary.ThresholdExceeded {
+		// Exit code logic:
+		// - Exit 1 if vulnerabilities found AND (no threshold OR threshold exceeded)
+		// - Exit 2 if some dependencies couldn't be scanned (WARN)
+		// - Exit 0 otherwise (PASS, or vulns below threshold)
+		hasVulns := result.Summary.Vulnerabilities.Total > 0
+		shouldFailOnVulns := failOn == "" || result.Summary.ThresholdExceeded
+
+		if hasVulns && shouldFailOnVulns {
 			os.Exit(1)
 		}
-		switch result.Summary.Result {
-		case "PASS":
-			os.Exit(0)
-		case "WARN":
-			os.Exit(2)
-		default: // FAIL
-			// If no --fail-on specified, vulns always cause exit 1
-			if failOn == "" && result.Summary.Vulnerabilities.Total > 0 {
-				os.Exit(1)
-			}
-			os.Exit(0) // If --fail-on specified and not exceeded, exit 0
+		if result.Summary.NotScanned > 0 && !hasVulns {
+			os.Exit(2) // WARN only if no vulns (vulns take precedence)
 		}
+		os.Exit(0)
 
 	case "status":
 		// Parse common flags
