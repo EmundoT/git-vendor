@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -216,6 +217,43 @@ func TestGenerateCycloneDX_MissingLicense(t *testing.T) {
 	}
 }
 
+func TestGenerateCycloneDX_EmptyLockfile(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock empty config and lock
+	configStore.EXPECT().Load().Return(types.VendorConfig{Vendors: []types.VendorSpec{}}, nil)
+	lockStore.EXPECT().Load().Return(types.VendorLock{Vendors: []types.LockDetails{}}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "empty-project")
+	output, err := generator.Generate(SBOMFormatCycloneDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Parse JSON - should be valid even with no components
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse CycloneDX JSON: %v", err)
+	}
+
+	// Verify it's still a valid CycloneDX document
+	if result["bomFormat"] != "CycloneDX" {
+		t.Errorf("Expected bomFormat 'CycloneDX', got %v", result["bomFormat"])
+	}
+
+	// Components should be empty array
+	components := result["components"].([]interface{})
+	if len(components) != 0 {
+		t.Errorf("Expected 0 components for empty lockfile, got %d", len(components))
+	}
+}
+
 // ============================================================================
 // SPDX Tests
 // ============================================================================
@@ -318,6 +356,199 @@ func TestGenerateSPDX_ValidOutput(t *testing.T) {
 	rel := relationships[0].(map[string]interface{})
 	if rel["relationshipType"] != "DESCRIBES" {
 		t.Errorf("Expected relationshipType 'DESCRIBES', got %v", rel["relationshipType"])
+	}
+}
+
+func TestGenerateSPDX_RelationshipMatchesPackageID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "test-vendor", URL: "https://github.com/owner/test"},
+		},
+	}, nil)
+
+	// Mock lock
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "test-vendor", Ref: "main", CommitHash: "abc123"},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatSPDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse SPDX JSON: %v", err)
+	}
+
+	// Get package SPDXID
+	packages := result["packages"].([]interface{})
+	pkg := packages[0].(map[string]interface{})
+	packageSPDXID := pkg["SPDXID"].(string)
+
+	// Get relationship target
+	relationships := result["relationships"].([]interface{})
+	rel := relationships[0].(map[string]interface{})
+	relatedElement := rel["relatedSpdxElement"].(string)
+
+	// CRITICAL: The relationship must point to the actual package SPDXID
+	if packageSPDXID != relatedElement {
+		t.Errorf("Relationship target '%s' does not match package SPDXID '%s'", relatedElement, packageSPDXID)
+	}
+
+	// Also verify the format is correct
+	if !strings.HasPrefix(packageSPDXID, "SPDXRef-Package-") {
+		t.Errorf("Package SPDXID should start with 'SPDXRef-Package-', got '%s'", packageSPDXID)
+	}
+}
+
+func TestGenerateSPDX_SpecialCharactersInVendorName(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config with special characters in name
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "vendor@special/chars!", URL: "https://github.com/owner/special"},
+		},
+	}, nil)
+
+	// Mock lock
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor@special/chars!", Ref: "main", CommitHash: "abc123"},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatSPDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse SPDX JSON: %v", err)
+	}
+
+	// Verify package SPDXID is sanitized (no special chars except . and -)
+	packages := result["packages"].([]interface{})
+	pkg := packages[0].(map[string]interface{})
+	packageSPDXID := pkg["SPDXID"].(string)
+
+	// Should be sanitized: vendor@special/chars! -> vendor-special-chars-
+	expectedSPDXID := "SPDXRef-Package-vendor-special-chars-"
+	if packageSPDXID != expectedSPDXID {
+		t.Errorf("Expected sanitized SPDXID '%s', got '%s'", expectedSPDXID, packageSPDXID)
+	}
+
+	// Verify relationship still points to correct package
+	relationships := result["relationships"].([]interface{})
+	rel := relationships[0].(map[string]interface{})
+	relatedElement := rel["relatedSpdxElement"].(string)
+
+	if packageSPDXID != relatedElement {
+		t.Errorf("Relationship target '%s' does not match package SPDXID '%s'", relatedElement, packageSPDXID)
+	}
+}
+
+func TestGenerateSPDX_VendorMissingFromConfig(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock EMPTY config (vendor exists in lock but not in config)
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{},
+	}, nil)
+
+	// Mock lock with vendor
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "orphan-vendor", Ref: "main", CommitHash: "abc123"},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatSPDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse SPDX JSON: %v", err)
+	}
+
+	// Package should have NOASSERTION for download location
+	packages := result["packages"].([]interface{})
+	pkg := packages[0].(map[string]interface{})
+
+	if pkg["downloadLocation"] != "NOASSERTION" {
+		t.Errorf("Expected downloadLocation 'NOASSERTION' for vendor missing from config, got %v", pkg["downloadLocation"])
+	}
+}
+
+func TestGenerateSPDX_EmptyLockfile(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock empty config and lock
+	configStore.EXPECT().Load().Return(types.VendorConfig{Vendors: []types.VendorSpec{}}, nil)
+	lockStore.EXPECT().Load().Return(types.VendorLock{Vendors: []types.LockDetails{}}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "empty-project")
+	output, err := generator.Generate(SBOMFormatSPDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse SPDX JSON: %v", err)
+	}
+
+	// Verify it's still a valid SPDX document
+	if result["spdxVersion"] != "SPDX-2.3" {
+		t.Errorf("Expected spdxVersion 'SPDX-2.3', got %v", result["spdxVersion"])
+	}
+
+	// Packages should be empty array
+	packages := result["packages"].([]interface{})
+	if len(packages) != 0 {
+		t.Errorf("Expected 0 packages for empty lockfile, got %d", len(packages))
+	}
+
+	// Relationships should be empty array
+	relationships := result["relationships"].([]interface{})
+	if len(relationships) != 0 {
+		t.Errorf("Expected 0 relationships for empty lockfile, got %d", len(relationships))
 	}
 }
 
@@ -426,6 +657,13 @@ func TestGetPURL_Generic(t *testing.T) {
 			commitHash: "stu901",
 			expected:   "pkg:generic/private-lib@stu901",
 		},
+		{
+			name:       "Invalid URL",
+			vendorName: "bad-url-lib",
+			url:        "not-a-valid-url",
+			commitHash: "xyz000",
+			expected:   "pkg:generic/bad-url-lib@xyz000",
+		},
 	}
 
 	for _, tc := range tests {
@@ -453,6 +691,8 @@ func TestSanitizeSPDXID(t *testing.T) {
 		{"with space", "with-space"},
 		{"special@chars!", "special-chars-"},
 		{"CamelCase123", "CamelCase123"},
+		{"path/to/file", "path-to-file"},
+		{"under_score", "under-score"},
 	}
 
 	for _, tc := range tests {
@@ -502,7 +742,7 @@ func TestGenerate_LockfileLoadError(t *testing.T) {
 	fs := NewMockFileSystem(ctrl)
 
 	// Mock lockfile load failure
-	lockStore.EXPECT().Load().Return(types.VendorLock{}, &mockError{msg: "lockfile not found"})
+	lockStore.EXPECT().Load().Return(types.VendorLock{}, errors.New("lockfile not found"))
 
 	generator := NewSBOMGenerator(lockStore, configStore, fs, "test")
 	_, err := generator.Generate(SBOMFormatCycloneDX)
@@ -526,7 +766,7 @@ func TestGenerate_ConfigLoadError(t *testing.T) {
 
 	// Mock successful lock load, but config fails
 	lockStore.EXPECT().Load().Return(types.VendorLock{}, nil)
-	configStore.EXPECT().Load().Return(types.VendorConfig{}, &mockError{msg: "config not found"})
+	configStore.EXPECT().Load().Return(types.VendorConfig{}, errors.New("config not found"))
 
 	generator := NewSBOMGenerator(lockStore, configStore, fs, "test")
 	_, err := generator.Generate(SBOMFormatCycloneDX)
@@ -540,11 +780,49 @@ func TestGenerate_ConfigLoadError(t *testing.T) {
 	}
 }
 
-// mockError is a simple error implementation for testing
-type mockError struct {
-	msg string
-}
+// ============================================================================
+// Version Fallback Tests
+// ============================================================================
 
-func (e *mockError) Error() string {
-	return e.msg
+func TestGenerateCycloneDX_UsesCommitHashWhenNoVersionTag(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "no-tag-lib", URL: "https://github.com/owner/no-tag"},
+		},
+	}, nil)
+
+	// Mock lock WITHOUT SourceVersionTag
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "no-tag-lib", Ref: "main", CommitHash: "fullcommithash123"},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatCycloneDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse CycloneDX JSON: %v", err)
+	}
+
+	components := result["components"].([]interface{})
+	comp := components[0].(map[string]interface{})
+
+	// Version should fall back to commit hash when no tag
+	if comp["version"] != "fullcommithash123" {
+		t.Errorf("Expected version to be commit hash 'fullcommithash123', got %v", comp["version"])
+	}
 }
