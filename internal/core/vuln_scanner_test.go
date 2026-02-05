@@ -384,7 +384,7 @@ func TestCaching(t *testing.T) {
 	}
 
 	// Initially, cache should be empty
-	cacheKey := scanner.GetCacheKey(dep)
+	cacheKey := scanner.GetCacheKey(&dep)
 	cached, ok := scanner.loadFromCache(cacheKey)
 	if ok {
 		t.Error("Expected cache miss on first access")
@@ -437,7 +437,7 @@ func TestCaching_Expiration(t *testing.T) {
 		CommitHash: "expire123",
 	}
 
-	cacheKey := scanner.GetCacheKey(dep)
+	cacheKey := scanner.GetCacheKey(&dep)
 
 	// Save to cache
 	testVulns := []osvVuln{{ID: "CVE-EXPIRED"}}
@@ -917,7 +917,7 @@ func TestScan_NetworkError_UseStaleCache(t *testing.T) {
 	scanner.cacheDir = cacheDir
 	scanner.cacheTTL = 1 * time.Millisecond // Expired TTL
 
-	cacheKey := scanner.GetCacheKey(dep)
+	cacheKey := scanner.GetCacheKey(&dep)
 	scanner.saveToCache(cacheKey, []osvVuln{{ID: "CVE-STALE", Summary: "Stale cached vuln"}})
 
 	// Wait for cache to expire
@@ -1014,7 +1014,7 @@ func TestGetCacheKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			key := scanner.GetCacheKey(tt.dep)
+			key := scanner.GetCacheKey(&tt.dep)
 			if key == "" {
 				t.Error("Cache key should not be empty")
 			}

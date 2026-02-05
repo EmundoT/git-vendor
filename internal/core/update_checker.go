@@ -46,11 +46,12 @@ func (c *UpdateChecker) CheckUpdates() ([]types.UpdateCheckResult, error) {
 
 	// Build lock map for quick lookups
 	lockMap := make(map[string]map[string]types.LockDetails)
-	for _, entry := range lock.Vendors {
+	for i := range lock.Vendors {
+		entry := &lock.Vendors[i]
 		if lockMap[entry.Name] == nil {
 			lockMap[entry.Name] = make(map[string]types.LockDetails)
 		}
-		lockMap[entry.Name][entry.Ref] = entry
+		lockMap[entry.Name][entry.Ref] = *entry
 	}
 
 	var results []types.UpdateCheckResult

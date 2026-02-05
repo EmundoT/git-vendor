@@ -133,7 +133,8 @@ func (s *FileLockStore) GetHash(vendorName, ref string) string {
 		return ""
 	}
 
-	for _, l := range lock.Vendors {
+	for i := range lock.Vendors {
+		l := &lock.Vendors[i]
 		if l.Name == vendorName && l.Ref == ref {
 			return l.CommitHash
 		}

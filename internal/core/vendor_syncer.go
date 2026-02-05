@@ -366,7 +366,8 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 	var vendorStatuses []types.VendorStatus
 	allSynced := true
 
-	for _, lockEntry := range lock.Vendors {
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
 		vendorConfig, exists := configMap[lockEntry.Name]
 		if !exists {
 			// Vendor in lockfile but not in config (shouldn't happen normally)

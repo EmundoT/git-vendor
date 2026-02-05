@@ -62,9 +62,10 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
 	existingEntries := make(map[string]types.LockDetails)
-	for _, entry := range existingLock.Vendors {
+	for i := range existingLock.Vendors {
+		entry := &existingLock.Vendors[i]
 		key := entry.Name + "@" + entry.Ref
-		existingEntries[key] = entry
+		existingEntries[key] = *entry
 	}
 
 	lock := types.VendorLock{}
@@ -137,9 +138,10 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
 	existingEntries := make(map[string]types.LockDetails)
-	for _, entry := range existingLock.Vendors {
+	for i := range existingLock.Vendors {
+		entry := &existingLock.Vendors[i]
 		key := entry.Name + "@" + entry.Ref
-		existingEntries[key] = entry
+		existingEntries[key] = *entry
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
