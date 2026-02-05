@@ -134,6 +134,21 @@ func (mr *MockGitClientMockRecorder) GetHeadHash(dir interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHeadHash", reflect.TypeOf((*MockGitClient)(nil).GetHeadHash), dir)
 }
 
+// GetTagForCommit mocks base method.
+func (m *MockGitClient) GetTagForCommit(dir, commitHash string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetTagForCommit", dir, commitHash)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetTagForCommit indicates an expected call of GetTagForCommit.
+func (mr *MockGitClientMockRecorder) GetTagForCommit(dir, commitHash interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTagForCommit", reflect.TypeOf((*MockGitClient)(nil).GetTagForCommit), dir, commitHash)
+}
+
 // Init mocks base method.
 func (m *MockGitClient) Init(dir string) error {
 	m.ctrl.T.Helper()

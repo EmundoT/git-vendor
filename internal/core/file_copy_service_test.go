@@ -179,6 +179,7 @@ func TestCopyMappings_AutoNaming(t *testing.T) {
 	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
 	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
@@ -222,6 +223,7 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
 	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "src", isDir: true}, nil).AnyTimes()
 	fs.EXPECT().CopyDir(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 3, ByteCount: 300}, nil).AnyTimes()
@@ -253,6 +255,7 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
 	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	// Mock: Stat returns error (path not found)
 	fs.EXPECT().Stat(gomock.Any()).Return(nil, fmt.Errorf("path not found")).AnyTimes()
