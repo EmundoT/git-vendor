@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -208,11 +207,11 @@ func TestSyncVendor_StaleCommitHashDetection(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
-	if !contains(err.Error(), "no longer exists in the repository") {
-		t.Errorf("Expected stale commit error message, got: %v", err)
+	if !IsStaleCommit(err) {
+		t.Errorf("Expected StaleCommitError, got: %v", err)
 	}
-	if !contains(err.Error(), "git-vendor update") {
-		t.Errorf("Expected helpful update message, got: %v", err)
+	if !contains(err.Error(), "no longer exists") {
+		t.Errorf("Expected stale commit error message, got: %v", err)
 	}
 }
 
@@ -276,8 +275,8 @@ func TestSyncVendor_AllCheckoutsFail(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
-	if !contains(err.Error(), "checkout ref") {
-		t.Errorf("Expected checkout error, got: %v", err)
+	if !IsCheckoutError(err) {
+		t.Errorf("Expected CheckoutError, got: %v", err)
 	}
 }
 
@@ -1335,8 +1334,8 @@ func TestSync_GroupFilter_NonexistentGroup(t *testing.T) {
 		t.Fatal("Expected error for nonexistent group, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "group 'mobile' not found") {
-		t.Errorf("Expected 'group not found' error, got: %v", err)
+	if !IsGroupNotFound(err) {
+		t.Errorf("Expected GroupNotFoundError, got: %v", err)
 	}
 }
 
