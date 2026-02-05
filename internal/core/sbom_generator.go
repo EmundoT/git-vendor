@@ -45,7 +45,8 @@ type SBOMGenerator struct {
 }
 
 // NewSBOMGenerator creates a new SBOMGenerator with the given dependencies
-func NewSBOMGenerator(lockStore LockStore, configStore ConfigStore, fs FileSystem, projectName string) *SBOMGenerator {
+// The fs parameter is kept for backwards compatibility but is unused.
+func NewSBOMGenerator(lockStore LockStore, configStore ConfigStore, _ FileSystem, projectName string) *SBOMGenerator {
 	return &SBOMGenerator{
 		lockStore:   lockStore,
 		configStore: configStore,
@@ -506,7 +507,7 @@ func spdxToJSON(doc *spdx23.Document) ([]byte, error) {
 			refs := make([]spdxExternalRefJSON, 0, len(pkg.PackageExternalReferences))
 			for _, ref := range pkg.PackageExternalReferences {
 				refs = append(refs, spdxExternalRefJSON{
-					ReferenceCategory: string(ref.Category),
+					ReferenceCategory: ref.Category,
 					ReferenceType:     ref.RefType,
 					ReferenceLocator:  ref.Locator,
 				})

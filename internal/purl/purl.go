@@ -17,11 +17,12 @@ import (
 // Type represents the package type in a PURL
 type Type string
 
+// PURL type constants for common git hosting providers
 const (
-	TypeGitHub    Type = "github"
-	TypeGitLab    Type = "gitlab"
-	TypeBitbucket Type = "bitbucket"
-	TypeGeneric   Type = "generic"
+	TypeGitHub    Type = "github"    // GitHub repositories
+	TypeGitLab    Type = "gitlab"    // GitLab repositories (including self-hosted)
+	TypeBitbucket Type = "bitbucket" // Bitbucket repositories
+	TypeGeneric   Type = "generic"   // Generic/unknown repository type
 )
 
 // PURL represents a parsed Package URL
