@@ -45,6 +45,13 @@ type LockDetails struct {
 	LicensePath string            `yaml:"license_path"`          // Automatically managed
 	Updated     string            `yaml:"updated"`
 	FileHashes  map[string]string `yaml:"file_hashes,omitempty"` // path -> SHA-256 hash
+
+	// Metadata fields (schema v1.1)
+	LicenseSPDX      string `yaml:"license_spdx,omitempty"`       // SPDX license identifier
+	SourceVersionTag string `yaml:"source_version_tag,omitempty"` // Git tag matching commit (if any)
+	VendoredAt       string `yaml:"vendored_at,omitempty"`        // ISO 8601 timestamp of initial vendoring
+	VendoredBy       string `yaml:"vendored_by,omitempty"`        // Git user identity who vendored it
+	LastSyncedAt     string `yaml:"last_synced_at,omitempty"`     // ISO 8601 timestamp of most recent sync
 }
 
 // PathConflict represents a conflict between two vendors mapping to overlapping paths

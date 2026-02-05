@@ -214,6 +214,11 @@ func (m *Manager) GetLockHash(vendorName, ref string) string {
 	return m.syncer.GetLockHash(vendorName, ref)
 }
 
+// GetLock returns the current lockfile
+func (m *Manager) GetLock() (types.VendorLock, error) {
+	return m.syncer.lockStore.Load()
+}
+
 // Audit checks lockfile status
 func (m *Manager) Audit() {
 	m.syncer.Audit()
@@ -242,6 +247,11 @@ func (m *Manager) CheckUpdates() ([]types.UpdateCheckResult, error) {
 // Verify checks all vendored files against the lockfile
 func (m *Manager) Verify() (*types.VerifyResult, error) {
 	return m.syncer.Verify()
+}
+
+// MigrateLockfile updates an existing lockfile to add missing metadata fields
+func (m *Manager) MigrateLockfile() (int, error) {
+	return m.syncer.MigrateLockfile()
 }
 
 // DiffVendor shows commit differences between locked and latest versions

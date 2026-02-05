@@ -30,10 +30,10 @@ func TestParallelExecutor_SyncMultipleVendors(t *testing.T) {
 	}
 
 	// Mock sync function that simulates work
-	syncFunc := func(_ types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
+	syncFunc := func(_ types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 		// Simulate some work
 		time.Sleep(10 * time.Millisecond)
-		return map[string]string{"main": "newhash"}, CopyStats{FileCount: 10, ByteCount: 1000}, nil
+		return map[string]RefMetadata{"main": {CommitHash: "newhash"}}, CopyStats{FileCount: 10, ByteCount: 1000}, nil
 	}
 
 	// Create executor with 2 workers
@@ -117,12 +117,12 @@ func TestParallelExecutor_FailFast(t *testing.T) {
 	}
 
 	// Mock sync function that fails for vendor-2
-	syncFunc := func(v types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
+	syncFunc := func(v types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 		time.Sleep(10 * time.Millisecond)
 		if v.Name == "vendor-2" {
 			return nil, CopyStats{}, errors.New("simulated sync failure")
 		}
-		return map[string]string{"main": "newhash"}, CopyStats{FileCount: 5, ByteCount: 500}, nil
+		return map[string]RefMetadata{"main": {CommitHash: "newhash"}}, CopyStats{FileCount: 5, ByteCount: 500}, nil
 	}
 
 	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 2}, &SilentUICallback{})
@@ -184,7 +184,7 @@ func TestParallelExecutor_ThreadSafety(t *testing.T) {
 	var mu sync.Mutex
 
 	// Mock sync function that accesses shared state safely
-	syncFunc := func(_ types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
+	syncFunc := func(_ types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 		// Simulate work
 		time.Sleep(5 * time.Millisecond)
 
@@ -193,7 +193,7 @@ func TestParallelExecutor_ThreadSafety(t *testing.T) {
 		counter++
 		mu.Unlock()
 
-		return map[string]string{"main": "newhash"}, CopyStats{FileCount: 1, ByteCount: 100}, nil
+		return map[string]RefMetadata{"main": {CommitHash: "newhash"}}, CopyStats{FileCount: 1, ByteCount: 100}, nil
 	}
 
 	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 4}, &SilentUICallback{})
@@ -228,9 +228,9 @@ func TestParallelExecutor_ExecuteParallelUpdate(t *testing.T) {
 	}
 
 	// Mock update function
-	updateFunc := func(_ types.VendorSpec, _ SyncOptions) (map[string]string, error) {
+	updateFunc := func(_ types.VendorSpec, _ SyncOptions) (map[string]RefMetadata, error) {
 		time.Sleep(10 * time.Millisecond)
-		return map[string]string{"main": "updated-hash"}, nil
+		return map[string]RefMetadata{"main": {CommitHash: "updated-hash"}}, nil
 	}
 
 	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 2}, &SilentUICallback{})
@@ -252,8 +252,8 @@ func TestParallelExecutor_ExecuteParallelUpdate(t *testing.T) {
 		if result.Error != nil {
 			t.Errorf("Vendor %s had error: %v", result.Vendor.Name, result.Error)
 		}
-		if result.UpdatedRefs["main"] != "updated-hash" {
-			t.Errorf("Expected updated-hash, got %s", result.UpdatedRefs["main"])
+		if result.UpdatedRefs["main"].CommitHash != "updated-hash" {
+			t.Errorf("Expected updated-hash, got %s", result.UpdatedRefs["main"].CommitHash)
 		}
 	}
 }
@@ -262,7 +262,7 @@ func TestParallelExecutor_ExecuteParallelUpdate(t *testing.T) {
 func TestParallelExecutor_EmptyVendorList(t *testing.T) {
 	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 2}, &SilentUICallback{})
 
-	syncFunc := func(_ types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
+	syncFunc := func(_ types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 		return nil, CopyStats{}, nil
 	}
 
@@ -293,12 +293,12 @@ func TestParallelExecutor_SingleVendor(t *testing.T) {
 	var workerCount int
 	var mu sync.Mutex
 
-	syncFunc := func(_ types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
+	syncFunc := func(_ types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 		mu.Lock()
 		workerCount++
 		mu.Unlock()
 		time.Sleep(10 * time.Millisecond)
-		return map[string]string{"main": "newhash"}, CopyStats{FileCount: 1, ByteCount: 100}, nil
+		return map[string]RefMetadata{"main": {CommitHash: "newhash"}}, CopyStats{FileCount: 1, ByteCount: 100}, nil
 	}
 
 	// Request 4 workers but only have 1 vendor
@@ -333,9 +333,9 @@ func TestParallelExecutor_ForceOption(t *testing.T) {
 	// Track what lockedRefs were passed to sync function
 	var receivedLockedRefs map[string]string
 
-	syncFunc := func(_ types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
+	syncFunc := func(_ types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 		receivedLockedRefs = lockedRefs
-		return map[string]string{"main": "new-hash"}, CopyStats{}, nil
+		return map[string]RefMetadata{"main": {CommitHash: "new-hash"}}, CopyStats{}, nil
 	}
 
 	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 1}, &SilentUICallback{})
