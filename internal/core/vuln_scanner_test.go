@@ -220,7 +220,7 @@ func TestQueryOSV_WithKnownCVE(t *testing.T) {
 		SourceVersionTag: "v1.2.3",
 	}
 
-	vulns, err := scanner.queryOSV(dep, "https://github.com/owner/repo")
+	vulns, err := scanner.queryOSV(&dep, "https://github.com/owner/repo")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestQueryOSV_WithKnownCVE(t *testing.T) {
 
 func TestQueryOSV_NoCVEs(t *testing.T) {
 	// Create mock OSV server that returns no vulnerabilities
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		response := osvResponse{
 			Vulns: []osvVuln{},
 		}
@@ -272,7 +272,7 @@ func TestQueryOSV_NoCVEs(t *testing.T) {
 		CommitHash: "xyz789abc",
 	}
 
-	vulns, err := scanner.queryOSV(dep, "https://github.com/owner/clean-repo")
+	vulns, err := scanner.queryOSV(&dep, "https://github.com/owner/clean-repo")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestQueryOSV_NoCVEs(t *testing.T) {
 
 func TestQueryOSV_RateLimited(t *testing.T) {
 	// Create mock OSV server that returns 429
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Retry-After", "60")
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
@@ -313,7 +313,7 @@ func TestQueryOSV_RateLimited(t *testing.T) {
 		CommitHash: "def456ghi",
 	}
 
-	_, err := scanner.queryOSV(dep, "https://github.com/owner/repo")
+	_, err := scanner.queryOSV(&dep, "https://github.com/owner/repo")
 	if err == nil {
 		t.Fatal("Expected rate limit error, got nil")
 	}
@@ -325,7 +325,7 @@ func TestQueryOSV_RateLimited(t *testing.T) {
 
 func TestQueryOSV_MalformedResponse(t *testing.T) {
 	// Create mock OSV server that returns invalid JSON
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte("not valid json"))
 	}))
@@ -354,7 +354,7 @@ func TestQueryOSV_MalformedResponse(t *testing.T) {
 		CommitHash: "mal123",
 	}
 
-	_, err := scanner.queryOSV(dep, "https://github.com/owner/repo")
+	_, err := scanner.queryOSV(&dep, "https://github.com/owner/repo")
 	if err == nil {
 		t.Fatal("Expected error for malformed JSON, got nil")
 	}
@@ -493,7 +493,7 @@ func TestScan_EmptyLockfile(t *testing.T) {
 
 func TestScan_NoVulnerabilities(t *testing.T) {
 	// Create mock OSV server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		response := osvBatchResponse{Results: []osvResponse{{Vulns: []osvVuln{}}}}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
@@ -559,7 +559,7 @@ func TestScan_NoVulnerabilities(t *testing.T) {
 
 func TestScan_WithVulnerabilities(t *testing.T) {
 	// Create mock OSV server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		response := osvBatchResponse{
 			Results: []osvResponse{
 				{
@@ -645,7 +645,7 @@ func TestScan_WithVulnerabilities(t *testing.T) {
 func TestScan_MultipleVendors(t *testing.T) {
 	// Create mock OSV server that returns different results per query
 	requestCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requestCount++
 		// Return batch response with results for 3 vendors
 		response := osvBatchResponse{
@@ -721,7 +721,7 @@ func TestScan_MultipleVendors(t *testing.T) {
 
 func TestScan_FailOnThreshold(t *testing.T) {
 	// Create mock OSV server with a high severity vuln
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		response := osvBatchResponse{
 			Results: []osvResponse{
 				{
@@ -796,7 +796,7 @@ func TestScan_FailOnThreshold(t *testing.T) {
 // ============================================================================
 
 func TestScan_JSONOutput(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		response := osvBatchResponse{
 			Results: []osvResponse{
 				{
@@ -924,7 +924,7 @@ func TestScan_NetworkError_UseStaleCache(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Verify stale cache can still be loaded
-	staleVulns, err := scanner.loadStaleCache(dep)
+	staleVulns, err := scanner.loadStaleCache(&dep)
 	if err != nil {
 		t.Fatalf("Failed to load stale cache: %v", err)
 	}

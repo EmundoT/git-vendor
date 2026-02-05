@@ -232,7 +232,8 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 	vulnResults, batchErr := s.batchQuery(lock.Vendors, vendorURLs)
 
 	// Process each vendor
-	for _, lockEntry := range lock.Vendors {
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
 		depScan := DependencyScan{
 			Name:   lockEntry.Name,
 			Commit: lockEntry.CommitHash,
@@ -241,7 +242,8 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 
 		// Set version if available
 		if lockEntry.SourceVersionTag != "" {
-			depScan.Version = &lockEntry.SourceVersionTag
+			version := lockEntry.SourceVersionTag
+			depScan.Version = &version
 		}
 
 		// Check batch results
@@ -320,7 +322,7 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 }
 
 // queryOSV queries OSV.dev for vulnerabilities (single query)
-func (s *VulnScanner) queryOSV(dep types.LockDetails, repoURL string) ([]osvVuln, error) {
+func (s *VulnScanner) queryOSV(dep *types.LockDetails, repoURL string) ([]osvVuln, error) {
 	// Build cache key
 	cacheKey := s.getCacheKey(dep)
 
@@ -361,7 +363,10 @@ func (s *VulnScanner) queryOSV(dep types.LockDetails, repoURL string) ([]osvVuln
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("OSV API error: %d (failed to read body: %w)", resp.StatusCode, err)
+		}
 		return nil, fmt.Errorf("OSV API error: %d - %s", resp.StatusCode, string(body))
 	}
 
@@ -370,12 +375,9 @@ func (s *VulnScanner) queryOSV(dep types.LockDetails, repoURL string) ([]osvVuln
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
-	// Cache result
-	if err := s.saveToCache(cacheKey, result.Vulns); err != nil {
-		// Log but don't fail on cache write errors
-		// In a real implementation, this could use a logger
-		_ = err
-	}
+	// Cache result (ignore cache write errors - non-fatal)
+	//nolint:errcheck // Cache write errors are non-fatal
+	s.saveToCache(cacheKey, result.Vulns)
 
 	return result.Vulns, nil
 }
@@ -385,29 +387,29 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 	results := make(map[string][]osvVuln)
 
 	// First, check cache for all deps
-	var uncachedDeps []types.LockDetails
-	for _, dep := range deps {
-		cacheKey := s.getCacheKey(dep)
+	var uncachedIdxs []int
+	for i := range deps {
+		cacheKey := s.getCacheKey(&deps[i])
 		if vulns, ok := s.loadFromCache(cacheKey); ok {
-			results[dep.Name] = vulns
+			results[deps[i].Name] = vulns
 		} else {
-			uncachedDeps = append(uncachedDeps, dep)
+			uncachedIdxs = append(uncachedIdxs, i)
 		}
 	}
 
 	// If all cached, return early
-	if len(uncachedDeps) == 0 {
+	if len(uncachedIdxs) == 0 {
 		return results, nil
 	}
 
 	// Build batch request for uncached deps
-	queries := make([]osvQuery, 0, len(uncachedDeps))
-	depMap := make(map[int]types.LockDetails) // Map query index to dep
+	queries := make([]osvQuery, 0, len(uncachedIdxs))
+	depIdxMap := make(map[int]int) // Map query index to original deps index
 
-	for i, dep := range uncachedDeps {
-		query := s.buildQuery(dep, vendorURLs[dep.Name])
+	for queryIdx, depIdx := range uncachedIdxs {
+		query := s.buildQuery(&deps[depIdx], vendorURLs[deps[depIdx].Name])
 		queries = append(queries, query)
-		depMap[i] = dep
+		depIdxMap[queryIdx] = depIdx
 	}
 
 	// Split into batches if needed
@@ -450,9 +452,12 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			cancel()
+			if err != nil {
+				return results, fmt.Errorf("OSV batch API error: %d (failed to read body: %w)", resp.StatusCode, err)
+			}
 			return results, fmt.Errorf("OSV batch API error: %d - %s", resp.StatusCode, string(body))
 		}
 
@@ -466,13 +471,14 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 		cancel()
 
 		// Process results and cache
-		for i, osvResp := range batchResp.Results {
+		for i := range batchResp.Results {
 			globalIdx := batchStart + i
-			if dep, ok := depMap[globalIdx]; ok {
-				results[dep.Name] = osvResp.Vulns
-				// Cache individual results
-				cacheKey := s.getCacheKey(dep)
-				_ = s.saveToCache(cacheKey, osvResp.Vulns)
+			if depIdx, ok := depIdxMap[globalIdx]; ok {
+				results[deps[depIdx].Name] = batchResp.Results[i].Vulns
+				// Cache individual results (ignore cache write errors)
+				cacheKey := s.getCacheKey(&deps[depIdx])
+				//nolint:errcheck // Cache write errors are non-fatal
+				s.saveToCache(cacheKey, batchResp.Results[i].Vulns)
 			}
 		}
 	}
@@ -481,7 +487,7 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 }
 
 // buildQuery creates an OSV query for a dependency
-func (s *VulnScanner) buildQuery(dep types.LockDetails, repoURL string) osvQuery {
+func (s *VulnScanner) buildQuery(dep *types.LockDetails, repoURL string) osvQuery {
 	// Try PURL if we have version info
 	if dep.SourceVersionTag != "" && repoURL != "" {
 		purl := s.buildPURL(repoURL, dep.SourceVersionTag)
@@ -544,7 +550,7 @@ func (s *VulnScanner) buildPURL(repoURL, version string) string {
 }
 
 // getCacheKey generates a safe cache key for a dependency
-func (s *VulnScanner) getCacheKey(dep types.LockDetails) string {
+func (s *VulnScanner) getCacheKey(dep *types.LockDetails) string {
 	// Create a deterministic key based on commit and version
 	key := dep.CommitHash
 	if dep.SourceVersionTag != "" {
@@ -604,7 +610,7 @@ func (s *VulnScanner) loadFromCache(key string) ([]osvVuln, bool) {
 }
 
 // loadStaleCache loads cached data even if expired (for offline use)
-func (s *VulnScanner) loadStaleCache(dep types.LockDetails) ([]osvVuln, error) {
+func (s *VulnScanner) loadStaleCache(dep *types.LockDetails) ([]osvVuln, error) {
 	key := s.getCacheKey(dep)
 	path := filepath.Join(s.cacheDir, key)
 
@@ -650,7 +656,8 @@ func (s *VulnScanner) saveToCache(key string, vulns []osvVuln) error {
 func (s *VulnScanner) convertVulns(osvVulns []osvVuln) []Vulnerability {
 	vulns := make([]Vulnerability, 0, len(osvVulns))
 
-	for _, ov := range osvVulns {
+	for i := range osvVulns {
+		ov := &osvVulns[i]
 		v := Vulnerability{
 			ID:      ov.ID,
 			Aliases: ov.Aliases,
@@ -658,7 +665,8 @@ func (s *VulnScanner) convertVulns(osvVulns []osvVuln) []Vulnerability {
 		}
 
 		// Extract CVSS score and severity
-		for _, sev := range ov.Severity {
+		for j := range ov.Severity {
+			sev := &ov.Severity[j]
 			if sev.Type == "CVSS_V3" || sev.Type == "CVSS_V2" {
 				score := parseCVSSScore(sev.Score)
 				v.CVSSScore = score
@@ -772,16 +780,14 @@ func (s *VulnScanner) determineResult(result *ScanResult, failOn string) string 
 	thresholdExceeded := false
 	if failOn != "" {
 		thresholdLevel := SeverityThreshold[strings.ToUpper(failOn)]
-		if vulns.Critical > 0 && SeverityThreshold["CRITICAL"] >= thresholdLevel {
+		switch {
+		case vulns.Critical > 0 && SeverityThreshold["CRITICAL"] >= thresholdLevel:
 			thresholdExceeded = true
-		}
-		if vulns.High > 0 && SeverityThreshold["HIGH"] >= thresholdLevel {
+		case vulns.High > 0 && SeverityThreshold["HIGH"] >= thresholdLevel:
 			thresholdExceeded = true
-		}
-		if vulns.Medium > 0 && SeverityThreshold["MEDIUM"] >= thresholdLevel {
+		case vulns.Medium > 0 && SeverityThreshold["MEDIUM"] >= thresholdLevel:
 			thresholdExceeded = true
-		}
-		if vulns.Low > 0 && SeverityThreshold["LOW"] >= thresholdLevel {
+		case vulns.Low > 0 && SeverityThreshold["LOW"] >= thresholdLevel:
 			thresholdExceeded = true
 		}
 	}
@@ -789,13 +795,14 @@ func (s *VulnScanner) determineResult(result *ScanResult, failOn string) string 
 	result.Summary.ThresholdExceeded = thresholdExceeded
 
 	// Determine result
-	if vulns.Total > 0 {
+	switch {
+	case vulns.Total > 0:
 		return "FAIL"
-	}
-	if result.Summary.NotScanned > 0 {
+	case result.Summary.NotScanned > 0:
 		return "WARN"
+	default:
+		return "PASS"
 	}
-	return "PASS"
 }
 
 // Helper to check if error is rate limiting
@@ -824,5 +831,5 @@ func (s *VulnScanner) ClearCache() error {
 
 // GetCacheKey returns the cache key for testing purposes
 func (s *VulnScanner) GetCacheKey(dep types.LockDetails) string {
-	return s.getCacheKey(dep)
+	return s.getCacheKey(&dep)
 }

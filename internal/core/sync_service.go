@@ -497,6 +497,7 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 	}
 
 	// Get version tag for this commit (if any)
+	//nolint:errcheck // Version tag is optional, empty string is acceptable fallback
 	versionTag, _ := s.gitClient.GetTagForCommit(tempDir, hash)
 
 	// Copy license file (don't count in stats)
