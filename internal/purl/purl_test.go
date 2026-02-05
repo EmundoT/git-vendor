@@ -294,7 +294,7 @@ func TestPURL_ToOSVPackage(t *testing.T) {
 
 // Edge case tests
 func TestFromGitURL_EdgeCases(t *testing.T) {
-	t.Run("very long URL", func(t *testing.T) {
+	t.Run("very long URL", func(_ *testing.T) {
 		longName := "repo-" + string(make([]byte, 500))
 		for i := range longName {
 			if longName[i] == 0 {

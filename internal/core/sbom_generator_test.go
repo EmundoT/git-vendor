@@ -1191,7 +1191,7 @@ func TestGenerate_ConcurrentSafety(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(2) // One for CycloneDX, one for SPDX
 
-		go func(idx int) {
+		go func(_ int) {
 			defer wg.Done()
 
 			ctrl := gomock.NewController(t)
@@ -1222,7 +1222,7 @@ func TestGenerate_ConcurrentSafety(t *testing.T) {
 			}
 		}(i)
 
-		go func(idx int) {
+		go func(_ int) {
 			defer wg.Done()
 
 			ctrl := gomock.NewController(t)
