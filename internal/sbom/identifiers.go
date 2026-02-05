@@ -6,14 +6,29 @@ package sbom
 import (
 	"fmt"
 	"strings"
+
+	"github.com/EmundoT/git-vendor/internal/hostdetect"
 )
 
+// MaxSPDXIDLength is the maximum length for SPDX identifier components.
+// While SPDX spec doesn't define a max, some tools have practical limits.
+// We use 128 characters as a reasonable limit that works with most tools.
+const MaxSPDXIDLength = 128
+
 // VendorIdentity represents the unique identity of a vendored dependency.
-// A vendor may track multiple refs, so the identity includes both name and ref.
+// A vendor may track multiple refs, so the identity includes both name and commit hash.
 type VendorIdentity struct {
-	Name       string // Vendor name from config
-	Ref        string // Git ref (branch, tag, commit)
-	CommitHash string // Full commit hash for the ref
+	// Name is the vendor name from config (required for identification).
+	Name string
+
+	// Ref is the git ref (branch, tag, commit) being tracked.
+	// This field is preserved for informational/debugging purposes but is NOT
+	// used in identifier generation. The CommitHash provides uniqueness instead,
+	// because the same ref can point to different commits over time.
+	Ref string
+
+	// CommitHash is the full commit SHA for the ref (required for uniqueness).
+	CommitHash string
 }
 
 // ShortHash returns the first 7 characters of the commit hash.
@@ -46,6 +61,8 @@ func GenerateSPDXID(v VendorIdentity) string {
 // SPDX IDs must match the pattern [a-zA-Z0-9.-]+
 // Invalid characters are replaced with hyphens.
 // Empty input returns "unknown" to prevent invalid IDs.
+// Very long inputs are truncated to MaxSPDXIDLength to ensure compatibility
+// with SBOM tools that may have practical length limits.
 func SanitizeSPDXID(s string) string {
 	if s == "" {
 		return "unknown"
@@ -62,7 +79,14 @@ func SanitizeSPDXID(s string) string {
 		}
 	}
 
-	return result.String()
+	sanitized := result.String()
+
+	// Truncate if exceeds max length
+	if len(sanitized) > MaxSPDXIDLength {
+		sanitized = sanitized[:MaxSPDXIDLength]
+	}
+
+	return sanitized
 }
 
 // isValidSPDXChar returns true if the rune is valid in an SPDX identifier.
@@ -89,30 +113,26 @@ type SupplierInfo struct {
 }
 
 // ExtractSupplier extracts supplier information from a repository URL.
-// Returns nil if the URL is empty or invalid.
+// Uses the shared hostdetect package for consistent URL parsing across the codebase.
+// Returns nil if the URL is empty, invalid, or from an unknown provider.
+//
+// Supported providers: GitHub, GitLab, Bitbucket (including self-hosted instances).
 func ExtractSupplier(repoURL string) *SupplierInfo {
-	if repoURL == "" {
+	info := hostdetect.FromURL(repoURL)
+	if info == nil {
 		return nil
 	}
 
-	// Parse URL to extract owner
-	parts := strings.Split(strings.Trim(repoURL, "/"), "/")
-	// Looking for pattern like: https://github.com/owner/repo
-	// Parts would be: ["https:", "", "github.com", "owner", "repo"]
-	for i, part := range parts {
-		if strings.Contains(part, "github.com") ||
-			strings.Contains(part, "gitlab.com") ||
-			strings.Contains(part, "bitbucket.org") {
-			if i+1 < len(parts) {
-				return &SupplierInfo{
-					Name: parts[i+1],
-					URL:  repoURL,
-				}
-			}
-		}
+	// Only return supplier info for known providers
+	// Unknown providers don't have reliable owner/org extraction
+	if !hostdetect.IsKnownProvider(info.Provider) {
+		return nil
 	}
 
-	return nil
+	return &SupplierInfo{
+		Name: info.Owner,
+		URL:  repoURL,
+	}
 }
 
 // MetadataComment builds a structured comment from git-vendor metadata.

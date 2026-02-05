@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -27,13 +28,23 @@ const (
 	SBOMFormatSPDX SBOMFormat = "spdx"
 )
 
-// SBOMOptions holds configuration for SBOM generation
+// SBOMOptions holds configuration for SBOM generation.
+// All fields are optional with sensible defaults.
 type SBOMOptions struct {
-	// ProjectName is the name of the project being documented
+	// ProjectName is the name of the project being documented.
+	// If empty, defaults to "unknown-project".
+	// Used as: CycloneDX metadata.component.name, SPDX document name prefix.
 	ProjectName string
-	// SPDXNamespace is the base URL for SPDX document namespaces (optional)
+
+	// SPDXNamespace is the base URL for SPDX document namespaces.
+	// If empty, defaults to "https://spdx.org/spdxdocs".
+	// The final namespace will be: {SPDXNamespace}/{ProjectName}/{UUID}
 	SPDXNamespace string
-	// Validate enables schema validation of generated SBOM (optional)
+
+	// Validate enables schema validation of generated SBOM.
+	// When true, the generated SBOM is parsed back to verify it's valid.
+	// For CycloneDX: round-trip through cyclonedx-go decoder.
+	// For SPDX: JSON structure validation with required field checks.
 	Validate bool
 }
 
@@ -318,18 +329,19 @@ func (g *SBOMGenerator) buildSPDXPackage(vendor *types.LockDetails, repoURL stri
 	}
 	spdxID := common.ElementID(sbom.GenerateSPDXID(identity))
 
+	// Determine download location - use repo URL or NOASSERTION
+	downloadLocation := "NOASSERTION"
+	if repoURL != "" {
+		downloadLocation = repoURL
+	}
+
 	pkg := &spdx23.Package{
-		PackageName:           vendor.Name,
-		PackageSPDXIdentifier: spdxID,
-		PackageVersion:        packageVersion,
-		PackageDownloadLocation: func() string {
-			if repoURL != "" {
-				return repoURL
-			}
-			return "NOASSERTION"
-		}(),
-		FilesAnalyzed:        false,
-		PackageCopyrightText: "NOASSERTION",
+		PackageName:             vendor.Name,
+		PackageSPDXIdentifier:   spdxID,
+		PackageVersion:          packageVersion,
+		PackageDownloadLocation: downloadLocation,
+		FilesAnalyzed:           false,
+		PackageCopyrightText:    "NOASSERTION",
 	}
 
 	// Add license
@@ -382,15 +394,16 @@ func (g *SBOMGenerator) buildSPDXPackage(vendor *types.LockDetails, repoURL stri
 	return pkg
 }
 
-// validateSBOM performs schema validation on the generated SBOM
-// Currently a no-op but ready for implementation when validation libraries are added
+// validateSBOM performs schema validation on the generated SBOM.
+// This validates the output is well-formed and contains required fields.
+//
+// For CycloneDX: round-trip decoding through the cyclonedx-go library.
+// For SPDX: JSON structure validation plus required field presence checks.
 func (g *SBOMGenerator) validateSBOM(data []byte, format SBOMFormat) error {
 	switch format {
 	case SBOMFormatCycloneDX:
-		// Validate by attempting to decode
-		var buf strings.Builder
-		buf.Write(data)
-		decoder := cdx.NewBOMDecoder(strings.NewReader(buf.String()), cdx.BOMFileFormatJSON)
+		// Validate by attempting to decode (round-trip validation)
+		decoder := cdx.NewBOMDecoder(bytes.NewReader(data), cdx.BOMFileFormatJSON)
 		var testBOM cdx.BOM
 		if err := decoder.Decode(&testBOM); err != nil {
 			return fmt.Errorf("CycloneDX validation: %w", err)
@@ -401,14 +414,70 @@ func (g *SBOMGenerator) validateSBOM(data []byte, format SBOMFormat) error {
 		if err := json.Unmarshal(data, &testDoc); err != nil {
 			return fmt.Errorf("SPDX validation: %w", err)
 		}
-		// Additional validation: check required fields
-		if testDoc.SPDXVersion == "" {
-			return fmt.Errorf("SPDX validation: missing spdxVersion")
-		}
-		if testDoc.SPDXID == "" {
-			return fmt.Errorf("SPDX validation: missing SPDXID")
+		// Validate required fields per SPDX 2.3 spec
+		if err := validateSPDXRequiredFields(&testDoc); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// validateSPDXRequiredFields checks that all required SPDX 2.3 fields are present.
+// See: https://spdx.github.io/spdx-spec/v2.3/document-creation-information/
+func validateSPDXRequiredFields(doc *spdxJSON) error {
+	// Document-level required fields
+	if doc.SPDXVersion == "" {
+		return fmt.Errorf("SPDX validation: missing spdxVersion")
+	}
+	if doc.SPDXID == "" {
+		return fmt.Errorf("SPDX validation: missing SPDXID")
+	}
+	if doc.DataLicense == "" {
+		return fmt.Errorf("SPDX validation: missing dataLicense")
+	}
+	if doc.Name == "" {
+		return fmt.Errorf("SPDX validation: missing name")
+	}
+	if doc.DocumentNamespace == "" {
+		return fmt.Errorf("SPDX validation: missing documentNamespace")
+	}
+
+	// CreationInfo required fields
+	if doc.CreationInfo.Created == "" {
+		return fmt.Errorf("SPDX validation: missing creationInfo.created")
+	}
+	if len(doc.CreationInfo.Creators) == 0 {
+		return fmt.Errorf("SPDX validation: missing creationInfo.creators")
+	}
+
+	// Package-level validation
+	for i, pkg := range doc.Packages {
+		if pkg.SPDXID == "" {
+			return fmt.Errorf("SPDX validation: package[%d] missing SPDXID", i)
+		}
+		if pkg.Name == "" {
+			return fmt.Errorf("SPDX validation: package[%d] missing name", i)
+		}
+		if pkg.DownloadLocation == "" {
+			return fmt.Errorf("SPDX validation: package[%d] missing downloadLocation", i)
+		}
+	}
+
+	// Relationship validation: ensure targets exist
+	packageIDs := make(map[string]bool)
+	packageIDs[doc.SPDXID] = true // Document ID is valid target
+	for _, pkg := range doc.Packages {
+		packageIDs[pkg.SPDXID] = true
+	}
+	for i, rel := range doc.Relationships {
+		if !packageIDs[rel.SPDXElementID] {
+			return fmt.Errorf("SPDX validation: relationship[%d] references unknown element %q", i, rel.SPDXElementID)
+		}
+		if !packageIDs[rel.RelatedSPDXElement] {
+			return fmt.Errorf("SPDX validation: relationship[%d] references unknown element %q", i, rel.RelatedSPDXElement)
+		}
+	}
+
 	return nil
 }
 
