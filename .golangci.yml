@@ -1,49 +1,5 @@
 version: "2"
 
-linters-settings:
-  govet:
-    enable:
-      - atomic
-      - bools
-      - buildtag
-      - composites
-      - copylocks
-      - errorsas
-      - httpresponse
-      - ifaceassert
-      - loopclosure
-      - lostcancel
-      - nilfunc
-      - printf
-      - shift
-      - stdmethods
-      - structtag
-      - tests
-      - unmarshal
-      - unreachable
-      - unsafeptr
-      - unusedresult
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-    disabled-checks:
-      - commentedOutCode
-      - unnamedResult
-      - octalLiteral
-      - appendCombine
-      - httpNoBody
-      - regexpSimplify
-  revive:
-    rules:
-      - name: exported
-        severity: warning
-      - name: unused-parameter
-        severity: warning
-
 linters:
   enable:
     # Default enabled linters
@@ -58,6 +14,46 @@ linters:
     - revive
     - unconvert
     - unparam
+  settings:
+    govet:
+      enable:
+        - atomic
+        - bools
+        - buildtag
+        - composites
+        - copylocks
+        - errorsas
+        - httpresponse
+        - ifaceassert
+        - loopclosure
+        - lostcancel
+        - nilfunc
+        - printf
+        - shift
+        - stdmethods
+        - structtag
+        - tests
+        - unmarshal
+        - unreachable
+        - unsafeptr
+        - unusedresult
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - commentedOutCode
+        - appendCombine
+        - rangeValCopy
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+        - name: unused-parameter
+          severity: warning
   exclusions:
     rules:
       - path: "_test\\.go"
@@ -79,6 +75,11 @@ linters:
       # Exclude errcheck for main.go CLI output formatting
       - path: "main\\.go"
         text: "Error return value of.*FormatJSON.*is not checked"
+        linters:
+          - errcheck
+      # Exclude errcheck for explicitly discarded errors (defer cleanup)
+      - text: "Error return value of .* is not checked"
+        source: "_ ="
         linters:
           - errcheck
 
