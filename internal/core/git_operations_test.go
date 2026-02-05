@@ -221,7 +221,9 @@ func configureGitUser(t *testing.T, dir string) {
 
 func runGitCommand(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	// Disable commit signing for tests to avoid environment-specific failures
+	fullArgs := append([]string{"-c", "commit.gpgsign=false"}, args...)
+	cmd := exec.Command("git", fullArgs...)
 	cmd.Dir = dir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v failed: %v\nOutput: %s", args, err, string(output))
