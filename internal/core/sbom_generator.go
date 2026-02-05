@@ -3,11 +3,12 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/EmundoT/git-vendor/internal/purl"
+	"github.com/EmundoT/git-vendor/internal/sbom"
 	"github.com/EmundoT/git-vendor/internal/types"
 	"github.com/EmundoT/git-vendor/internal/version"
 	"github.com/google/uuid"
@@ -26,12 +27,21 @@ const (
 	SBOMFormatSPDX SBOMFormat = "spdx"
 )
 
+// SBOMOptions holds configuration for SBOM generation
+type SBOMOptions struct {
+	// ProjectName is the name of the project being documented
+	ProjectName string
+	// SPDXNamespace is the base URL for SPDX document namespaces (optional)
+	SPDXNamespace string
+	// Validate enables schema validation of generated SBOM (optional)
+	Validate bool
+}
+
 // SBOMGenerator generates Software Bill of Materials from vendor lockfiles
 type SBOMGenerator struct {
 	lockStore   LockStore
 	configStore ConfigStore
-	fs          FileSystem
-	projectName string
+	options     SBOMOptions
 }
 
 // NewSBOMGenerator creates a new SBOMGenerator with the given dependencies
@@ -39,8 +49,19 @@ func NewSBOMGenerator(lockStore LockStore, configStore ConfigStore, fs FileSyste
 	return &SBOMGenerator{
 		lockStore:   lockStore,
 		configStore: configStore,
-		fs:          fs,
-		projectName: projectName,
+		options: SBOMOptions{
+			ProjectName: sbom.ValidateProjectName(projectName),
+		},
+	}
+}
+
+// NewSBOMGeneratorWithOptions creates a new SBOMGenerator with full options
+func NewSBOMGeneratorWithOptions(lockStore LockStore, configStore ConfigStore, opts SBOMOptions) *SBOMGenerator {
+	opts.ProjectName = sbom.ValidateProjectName(opts.ProjectName)
+	return &SBOMGenerator{
+		lockStore:   lockStore,
+		configStore: configStore,
+		options:     opts,
 	}
 }
 
@@ -62,14 +83,28 @@ func (g *SBOMGenerator) Generate(format SBOMFormat) ([]byte, error) {
 		urlMap[v.Name] = v.URL
 	}
 
+	var output []byte
 	switch format {
 	case SBOMFormatCycloneDX:
-		return g.generateCycloneDX(&lock, urlMap)
+		output, err = g.generateCycloneDX(&lock, urlMap)
 	case SBOMFormatSPDX:
-		return g.generateSPDX(&lock, urlMap)
+		output, err = g.generateSPDX(&lock, urlMap)
 	default:
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Schema validation (if enabled)
+	if g.options.Validate {
+		if validationErr := g.validateSBOM(output, format); validationErr != nil {
+			return nil, fmt.Errorf("schema validation failed: %w", validationErr)
+		}
+	}
+
+	return output, nil
 }
 
 // generateCycloneDX creates a CycloneDX 1.5 JSON SBOM
@@ -78,23 +113,29 @@ func (g *SBOMGenerator) generateCycloneDX(lock *types.VendorLock, urlMap map[str
 	bom.SerialNumber = "urn:uuid:" + uuid.New().String()
 	bom.Version = 1
 
-	// Set metadata
+	// Set metadata with tool as component (preferred over deprecated Tools field)
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	toolVersion := version.GetVersion()
 	bom.Metadata = &cdx.Metadata{
 		Timestamp: timestamp,
 		Tools: &cdx.ToolsChoice{
-			Tools: &[]cdx.Tool{
+			Components: &[]cdx.Component{
 				{
-					Vendor:  "git-vendor",
+					Type:    cdx.ComponentTypeApplication,
 					Name:    "git-vendor",
 					Version: toolVersion,
+					ExternalReferences: &[]cdx.ExternalReference{
+						{
+							Type: cdx.ERTypeWebsite,
+							URL:  "https://github.com/EmundoT/git-vendor",
+						},
+					},
 				},
 			},
 		},
 		Component: &cdx.Component{
 			Type:    cdx.ComponentTypeApplication,
-			Name:    g.projectName,
+			Name:    g.options.ProjectName,
 			Version: "local",
 		},
 	}
@@ -127,19 +168,27 @@ func (g *SBOMGenerator) buildCycloneDXComponent(vendor *types.LockDetails, repoU
 		componentVersion = vendor.SourceVersionTag
 	}
 
-	// Build BOM ref
-	shortHash := vendor.CommitHash
-	if len(shortHash) > 7 {
-		shortHash = shortHash[:7]
+	// Build unique BOM ref using the shared identifier utility
+	identity := sbom.VendorIdentity{
+		Name:       vendor.Name,
+		Ref:        vendor.Ref,
+		CommitHash: vendor.CommitHash,
 	}
-	bomRef := fmt.Sprintf("%s@%s", vendor.Name, shortHash)
+	bomRef := sbom.GenerateBOMRef(identity)
+
+	// Generate PURL using the shared purl package
+	purlObj := purl.FromGitURLWithFallback(repoURL, vendor.CommitHash, vendor.Name)
+	purlStr := ""
+	if purlObj != nil {
+		purlStr = purlObj.String()
+	}
 
 	component := cdx.Component{
 		Type:       cdx.ComponentTypeLibrary,
 		BOMRef:     bomRef,
 		Name:       vendor.Name,
 		Version:    componentVersion,
-		PackageURL: g.getPURL(vendor.Name, repoURL, vendor.CommitHash),
+		PackageURL: purlStr,
 	}
 
 	// Add license if available
@@ -161,13 +210,26 @@ func (g *SBOMGenerator) buildCycloneDXComponent(vendor *types.LockDetails, repoU
 		component.Hashes = &hashes
 	}
 
-	// Add external reference for VCS
+	// Build external references
+	var extRefs []cdx.ExternalReference
+
+	// Add VCS reference for repository URL
 	if repoURL != "" {
-		component.ExternalReferences = &[]cdx.ExternalReference{
-			{
-				Type: cdx.ERTypeVCS,
-				URL:  repoURL,
-			},
+		extRefs = append(extRefs, cdx.ExternalReference{
+			Type: cdx.ERTypeVCS,
+			URL:  repoURL,
+		})
+	}
+
+	if len(extRefs) > 0 {
+		component.ExternalReferences = &extRefs
+	}
+
+	// Add supplier information (Issue #12)
+	if supplier := sbom.ExtractSupplier(repoURL); supplier != nil {
+		component.Supplier = &cdx.OrganizationalEntity{
+			Name: supplier.Name,
+			URL:  &[]string{supplier.URL},
 		}
 	}
 
@@ -195,13 +257,17 @@ func (g *SBOMGenerator) generateSPDX(lock *types.VendorLock, urlMap map[string]s
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	toolVersion := version.GetVersion()
 
+	// Build namespace using shared utility (Issue #11)
+	docUUID := uuid.New().String()
+	namespace := sbom.BuildSPDXNamespace(g.options.SPDXNamespace, g.options.ProjectName, docUUID)
+
 	// Create SPDX document
 	doc := &spdx23.Document{
 		SPDXVersion:       spdx.Version,
 		DataLicense:       spdx.DataLicense,
-		SPDXIdentifier:    common.ElementID("DOCUMENT"),
-		DocumentName:      g.projectName + "-vendored-sbom",
-		DocumentNamespace: fmt.Sprintf("https://git-vendor.dev/spdx/%s/%s", g.projectName, uuid.New().String()),
+		SPDXIdentifier:    common.ElementID(sbom.SPDXDocumentID),
+		DocumentName:      g.options.ProjectName + "-vendored-sbom",
+		DocumentNamespace: namespace,
 		CreationInfo: &spdx23.CreationInfo{
 			Created: timestamp,
 			Creators: []common.Creator{
@@ -220,11 +286,10 @@ func (g *SBOMGenerator) generateSPDX(lock *types.VendorLock, urlMap map[string]s
 		packages = append(packages, pkg)
 
 		// Add DESCRIBES relationship from document to package
-		// IMPORTANT: RefB must match the package's SPDXID exactly (including "Package-" prefix)
-		packageSPDXID := "Package-" + sanitizeSPDXID(vendor.Name)
+		// RefB must match the package's SPDXID exactly
 		relationships = append(relationships, &spdx23.Relationship{
-			RefA:         common.MakeDocElementID("", "DOCUMENT"),
-			RefB:         common.MakeDocElementID("", packageSPDXID),
+			RefA:         common.MakeDocElementID("", sbom.SPDXDocumentID),
+			RefB:         common.MakeDocElementID("", string(pkg.PackageSPDXIdentifier)),
 			Relationship: "DESCRIBES",
 		})
 	}
@@ -244,8 +309,13 @@ func (g *SBOMGenerator) buildSPDXPackage(vendor *types.LockDetails, repoURL stri
 		packageVersion = vendor.SourceVersionTag
 	}
 
-	// Build SPDX ID (must be alphanumeric with hyphens)
-	spdxID := common.ElementID("Package-" + sanitizeSPDXID(vendor.Name))
+	// Build unique SPDX ID using the shared identifier utility (Issue #5)
+	identity := sbom.VendorIdentity{
+		Name:       vendor.Name,
+		Ref:        vendor.Ref,
+		CommitHash: vendor.CommitHash,
+	}
+	spdxID := common.ElementID(sbom.GenerateSPDXID(identity))
 
 	pkg := &spdx23.Package{
 		PackageName:           vendor.Name,
@@ -282,90 +352,75 @@ func (g *SBOMGenerator) buildSPDXPackage(vendor *types.LockDetails, repoURL stri
 		pkg.PackageChecksums = checksums
 	}
 
+	// Add supplier information (Issue #12)
+	if supplier := sbom.ExtractSupplier(repoURL); supplier != nil {
+		pkg.PackageSupplier = &common.Supplier{
+			Supplier:     supplier.Name,
+			SupplierType: "Organization",
+		}
+	}
+
 	// Add external reference for PURL
-	purl := g.getPURL(vendor.Name, repoURL, vendor.CommitHash)
-	if purl != "" {
+	purlObj := purl.FromGitURLWithFallback(repoURL, vendor.CommitHash, vendor.Name)
+	if purlObj != nil {
 		pkg.PackageExternalReferences = []*spdx23.PackageExternalReference{
 			{
 				Category: common.CategoryPackageManager,
 				RefType:  "purl",
-				Locator:  purl,
+				Locator:  purlObj.String(),
 			},
 		}
 	}
 
-	// Add annotation with git-vendor metadata
-	if vendor.VendoredAt != "" || vendor.VendoredBy != "" {
-		comment := fmt.Sprintf("vendored_at=%s, vendored_by=%s, ref=%s, commit=%s",
-			vendor.VendoredAt, vendor.VendoredBy, vendor.Ref, vendor.CommitHash)
+	// Add annotation with git-vendor metadata (Issue #4 - only non-empty values)
+	comment := sbom.MetadataComment(vendor.Ref, vendor.CommitHash, vendor.VendoredAt, vendor.VendoredBy)
+	if comment != "" {
 		pkg.PackageComment = comment
 	}
 
 	return pkg
 }
 
-// getPURL generates a Package URL for the vendor
-func (g *SBOMGenerator) getPURL(vendorName, repoURL, commitHash string) string {
-	if repoURL == "" {
-		return fmt.Sprintf("pkg:generic/%s@%s", vendorName, commitHash)
-	}
-
-	u, err := url.Parse(repoURL)
-	if err != nil {
-		return fmt.Sprintf("pkg:generic/%s@%s", vendorName, commitHash)
-	}
-
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 2 {
-		return fmt.Sprintf("pkg:generic/%s@%s", vendorName, commitHash)
-	}
-
-	owner := parts[0]
-	repo := strings.TrimSuffix(parts[1], ".git")
-
-	// For GitLab nested groups, combine all parts except the last as the namespace
-	if len(parts) > 2 {
-		owner = strings.Join(parts[:len(parts)-1], "/")
-		repo = strings.TrimSuffix(parts[len(parts)-1], ".git")
-	}
-
-	host := strings.ToLower(u.Host)
-	switch {
-	case strings.Contains(host, "github.com") || strings.Contains(host, "github"):
-		return fmt.Sprintf("pkg:github/%s/%s@%s", owner, repo, commitHash)
-	case strings.Contains(host, "gitlab.com") || strings.Contains(host, "gitlab"):
-		return fmt.Sprintf("pkg:gitlab/%s/%s@%s", url.PathEscape(owner), repo, commitHash)
-	case strings.Contains(host, "bitbucket.org") || strings.Contains(host, "bitbucket"):
-		return fmt.Sprintf("pkg:bitbucket/%s/%s@%s", owner, repo, commitHash)
-	default:
-		return fmt.Sprintf("pkg:generic/%s@%s", vendorName, commitHash)
-	}
-}
-
-// sanitizeSPDXID converts a string to a valid SPDX identifier
-// SPDX IDs must match [a-zA-Z0-9.-]+
-func sanitizeSPDXID(s string) string {
-	var result strings.Builder
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' {
-			result.WriteRune(r)
-		} else {
-			result.WriteRune('-')
+// validateSBOM performs schema validation on the generated SBOM
+// Currently a no-op but ready for implementation when validation libraries are added
+func (g *SBOMGenerator) validateSBOM(data []byte, format SBOMFormat) error {
+	switch format {
+	case SBOMFormatCycloneDX:
+		// Validate by attempting to decode
+		var buf strings.Builder
+		buf.Write(data)
+		decoder := cdx.NewBOMDecoder(strings.NewReader(buf.String()), cdx.BOMFileFormatJSON)
+		var testBOM cdx.BOM
+		if err := decoder.Decode(&testBOM); err != nil {
+			return fmt.Errorf("CycloneDX validation: %w", err)
+		}
+	case SBOMFormatSPDX:
+		// Validate by attempting to decode as our JSON structure
+		var testDoc spdxJSON
+		if err := json.Unmarshal(data, &testDoc); err != nil {
+			return fmt.Errorf("SPDX validation: %w", err)
+		}
+		// Additional validation: check required fields
+		if testDoc.SPDXVersion == "" {
+			return fmt.Errorf("SPDX validation: missing spdxVersion")
+		}
+		if testDoc.SPDXID == "" {
+			return fmt.Errorf("SPDX validation: missing SPDXID")
 		}
 	}
-	return result.String()
+	return nil
 }
 
 // spdxJSON is the JSON representation of an SPDX document
 // Using explicit struct to ensure proper JSON field names per SPDX 2.3 spec
 type spdxJSON struct {
-	SPDXVersion       string                `json:"spdxVersion"`
-	DataLicense       string                `json:"dataLicense"`
-	SPDXID            string                `json:"SPDXID"`
-	Name              string                `json:"name"`
-	DocumentNamespace string                `json:"documentNamespace"`
-	CreationInfo      spdxCreationInfoJSON  `json:"creationInfo"`
-	Packages          []spdxPackageJSON     `json:"packages"`
+	SPDXVersion       string                 `json:"spdxVersion"`
+	DataLicense       string                 `json:"dataLicense"`
+	SPDXID            string                 `json:"SPDXID"`
+	Name              string                 `json:"name"`
+	DocumentNamespace string                 `json:"documentNamespace"`
+	CreationInfo      spdxCreationInfoJSON   `json:"creationInfo"`
+	Packages          []spdxPackageJSON      `json:"packages"`
 	Relationships     []spdxRelationshipJSON `json:"relationships"`
 }
 
@@ -375,17 +430,18 @@ type spdxCreationInfoJSON struct {
 }
 
 type spdxPackageJSON struct {
-	SPDXID           string              `json:"SPDXID"`
-	Name             string              `json:"name"`
-	VersionInfo      string              `json:"versionInfo"`
-	DownloadLocation string              `json:"downloadLocation"`
-	LicenseDeclared  string              `json:"licenseDeclared"`
-	LicenseConcluded string              `json:"licenseConcluded"`
-	CopyrightText    string              `json:"copyrightText"`
-	FilesAnalyzed    bool                `json:"filesAnalyzed"`
-	Checksums        []spdxChecksumJSON  `json:"checksums,omitempty"`
+	SPDXID           string                `json:"SPDXID"`
+	Name             string                `json:"name"`
+	VersionInfo      string                `json:"versionInfo"`
+	DownloadLocation string                `json:"downloadLocation"`
+	Supplier         string                `json:"supplier,omitempty"`
+	LicenseDeclared  string                `json:"licenseDeclared"`
+	LicenseConcluded string                `json:"licenseConcluded"`
+	CopyrightText    string                `json:"copyrightText"`
+	FilesAnalyzed    bool                  `json:"filesAnalyzed"`
+	Checksums        []spdxChecksumJSON    `json:"checksums,omitempty"`
 	ExternalRefs     []spdxExternalRefJSON `json:"externalRefs,omitempty"`
-	Comment          string              `json:"comment,omitempty"`
+	Comment          string                `json:"comment,omitempty"`
 }
 
 type spdxChecksumJSON struct {
@@ -417,7 +473,7 @@ func spdxToJSON(doc *spdx23.Document) ([]byte, error) {
 	packages := make([]spdxPackageJSON, 0, len(doc.Packages))
 	for _, pkg := range doc.Packages {
 		p := spdxPackageJSON{
-			SPDXID:           fmt.Sprintf("SPDXRef-%s", pkg.PackageSPDXIdentifier),
+			SPDXID:           sbom.FormatSPDXRef(string(pkg.PackageSPDXIdentifier)),
 			Name:             pkg.PackageName,
 			VersionInfo:      pkg.PackageVersion,
 			DownloadLocation: pkg.PackageDownloadLocation,
@@ -426,6 +482,11 @@ func spdxToJSON(doc *spdx23.Document) ([]byte, error) {
 			CopyrightText:    pkg.PackageCopyrightText,
 			FilesAnalyzed:    pkg.FilesAnalyzed,
 			Comment:          pkg.PackageComment,
+		}
+
+		// Add supplier (Issue #12)
+		if pkg.PackageSupplier != nil && pkg.PackageSupplier.Supplier != "" {
+			p.Supplier = fmt.Sprintf("%s: %s", pkg.PackageSupplier.SupplierType, pkg.PackageSupplier.Supplier)
 		}
 
 		// Add checksums
@@ -460,9 +521,9 @@ func spdxToJSON(doc *spdx23.Document) ([]byte, error) {
 	relationships := make([]spdxRelationshipJSON, 0, len(doc.Relationships))
 	for _, rel := range doc.Relationships {
 		relationships = append(relationships, spdxRelationshipJSON{
-			SPDXElementID:      fmt.Sprintf("SPDXRef-%s", rel.RefA.ElementRefID),
+			SPDXElementID:      sbom.FormatSPDXRef(string(rel.RefA.ElementRefID)),
 			RelationshipType:   rel.Relationship,
-			RelatedSPDXElement: fmt.Sprintf("SPDXRef-%s", rel.RefB.ElementRefID),
+			RelatedSPDXElement: sbom.FormatSPDXRef(string(rel.RefB.ElementRefID)),
 		})
 	}
 
@@ -470,7 +531,7 @@ func spdxToJSON(doc *spdx23.Document) ([]byte, error) {
 	jsonDoc := spdxJSON{
 		SPDXVersion:       doc.SPDXVersion,
 		DataLicense:       doc.DataLicense,
-		SPDXID:            fmt.Sprintf("SPDXRef-%s", doc.SPDXIdentifier),
+		SPDXID:            sbom.FormatSPDXRef(string(doc.SPDXIdentifier)),
 		Name:              doc.DocumentName,
 		DocumentNamespace: doc.DocumentNamespace,
 		CreationInfo: spdxCreationInfoJSON{
