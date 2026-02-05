@@ -3,7 +3,6 @@ package core
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,15 +15,20 @@ import (
 	"time"
 
 	"github.com/EmundoT/git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/version"
 )
 
 const (
 	osvAPIEndpoint      = "https://api.osv.dev/v1/query"
 	osvBatchAPIEndpoint = "https://api.osv.dev/v1/querybatch"
 	defaultCacheTTL     = 24 * time.Hour
-	defaultCacheDir     = ".git-vendor-cache/osv"
+	cacheSubDir         = ".cache/osv" // Relative to vendor directory
 	scanSchemaVersion   = "1.0"
+	maxBatchSize        = 1000 // OSV.dev batch limit
 )
+
+// Package-level compiled regex for CVSS score extraction
+var cvssScoreRegex = regexp.MustCompile(`^(\d+\.?\d*)$`)
 
 // SeverityThreshold maps severity names to numeric levels for comparison
 var SeverityThreshold = map[string]int{
@@ -45,13 +49,13 @@ type ScanResult struct {
 
 // ScanSummary contains aggregate statistics for the scan
 type ScanSummary struct {
-	TotalDependencies int             `json:"total_dependencies"`
-	Scanned           int             `json:"scanned"`
-	NotScanned        int             `json:"not_scanned"`
-	Vulnerabilities   VulnCounts      `json:"vulnerabilities"`
-	Result            string          `json:"result"` // PASS, FAIL, WARN
-	FailOnThreshold   string          `json:"fail_on_threshold,omitempty"`
-	ThresholdExceeded bool            `json:"threshold_exceeded,omitempty"`
+	TotalDependencies int        `json:"total_dependencies"`
+	Scanned           int        `json:"scanned"`
+	NotScanned        int        `json:"not_scanned"`
+	Vulnerabilities   VulnCounts `json:"vulnerabilities"`
+	Result            string     `json:"result"` // PASS, FAIL, WARN
+	FailOnThreshold   string     `json:"fail_on_threshold,omitempty"`
+	ThresholdExceeded bool       `json:"threshold_exceeded,omitempty"`
 }
 
 // VulnCounts holds vulnerability counts by severity
@@ -88,10 +92,10 @@ type Vulnerability struct {
 
 // VulnScanner handles vulnerability scanning against OSV.dev
 type VulnScanner struct {
-	client     *http.Client
-	cacheDir   string
-	cacheTTL   time.Duration
-	lockStore  LockStore
+	client      *http.Client
+	cacheDir    string
+	cacheTTL    time.Duration
+	lockStore   LockStore
 	configStore ConfigStore
 }
 
@@ -105,11 +109,14 @@ func NewVulnScanner(lockStore LockStore, configStore ConfigStore) *VulnScanner {
 		}
 	}
 
+	// Cache directory is inside vendor directory
+	cacheDir := filepath.Join(VendorDir, cacheSubDir)
+
 	return &VulnScanner{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		cacheDir:    defaultCacheDir,
+		cacheDir:    cacheDir,
 		cacheTTL:    cacheTTL,
 		lockStore:   lockStore,
 		configStore: configStore,
@@ -136,13 +143,13 @@ type osvResponse struct {
 
 // osvVuln represents a vulnerability from OSV
 type osvVuln struct {
-	ID        string        `json:"id"`
-	Summary   string        `json:"summary"`
-	Details   string        `json:"details"`
-	Aliases   []string      `json:"aliases"`
-	Severity  []osvSeverity `json:"severity"`
-	Affected  []osvAffected `json:"affected"`
-	References []osvRef     `json:"references"`
+	ID         string        `json:"id"`
+	Summary    string        `json:"summary"`
+	Details    string        `json:"details"`
+	Aliases    []string      `json:"aliases"`
+	Severity   []osvSeverity `json:"severity"`
+	Affected   []osvAffected `json:"affected"`
+	References []osvRef      `json:"references"`
 }
 
 // osvSeverity represents severity info in OSV response
@@ -153,14 +160,14 @@ type osvSeverity struct {
 
 // osvAffected represents affected package info
 type osvAffected struct {
-	Package *osvPackage  `json:"package"`
-	Ranges  []osvRange   `json:"ranges"`
+	Package *osvPackage `json:"package"`
+	Ranges  []osvRange  `json:"ranges"`
 }
 
 // osvRange represents version range info
 type osvRange struct {
-	Type   string      `json:"type"`
-	Events []osvEvent  `json:"events"`
+	Type   string     `json:"type"`
+	Events []osvEvent `json:"events"`
 }
 
 // osvEvent represents version events (introduced, fixed)
@@ -187,9 +194,8 @@ type osvBatchResponse struct {
 
 // cacheEntry represents a cached OSV response
 type cacheEntry struct {
-	Vulns     []osvVuln `json:"vulns"`
-	CachedAt  time.Time `json:"cached_at"`
-	QueryHash string    `json:"query_hash"`
+	Vulns    []osvVuln `json:"vulns"`
+	CachedAt time.Time `json:"cached_at"`
 }
 
 // Scan performs vulnerability scanning on all vendored dependencies
@@ -222,6 +228,9 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 		},
 	}
 
+	// Use batch query for efficiency
+	vulnResults, batchErr := s.batchQuery(lock.Vendors, vendorURLs)
+
 	// Process each vendor
 	for _, lockEntry := range lock.Vendors {
 		depScan := DependencyScan{
@@ -235,29 +244,41 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 			depScan.Version = &lockEntry.SourceVersionTag
 		}
 
-		// Query OSV
-		vulns, err := s.queryOSV(lockEntry, vendorURLs[lockEntry.Name])
-		if err != nil {
+		// Check batch results
+		var vulns []osvVuln
+		var scanErr error
+
+		if batchErr != nil {
+			scanErr = batchErr
+		} else if v, ok := vulnResults[lockEntry.Name]; ok {
+			vulns = v
+		} else {
+			// Fallback to individual query if not in batch results
+			vulns, scanErr = s.queryOSV(lockEntry, vendorURLs[lockEntry.Name])
+		}
+
+		if scanErr != nil {
 			// Handle different error types
-			if isRateLimitError(err) {
+			if isRateLimitError(scanErr) {
 				depScan.ScanStatus = "not_scanned"
 				depScan.ScanReason = "Rate limited by OSV.dev API"
 				result.Summary.NotScanned++
-			} else if isNetworkError(err) {
+			} else if isNetworkError(scanErr) {
 				// Try to use stale cache
 				staleVulns, cacheErr := s.loadStaleCache(lockEntry)
 				if cacheErr == nil && staleVulns != nil {
 					vulns = staleVulns
 					depScan.ScanStatus = "scanned"
 					depScan.ScanReason = "Using cached data (network unavailable)"
+					result.Summary.Scanned++ // Count stale cache as scanned
 				} else {
 					depScan.ScanStatus = "not_scanned"
-					depScan.ScanReason = fmt.Sprintf("Network error: %v", err)
+					depScan.ScanReason = fmt.Sprintf("Network error: %v", scanErr)
 					result.Summary.NotScanned++
 				}
 			} else {
 				depScan.ScanStatus = "error"
-				depScan.ScanReason = err.Error()
+				depScan.ScanReason = scanErr.Error()
 				result.Summary.NotScanned++
 			}
 		}
@@ -298,7 +319,7 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 	return result, nil
 }
 
-// queryOSV queries OSV.dev for vulnerabilities
+// queryOSV queries OSV.dev for vulnerabilities (single query)
 func (s *VulnScanner) queryOSV(dep types.LockDetails, repoURL string) ([]osvVuln, error) {
 	// Build cache key
 	cacheKey := s.getCacheKey(dep)
@@ -325,7 +346,7 @@ func (s *VulnScanner) queryOSV(dep types.LockDetails, repoURL string) ([]osvVuln
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "git-vendor/1.0")
+	req.Header.Set("User-Agent", fmt.Sprintf("git-vendor/%s", version.GetVersion()))
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -350,9 +371,113 @@ func (s *VulnScanner) queryOSV(dep types.LockDetails, repoURL string) ([]osvVuln
 	}
 
 	// Cache result
-	s.saveToCache(cacheKey, result.Vulns)
+	if err := s.saveToCache(cacheKey, result.Vulns); err != nil {
+		// Log but don't fail on cache write errors
+		// In a real implementation, this could use a logger
+		_ = err
+	}
 
 	return result.Vulns, nil
+}
+
+// batchQuery performs batch vulnerability queries for efficiency
+func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string]string) (map[string][]osvVuln, error) {
+	results := make(map[string][]osvVuln)
+
+	// First, check cache for all deps
+	var uncachedDeps []types.LockDetails
+	for _, dep := range deps {
+		cacheKey := s.getCacheKey(dep)
+		if vulns, ok := s.loadFromCache(cacheKey); ok {
+			results[dep.Name] = vulns
+		} else {
+			uncachedDeps = append(uncachedDeps, dep)
+		}
+	}
+
+	// If all cached, return early
+	if len(uncachedDeps) == 0 {
+		return results, nil
+	}
+
+	// Build batch request for uncached deps
+	queries := make([]osvQuery, 0, len(uncachedDeps))
+	depMap := make(map[int]types.LockDetails) // Map query index to dep
+
+	for i, dep := range uncachedDeps {
+		query := s.buildQuery(dep, vendorURLs[dep.Name])
+		queries = append(queries, query)
+		depMap[i] = dep
+	}
+
+	// Split into batches if needed
+	for batchStart := 0; batchStart < len(queries); batchStart += maxBatchSize {
+		batchEnd := batchStart + maxBatchSize
+		if batchEnd > len(queries) {
+			batchEnd = len(queries)
+		}
+
+		batchQueries := queries[batchStart:batchEnd]
+
+		// Make batch request
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+
+		batchReq := osvBatchRequest{Queries: batchQueries}
+		reqJSON, err := json.Marshal(batchReq)
+		if err != nil {
+			cancel()
+			return results, fmt.Errorf("marshal batch request: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, osvBatchAPIEndpoint, bytes.NewReader(reqJSON))
+		if err != nil {
+			cancel()
+			return results, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", fmt.Sprintf("git-vendor/%s", version.GetVersion()))
+
+		resp, err := s.client.Do(req)
+		if err != nil {
+			cancel()
+			return results, err
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+			cancel()
+			return results, fmt.Errorf("rate limited")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			cancel()
+			return results, fmt.Errorf("OSV batch API error: %d - %s", resp.StatusCode, string(body))
+		}
+
+		var batchResp osvBatchResponse
+		if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
+			resp.Body.Close()
+			cancel()
+			return results, fmt.Errorf("decode batch response: %w", err)
+		}
+		resp.Body.Close()
+		cancel()
+
+		// Process results and cache
+		for i, osvResp := range batchResp.Results {
+			globalIdx := batchStart + i
+			if dep, ok := depMap[globalIdx]; ok {
+				results[dep.Name] = osvResp.Vulns
+				// Cache individual results
+				cacheKey := s.getCacheKey(dep)
+				_ = s.saveToCache(cacheKey, osvResp.Vulns)
+			}
+		}
+	}
+
+	return results, nil
 }
 
 // buildQuery creates an OSV query for a dependency
@@ -369,24 +494,11 @@ func (s *VulnScanner) buildQuery(dep types.LockDetails, repoURL string) osvQuery
 		}
 	}
 
-	// Fallback to commit query
-	query := osvQuery{
+	// Fallback to commit query only
+	// Note: We don't add ecosystem/name because it's unreliable to detect from URL
+	return osvQuery{
 		Commit: dep.CommitHash,
 	}
-
-	// Add package info if we can determine it
-	if repoURL != "" {
-		ecosystem := detectEcosystem(repoURL)
-		pkgName := extractPackageName(repoURL)
-		if ecosystem != "" && pkgName != "" {
-			query.Package = &osvPackage{
-				Name:      pkgName,
-				Ecosystem: ecosystem,
-			}
-		}
-	}
-
-	return query
 }
 
 // buildPURL creates a Package URL for the dependency
@@ -397,11 +509,21 @@ func (s *VulnScanner) buildPURL(repoURL, version string) string {
 		return ""
 	}
 
+	// Validate URL has a scheme and host (reject "not-a-url" type inputs)
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+
 	// Clean the path
 	path := strings.TrimPrefix(parsed.Path, "/")
 	path = strings.TrimSuffix(path, ".git")
 
+	if path == "" {
+		return ""
+	}
+
 	// Determine PURL type based on host
+	// See: https://github.com/package-url/purl-spec/blob/master/PURL-TYPES.rst
 	host := strings.ToLower(parsed.Host)
 
 	switch {
@@ -415,53 +537,13 @@ func (s *VulnScanner) buildPURL(repoURL, version string) string {
 		// pkg:bitbucket/owner/repo@version
 		return fmt.Sprintf("pkg:bitbucket/%s@%s", path, version)
 	default:
-		// Generic git URL
+		// For other hosts, use generic type
+		// Note: This may not match in OSV.dev but is the correct PURL format
 		return fmt.Sprintf("pkg:generic/%s@%s", path, version)
 	}
 }
 
-// detectEcosystem attempts to determine the ecosystem from URL
-func detectEcosystem(repoURL string) string {
-	// For now, default to empty which lets OSV.dev try all ecosystems
-	// In the future, we could analyze vendored file extensions
-	lower := strings.ToLower(repoURL)
-
-	// Some heuristics based on common patterns
-	switch {
-	case strings.Contains(lower, "golang"), strings.Contains(lower, "/go/"):
-		return "Go"
-	case strings.Contains(lower, "npm"), strings.Contains(lower, "node"):
-		return "npm"
-	case strings.Contains(lower, "pypi"), strings.Contains(lower, "python"):
-		return "PyPI"
-	case strings.Contains(lower, "crates.io"), strings.Contains(lower, "rust"):
-		return "crates.io"
-	default:
-		return ""
-	}
-}
-
-// extractPackageName extracts the package name from a repo URL
-func extractPackageName(repoURL string) string {
-	parsed, err := url.Parse(repoURL)
-	if err != nil {
-		return ""
-	}
-
-	// Clean and return path
-	path := strings.TrimPrefix(parsed.Path, "/")
-	path = strings.TrimSuffix(path, ".git")
-
-	if path == "" {
-		return ""
-	}
-
-	// For GitHub-style URLs, include the host in the name
-	host := parsed.Host
-	return host + "/" + path
-}
-
-// getCacheKey generates a cache key for a dependency
+// getCacheKey generates a safe cache key for a dependency
 func (s *VulnScanner) getCacheKey(dep types.LockDetails) string {
 	// Create a deterministic key based on commit and version
 	key := dep.CommitHash
@@ -474,11 +556,29 @@ func (s *VulnScanner) getCacheKey(dep types.LockDetails) string {
 		key = dep.SourceVersionTag + "_" + shortHash
 	}
 
-	// Sanitize for filesystem
-	key = strings.ReplaceAll(key, "/", "_")
-	key = strings.ReplaceAll(key, ":", "_")
+	// Comprehensive sanitization for filesystem safety
+	// Replace or remove problematic characters
+	replacer := strings.NewReplacer(
+		"/", "_",
+		"\\", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+		"\x00", "", // null byte
+	)
+	key = replacer.Replace(key)
+	key = strings.ReplaceAll(dep.Name, "/", "_") + "_" + key
 
-	return fmt.Sprintf("%s_%s.json", dep.Name, key)
+	// Limit length to avoid filesystem issues (255 char limit on most systems)
+	if len(key) > 200 {
+		key = key[:200]
+	}
+
+	return key + ".json"
 }
 
 // loadFromCache loads cached OSV response if valid
@@ -522,10 +622,10 @@ func (s *VulnScanner) loadStaleCache(dep types.LockDetails) ([]osvVuln, error) {
 }
 
 // saveToCache saves OSV response to cache
-func (s *VulnScanner) saveToCache(key string, vulns []osvVuln) {
+func (s *VulnScanner) saveToCache(key string, vulns []osvVuln) error {
 	// Ensure cache directory exists
 	if err := os.MkdirAll(s.cacheDir, 0o755); err != nil {
-		return
+		return fmt.Errorf("create cache dir: %w", err)
 	}
 
 	entry := cacheEntry{
@@ -535,11 +635,15 @@ func (s *VulnScanner) saveToCache(key string, vulns []osvVuln) {
 
 	data, err := json.Marshal(entry)
 	if err != nil {
-		return
+		return fmt.Errorf("marshal cache entry: %w", err)
 	}
 
 	path := filepath.Join(s.cacheDir, key)
-	_ = os.WriteFile(path, data, 0o644) //nolint:errcheck
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write cache file: %w", err)
+	}
+
+	return nil
 }
 
 // convertVulns converts OSV vulnerabilities to our format
@@ -586,23 +690,33 @@ func (s *VulnScanner) convertVulns(osvVulns []osvVuln) []Vulnerability {
 			}
 		}
 
-		// Extract references
+		// Extract references, tracking seen URLs to avoid duplicates
+		seenURLs := make(map[string]bool)
 		for _, ref := range ov.References {
-			v.References = append(v.References, ref.URL)
+			if !seenURLs[ref.URL] {
+				v.References = append(v.References, ref.URL)
+				seenURLs[ref.URL] = true
+			}
 		}
 
-		// Add NVD link if it's a CVE
+		// Add NVD link if it's a CVE and not already present
+		cveID := ""
 		if strings.HasPrefix(v.ID, "CVE-") {
-			nvdURL := fmt.Sprintf("https://nvd.nist.gov/vuln/detail/%s", v.ID)
-			v.References = append(v.References, nvdURL)
-		} else if len(v.Aliases) > 0 {
+			cveID = v.ID
+		} else {
 			// Check aliases for CVE
 			for _, alias := range v.Aliases {
 				if strings.HasPrefix(alias, "CVE-") {
-					nvdURL := fmt.Sprintf("https://nvd.nist.gov/vuln/detail/%s", alias)
-					v.References = append(v.References, nvdURL)
+					cveID = alias
 					break
 				}
+			}
+		}
+
+		if cveID != "" {
+			nvdURL := fmt.Sprintf("https://nvd.nist.gov/vuln/detail/%s", cveID)
+			if !seenURLs[nvdURL] {
+				v.References = append(v.References, nvdURL)
 			}
 		}
 
@@ -612,49 +726,26 @@ func (s *VulnScanner) convertVulns(osvVulns []osvVuln) []Vulnerability {
 	return vulns
 }
 
-// parseCVSSScore extracts the numeric score from a CVSS vector string
-func parseCVSSScore(cvssVector string) float64 {
-	// CVSS vector format: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
-	// We need to calculate the score from the vector, but for simplicity
-	// we'll check if a numeric score is embedded or use a regex pattern
+// parseCVSSScore extracts the numeric score from a CVSS string
+// OSV.dev typically returns just the numeric score (e.g., "9.8") not the full vector
+func parseCVSSScore(cvssStr string) float64 {
+	// Trim whitespace
+	cvssStr = strings.TrimSpace(cvssStr)
 
-	// Try to find a direct score (some APIs include it)
-	scorePattern := regexp.MustCompile(`(\d+\.?\d*)`)
-	matches := scorePattern.FindStringSubmatch(cvssVector)
-	if len(matches) > 1 {
+	// Try to parse as a direct numeric score first (most common case from OSV.dev)
+	if cvssScoreRegex.MatchString(cvssStr) {
 		var score float64
-		fmt.Sscanf(matches[1], "%f", &score)
-		if score >= 0 && score <= 10 {
-			return score
+		if _, err := fmt.Sscanf(cvssStr, "%f", &score); err == nil {
+			if score >= 0 && score <= 10 {
+				return score
+			}
 		}
 	}
 
-	// If no numeric score, attempt basic vector parsing
-	// This is a simplified calculation - in production you'd use a proper CVSS library
-	upper := strings.ToUpper(cvssVector)
-
-	// Very basic heuristic based on attack vector and impact
-	var score float64 = 5.0 // Default medium
-
-	if strings.Contains(upper, "AV:N") { // Network
-		score += 1.5
-	}
-	if strings.Contains(upper, "AC:L") { // Low complexity
-		score += 1.0
-	}
-	if strings.Contains(upper, "C:H") || strings.Contains(upper, "I:H") || strings.Contains(upper, "A:H") {
-		score += 2.0
-	}
-	if strings.Contains(upper, "PR:N") { // No privileges required
-		score += 0.5
-	}
-
-	// Cap at 10
-	if score > 10 {
-		score = 10.0
-	}
-
-	return score
+	// If it's a CVSS vector string, we can't reliably calculate the score
+	// without a proper CVSS library. Return 0 to indicate unknown.
+	// The severity will default to "UNKNOWN" in this case.
+	return 0
 }
 
 // CVSSToSeverity converts a CVSS score to severity string
@@ -698,7 +789,7 @@ func (s *VulnScanner) determineResult(result *ScanResult, failOn string) string 
 	result.Summary.ThresholdExceeded = thresholdExceeded
 
 	// Determine result
-	if thresholdExceeded || vulns.Total > 0 {
+	if vulns.Total > 0 {
 		return "FAIL"
 	}
 	if result.Summary.NotScanned > 0 {
@@ -722,98 +813,8 @@ func isNetworkError(err error) bool {
 		strings.Contains(errStr, "no such host") ||
 		strings.Contains(errStr, "network is unreachable") ||
 		strings.Contains(errStr, "timeout") ||
-		strings.Contains(errStr, "i/o timeout")
-}
-
-// BatchQuery performs batch vulnerability queries (for efficiency)
-func (s *VulnScanner) BatchQuery(deps []types.LockDetails, vendorURLs map[string]string) (map[string][]osvVuln, error) {
-	// Build batch request
-	queries := make([]osvQuery, 0, len(deps))
-	depMap := make(map[int]types.LockDetails) // Map query index to dep
-
-	for _, dep := range deps {
-		// Check cache first
-		cacheKey := s.getCacheKey(dep)
-		if _, ok := s.loadFromCache(cacheKey); ok {
-			continue // Skip cached entries
-		}
-
-		query := s.buildQuery(dep, vendorURLs[dep.Name])
-		queries = append(queries, query)
-		depMap[len(queries)-1] = dep
-	}
-
-	// If all cached, return early
-	if len(queries) == 0 {
-		result := make(map[string][]osvVuln)
-		for _, dep := range deps {
-			cacheKey := s.getCacheKey(dep)
-			if vulns, ok := s.loadFromCache(cacheKey); ok {
-				result[dep.Name] = vulns
-			}
-		}
-		return result, nil
-	}
-
-	// Make batch request
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	batchReq := osvBatchRequest{Queries: queries}
-	reqJSON, err := json.Marshal(batchReq)
-	if err != nil {
-		return nil, fmt.Errorf("marshal batch request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, osvBatchAPIEndpoint, bytes.NewReader(reqJSON))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "git-vendor/1.0")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("rate limited")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("OSV batch API error: %d - %s", resp.StatusCode, string(body))
-	}
-
-	var batchResp osvBatchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
-		return nil, fmt.Errorf("decode batch response: %w", err)
-	}
-
-	// Process results and cache
-	results := make(map[string][]osvVuln)
-	for i, resp := range batchResp.Results {
-		if dep, ok := depMap[i]; ok {
-			results[dep.Name] = resp.Vulns
-			// Cache individual results
-			cacheKey := s.getCacheKey(dep)
-			s.saveToCache(cacheKey, resp.Vulns)
-		}
-	}
-
-	// Add cached entries to results
-	for _, dep := range deps {
-		if _, ok := results[dep.Name]; !ok {
-			cacheKey := s.getCacheKey(dep)
-			if vulns, ok := s.loadFromCache(cacheKey); ok {
-				results[dep.Name] = vulns
-			}
-		}
-	}
-
-	return results, nil
+		strings.Contains(errStr, "i/o timeout") ||
+		strings.Contains(errStr, "dial tcp")
 }
 
 // ClearCache removes all cached OSV responses
@@ -824,11 +825,4 @@ func (s *VulnScanner) ClearCache() error {
 // GetCacheKey returns the cache key for testing purposes
 func (s *VulnScanner) GetCacheKey(dep types.LockDetails) string {
 	return s.getCacheKey(dep)
-}
-
-// ComputeQueryHash computes a hash for query deduplication
-func ComputeQueryHash(query osvQuery) string {
-	data, _ := json.Marshal(query)
-	hash := sha256.Sum256(data)
-	return fmt.Sprintf("%x", hash[:8])
 }

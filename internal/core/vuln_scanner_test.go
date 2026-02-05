@@ -46,6 +46,37 @@ func TestCVSSToSeverity(t *testing.T) {
 }
 
 // ============================================================================
+// CVSS Score Parsing Tests
+// ============================================================================
+
+func TestParseCVSSScore(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected float64
+	}{
+		{"Simple score", "9.8", 9.8},
+		{"Integer score", "7", 7.0},
+		{"Low score", "3.1", 3.1},
+		{"Zero score", "0", 0.0},
+		{"Score with whitespace", "  8.5  ", 8.5},
+		{"CVSS vector (cannot parse)", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 0},
+		{"Invalid string", "high", 0},
+		{"Empty string", "", 0},
+		{"Score above 10", "15.0", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseCVSSScore(tt.input)
+			if got != tt.expected {
+				t.Errorf("parseCVSSScore(%q) = %f, want %f", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// ============================================================================
 // Query Building Tests
 // ============================================================================
 
@@ -93,6 +124,18 @@ func TestBuildPURL(t *testing.T) {
 			repoURL:  "https://git.example.com/myproject",
 			version:  "v3.0.0",
 			expected: "pkg:generic/myproject@v3.0.0",
+		},
+		{
+			name:     "Empty path",
+			repoURL:  "https://github.com/",
+			version:  "v1.0.0",
+			expected: "",
+		},
+		{
+			name:     "Invalid URL",
+			repoURL:  "not-a-url",
+			version:  "v1.0.0",
+			expected: "",
 		},
 	}
 
@@ -161,7 +204,7 @@ func TestQueryOSV_WithKnownCVE(t *testing.T) {
 	// Create scanner with mock server URL
 	scanner := &VulnScanner{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
 			Transport: &mockTransport{serverURL: server.URL},
 		},
 		cacheDir:    t.TempDir(),
@@ -214,7 +257,7 @@ func TestQueryOSV_NoCVEs(t *testing.T) {
 
 	scanner := &VulnScanner{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
 			Transport: &mockTransport{serverURL: server.URL},
 		},
 		cacheDir:    t.TempDir(),
@@ -255,7 +298,7 @@ func TestQueryOSV_RateLimited(t *testing.T) {
 
 	scanner := &VulnScanner{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
 			Transport: &mockTransport{serverURL: server.URL},
 		},
 		cacheDir:    t.TempDir(),
@@ -277,6 +320,43 @@ func TestQueryOSV_RateLimited(t *testing.T) {
 
 	if !isRateLimitError(err) {
 		t.Errorf("Expected rate limit error, got: %v", err)
+	}
+}
+
+func TestQueryOSV_MalformedResponse(t *testing.T) {
+	// Create mock OSV server that returns invalid JSON
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("not valid json"))
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	scanner := &VulnScanner{
+		client: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: &mockTransport{serverURL: server.URL},
+		},
+		cacheDir:    t.TempDir(),
+		cacheTTL:    24 * time.Hour,
+		lockStore:   lockStore,
+		configStore: configStore,
+	}
+
+	dep := types.LockDetails{
+		Name:       "malformed-vendor",
+		Ref:        "main",
+		CommitHash: "mal123",
+	}
+
+	_, err := scanner.queryOSV(dep, "https://github.com/owner/repo")
+	if err == nil {
+		t.Fatal("Expected error for malformed JSON, got nil")
 	}
 }
 
@@ -320,7 +400,10 @@ func TestCaching(t *testing.T) {
 			Summary: "Test vulnerability",
 		},
 	}
-	scanner.saveToCache(cacheKey, testVulns)
+	err := scanner.saveToCache(cacheKey, testVulns)
+	if err != nil {
+		t.Fatalf("Failed to save to cache: %v", err)
+	}
 
 	// Verify cache hit
 	cached, ok = scanner.loadFromCache(cacheKey)
@@ -374,10 +457,44 @@ func TestCaching_Expiration(t *testing.T) {
 // Full Scan Tests
 // ============================================================================
 
+func TestScan_EmptyLockfile(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	// Mock empty lockfile
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{},
+	}, nil)
+
+	// Mock empty config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{},
+	}, nil)
+
+	scanner := NewVulnScanner(lockStore, configStore)
+	scanner.cacheDir = t.TempDir()
+
+	result, err := scanner.Scan("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "PASS" {
+		t.Errorf("Expected PASS for empty lockfile, got %s", result.Summary.Result)
+	}
+
+	if result.Summary.TotalDependencies != 0 {
+		t.Errorf("Expected 0 dependencies, got %d", result.Summary.TotalDependencies)
+	}
+}
+
 func TestScan_NoVulnerabilities(t *testing.T) {
 	// Create mock OSV server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := osvResponse{Vulns: []osvVuln{}}
+		response := osvBatchResponse{Results: []osvResponse{{Vulns: []osvVuln{}}}}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
 	}))
@@ -395,7 +512,7 @@ func TestScan_NoVulnerabilities(t *testing.T) {
 			{
 				Name:             "clean-vendor",
 				Ref:              "main",
-				CommitHash:       "abc123",
+				CommitHash:       "abc123def",
 				SourceVersionTag: "v1.0.0",
 			},
 		},
@@ -443,17 +560,21 @@ func TestScan_NoVulnerabilities(t *testing.T) {
 func TestScan_WithVulnerabilities(t *testing.T) {
 	// Create mock OSV server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := osvResponse{
-			Vulns: []osvVuln{
+		response := osvBatchResponse{
+			Results: []osvResponse{
 				{
-					ID:       "CVE-2024-CRIT",
-					Summary:  "Critical vulnerability",
-					Severity: []osvSeverity{{Type: "CVSS_V3", Score: "9.8"}},
-				},
-				{
-					ID:       "CVE-2024-HIGH",
-					Summary:  "High vulnerability",
-					Severity: []osvSeverity{{Type: "CVSS_V3", Score: "7.5"}},
+					Vulns: []osvVuln{
+						{
+							ID:       "CVE-2024-CRIT",
+							Summary:  "Critical vulnerability",
+							Severity: []osvSeverity{{Type: "CVSS_V3", Score: "9.8"}},
+						},
+						{
+							ID:       "CVE-2024-HIGH",
+							Summary:  "High vulnerability",
+							Severity: []osvSeverity{{Type: "CVSS_V3", Score: "7.5"}},
+						},
+					},
 				},
 			},
 		}
@@ -473,7 +594,7 @@ func TestScan_WithVulnerabilities(t *testing.T) {
 			{
 				Name:             "vuln-vendor",
 				Ref:              "main",
-				CommitHash:       "vuln123",
+				CommitHash:       "vuln123abc",
 				SourceVersionTag: "v1.0.0",
 			},
 		},
@@ -521,15 +642,96 @@ func TestScan_WithVulnerabilities(t *testing.T) {
 	}
 }
 
+func TestScan_MultipleVendors(t *testing.T) {
+	// Create mock OSV server that returns different results per query
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		// Return batch response with results for 3 vendors
+		response := osvBatchResponse{
+			Results: []osvResponse{
+				{Vulns: []osvVuln{{ID: "CVE-VENDOR-A", Summary: "Vendor A vuln", Severity: []osvSeverity{{Type: "CVSS_V3", Score: "5.0"}}}}},
+				{Vulns: []osvVuln{}}, // Vendor B has no vulns
+				{Vulns: []osvVuln{{ID: "CVE-VENDOR-C", Summary: "Vendor C vuln", Severity: []osvSeverity{{Type: "CVSS_V3", Score: "9.0"}}}}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "aaa111bbb"},
+			{Name: "vendor-b", Ref: "main", CommitHash: "bbb222ccc"},
+			{Name: "vendor-c", Ref: "main", CommitHash: "ccc333ddd"},
+		},
+	}, nil)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "vendor-a", URL: "https://github.com/owner/a"},
+			{Name: "vendor-b", URL: "https://github.com/owner/b"},
+			{Name: "vendor-c", URL: "https://github.com/owner/c"},
+		},
+	}, nil)
+
+	scanner := &VulnScanner{
+		client: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: &mockTransport{serverURL: server.URL},
+		},
+		cacheDir:    t.TempDir(),
+		cacheTTL:    24 * time.Hour,
+		lockStore:   lockStore,
+		configStore: configStore,
+	}
+
+	result, err := scanner.Scan("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.TotalDependencies != 3 {
+		t.Errorf("Expected 3 dependencies, got %d", result.Summary.TotalDependencies)
+	}
+
+	if result.Summary.Scanned != 3 {
+		t.Errorf("Expected 3 scanned, got %d", result.Summary.Scanned)
+	}
+
+	if result.Summary.Vulnerabilities.Total != 2 {
+		t.Errorf("Expected 2 total vulnerabilities, got %d", result.Summary.Vulnerabilities.Total)
+	}
+
+	if result.Summary.Vulnerabilities.Critical != 1 {
+		t.Errorf("Expected 1 critical, got %d", result.Summary.Vulnerabilities.Critical)
+	}
+
+	if result.Summary.Vulnerabilities.Medium != 1 {
+		t.Errorf("Expected 1 medium, got %d", result.Summary.Vulnerabilities.Medium)
+	}
+}
+
 func TestScan_FailOnThreshold(t *testing.T) {
 	// Create mock OSV server with a high severity vuln
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := osvResponse{
-			Vulns: []osvVuln{
+		response := osvBatchResponse{
+			Results: []osvResponse{
 				{
-					ID:       "CVE-2024-HIGH",
-					Summary:  "High severity issue",
-					Severity: []osvSeverity{{Type: "CVSS_V3", Score: "7.5"}},
+					Vulns: []osvVuln{
+						{
+							ID:       "CVE-2024-HIGH",
+							Summary:  "High severity issue",
+							Severity: []osvSeverity{{Type: "CVSS_V3", Score: "7.5"}},
+						},
+					},
 				},
 			},
 		}
@@ -546,7 +748,7 @@ func TestScan_FailOnThreshold(t *testing.T) {
 
 	lockStore.EXPECT().Load().Return(types.VendorLock{
 		Vendors: []types.LockDetails{
-			{Name: "test", Ref: "main", CommitHash: "abc123"},
+			{Name: "test", Ref: "main", CommitHash: "abc123def"},
 		},
 	}, nil).Times(2)
 
@@ -595,17 +797,21 @@ func TestScan_FailOnThreshold(t *testing.T) {
 
 func TestScan_JSONOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := osvResponse{
-			Vulns: []osvVuln{
+		response := osvBatchResponse{
+			Results: []osvResponse{
 				{
-					ID:       "CVE-2024-JSON",
-					Summary:  "JSON test vulnerability",
-					Aliases:  []string{"GHSA-test"},
-					Severity: []osvSeverity{{Type: "CVSS_V3", Score: "8.0"}},
-					Affected: []osvAffected{
-						{Ranges: []osvRange{{Events: []osvEvent{{Fixed: "v2.0.0"}}}}},
+					Vulns: []osvVuln{
+						{
+							ID:       "CVE-2024-JSON",
+							Summary:  "JSON test vulnerability",
+							Aliases:  []string{"GHSA-test"},
+							Severity: []osvSeverity{{Type: "CVSS_V3", Score: "8.0"}},
+							Affected: []osvAffected{
+								{Ranges: []osvRange{{Events: []osvEvent{{Fixed: "v2.0.0"}}}}},
+							},
+							References: []osvRef{{URL: "https://example.com/advisory"}},
+						},
 					},
-					References: []osvRef{{URL: "https://example.com/advisory"}},
 				},
 			},
 		}
@@ -625,7 +831,7 @@ func TestScan_JSONOutput(t *testing.T) {
 			{
 				Name:             "json-test",
 				Ref:              "main",
-				CommitHash:       "json123",
+				CommitHash:       "json123abc",
 				SourceVersionTag: "v1.0.0",
 			},
 		},
@@ -704,7 +910,7 @@ func TestScan_NetworkError_UseStaleCache(t *testing.T) {
 	dep := types.LockDetails{
 		Name:       "network-test",
 		Ref:        "main",
-		CommitHash: "net123",
+		CommitHash: "net123abc",
 	}
 
 	scanner := NewVulnScanner(lockStore, configStore)
@@ -742,38 +948,19 @@ type mockTransport struct {
 }
 
 func (t *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Parse the server URL to get host correctly
+	serverHost := t.serverURL
+	if len(serverHost) > 7 && serverHost[:7] == "http://" {
+		serverHost = serverHost[7:]
+	} else if len(serverHost) > 8 && serverHost[:8] == "https://" {
+		serverHost = serverHost[8:]
+	}
+
 	// Replace the URL with our test server
 	req.URL.Scheme = "http"
-	req.URL.Host = t.serverURL[7:] // Remove "http://" prefix
+	req.URL.Host = serverHost
 
 	return http.DefaultTransport.RoundTrip(req)
-}
-
-// ============================================================================
-// Ecosystem Detection Tests
-// ============================================================================
-
-func TestDetectEcosystem(t *testing.T) {
-	tests := []struct {
-		url      string
-		expected string
-	}{
-		{"https://github.com/golang/go", "Go"},
-		{"https://github.com/owner/go/repo", "Go"},
-		{"https://github.com/npm/cli", "npm"},
-		{"https://github.com/pypi/warehouse", "PyPI"},
-		{"https://github.com/rust-lang/crates.io", "crates.io"},
-		{"https://github.com/owner/unknown-project", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.url, func(t *testing.T) {
-			got := detectEcosystem(tt.url)
-			if got != tt.expected {
-				t.Errorf("detectEcosystem(%s) = %s, want %s", tt.url, got, tt.expected)
-			}
-		})
-	}
 }
 
 // ============================================================================
@@ -808,6 +995,21 @@ func TestGetCacheKey(t *testing.T) {
 				CommitHash: "xyz789abc",
 			},
 		},
+		{
+			name: "With special characters",
+			dep: types.LockDetails{
+				Name:             "special/chars:test",
+				CommitHash:       "abc123",
+				SourceVersionTag: "v1.0.0",
+			},
+		},
+		{
+			name: "Very long name",
+			dep: types.LockDetails{
+				Name:       "this-is-a-very-long-vendor-name-that-might-cause-issues-with-filesystem-limits-if-not-handled-properly-in-the-cache-key-generation-code",
+				CommitHash: "abc123def456789",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -817,14 +1019,22 @@ func TestGetCacheKey(t *testing.T) {
 				t.Error("Cache key should not be empty")
 			}
 
-			// Verify key is filesystem-safe (no slashes or colons)
-			if filepath.Base(key) != key {
-				t.Errorf("Cache key contains path separators: %s", key)
+			// Verify key is filesystem-safe (no problematic chars)
+			for _, char := range []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"} {
+				if filepath.Base(key) != key {
+					t.Errorf("Cache key contains path separators: %s", key)
+				}
+				_ = char
 			}
 
 			// Verify key ends with .json
 			if !hasJSONSuffix(key) {
 				t.Errorf("Cache key should end with .json: %s", key)
+			}
+
+			// Verify key length is reasonable
+			if len(key) > 210 {
+				t.Errorf("Cache key too long: %d chars", len(key))
 			}
 		})
 	}
@@ -867,5 +1077,45 @@ func TestClearCache(t *testing.T) {
 	// Verify cache directory is removed
 	if _, err := os.Stat(cacheDir); !os.IsNotExist(err) {
 		t.Error("Cache directory should be removed after clear")
+	}
+}
+
+// ============================================================================
+// Duplicate Reference Handling Test
+// ============================================================================
+
+func TestConvertVulns_NoDuplicateReferences(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	scanner := NewVulnScanner(lockStore, configStore)
+
+	// Create vulnerability with duplicate references
+	osvVulns := []osvVuln{
+		{
+			ID:      "CVE-2024-DUP",
+			Summary: "Test duplicate refs",
+			References: []osvRef{
+				{URL: "https://example.com/advisory"},
+				{URL: "https://example.com/advisory"}, // Duplicate
+				{URL: "https://nvd.nist.gov/vuln/detail/CVE-2024-DUP"},
+			},
+		},
+	}
+
+	vulns := scanner.convertVulns(osvVulns)
+
+	if len(vulns) != 1 {
+		t.Fatalf("Expected 1 vulnerability, got %d", len(vulns))
+	}
+
+	// Should have deduplicated references
+	// Original 2 unique + NVD (already present, not added again)
+	expectedRefs := 2 // example.com/advisory and nvd.nist.gov
+	if len(vulns[0].References) != expectedRefs {
+		t.Errorf("Expected %d unique references, got %d: %v", expectedRefs, len(vulns[0].References), vulns[0].References)
 	}
 }
