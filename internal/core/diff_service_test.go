@@ -64,7 +64,7 @@ func TestDiffVendor_Success(t *testing.T) {
 	}, nil)
 	mockFS.EXPECT().RemoveAll("/tmp/test").Return(nil)
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, nil, "", &SilentUICallback{})
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, nil, "", &SilentUICallback{}, nil)
 
 	diffs, err := syncer.DiffVendor("test-vendor")
 	if err != nil {
@@ -106,7 +106,7 @@ func TestDiffVendor_VendorNotFound(t *testing.T) {
 
 	mockLock.EXPECT().Load().Return(types.VendorLock{}, nil)
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, nil, nil, nil, "", &SilentUICallback{})
+	syncer := NewVendorSyncer(mockConfig, mockLock, nil, nil, nil, "", &SilentUICallback{}, nil)
 
 	_, err := syncer.DiffVendor("nonexistent")
 	if err == nil {
@@ -141,7 +141,7 @@ func TestDiffVendor_NotLocked(t *testing.T) {
 		Vendors: []types.LockDetails{}, // Empty - not locked
 	}, nil)
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, nil, nil, nil, "", &SilentUICallback{})
+	syncer := NewVendorSyncer(mockConfig, mockLock, nil, nil, nil, "", &SilentUICallback{}, nil)
 
 	diffs, err := syncer.DiffVendor("test-vendor")
 	if err != nil {
