@@ -781,6 +781,670 @@ func TestGenerate_ConfigLoadError(t *testing.T) {
 }
 
 // ============================================================================
+// File Hashes / Checksums Tests
+// ============================================================================
+
+func TestGenerateCycloneDX_IncludesFileHashes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "hashed-lib", URL: "https://github.com/owner/hashed"},
+		},
+	}, nil)
+
+	// Mock lock with multiple file hashes
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "hashed-lib",
+				Ref:        "main",
+				CommitHash: "abc123",
+				FileHashes: map[string]string{
+					"lib/file1.go": "sha256hashvalue1",
+					"lib/file2.go": "sha256hashvalue2",
+					"lib/file3.go": "sha256hashvalue3",
+				},
+			},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatCycloneDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse CycloneDX JSON: %v", err)
+	}
+
+	components := result["components"].([]interface{})
+	comp := components[0].(map[string]interface{})
+
+	// Verify hashes array exists
+	hashes, ok := comp["hashes"].([]interface{})
+	if !ok {
+		t.Fatal("Expected 'hashes' array in component")
+	}
+
+	if len(hashes) != 3 {
+		t.Errorf("Expected 3 hashes, got %d", len(hashes))
+	}
+
+	// Verify hash structure
+	hash := hashes[0].(map[string]interface{})
+	if hash["alg"] != "SHA-256" {
+		t.Errorf("Expected hash algorithm 'SHA-256', got %v", hash["alg"])
+	}
+
+	// Verify hash content is present (don't check exact value since map iteration order varies)
+	if hash["content"] == nil || hash["content"] == "" {
+		t.Error("Expected hash content to be present")
+	}
+}
+
+func TestGenerateSPDX_IncludesChecksums(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "checksummed-lib", URL: "https://github.com/owner/checksummed"},
+		},
+	}, nil)
+
+	// Mock lock with file hashes
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "checksummed-lib",
+				Ref:        "main",
+				CommitHash: "def456",
+				FileHashes: map[string]string{
+					"src/main.go":  "checksumvalue1",
+					"src/utils.go": "checksumvalue2",
+				},
+			},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatSPDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse SPDX JSON: %v", err)
+	}
+
+	packages := result["packages"].([]interface{})
+	pkg := packages[0].(map[string]interface{})
+
+	// Verify checksums array exists
+	checksums, ok := pkg["checksums"].([]interface{})
+	if !ok {
+		t.Fatal("Expected 'checksums' array in package")
+	}
+
+	if len(checksums) != 2 {
+		t.Errorf("Expected 2 checksums, got %d", len(checksums))
+	}
+
+	// Verify checksum structure
+	checksum := checksums[0].(map[string]interface{})
+	if checksum["algorithm"] != "SHA256" {
+		t.Errorf("Expected checksum algorithm 'SHA256', got %v", checksum["algorithm"])
+	}
+
+	if checksum["checksumValue"] == nil || checksum["checksumValue"] == "" {
+		t.Error("Expected checksumValue to be present")
+	}
+}
+
+// ============================================================================
+// External References Tests
+// ============================================================================
+
+func TestGenerateCycloneDX_IncludesVCSReference(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	repoURL := "https://github.com/owner/vcs-test-lib"
+
+	// Mock config with URL
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "vcs-lib", URL: repoURL},
+		},
+	}, nil)
+
+	// Mock lock
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vcs-lib", Ref: "main", CommitHash: "abc123"},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatCycloneDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse CycloneDX JSON: %v", err)
+	}
+
+	components := result["components"].([]interface{})
+	comp := components[0].(map[string]interface{})
+
+	// Verify externalReferences array exists
+	extRefs, ok := comp["externalReferences"].([]interface{})
+	if !ok {
+		t.Fatal("Expected 'externalReferences' array in component")
+	}
+
+	if len(extRefs) != 1 {
+		t.Fatalf("Expected 1 external reference, got %d", len(extRefs))
+	}
+
+	// Verify VCS reference structure
+	vcsRef := extRefs[0].(map[string]interface{})
+	if vcsRef["type"] != "vcs" {
+		t.Errorf("Expected external reference type 'vcs', got %v", vcsRef["type"])
+	}
+
+	if vcsRef["url"] != repoURL {
+		t.Errorf("Expected external reference URL '%s', got %v", repoURL, vcsRef["url"])
+	}
+}
+
+func TestGenerateCycloneDX_NoVCSReferenceWhenNoURL(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config WITHOUT URL (vendor missing from config)
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{},
+	}, nil)
+
+	// Mock lock
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "no-url-lib", Ref: "main", CommitHash: "abc123"},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatCycloneDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse CycloneDX JSON: %v", err)
+	}
+
+	components := result["components"].([]interface{})
+	comp := components[0].(map[string]interface{})
+
+	// Verify externalReferences is NOT present when URL is empty
+	if extRefs, exists := comp["externalReferences"]; exists && extRefs != nil {
+		t.Errorf("Expected no externalReferences when URL is empty, got %v", extRefs)
+	}
+}
+
+// ============================================================================
+// Custom Properties Tests
+// ============================================================================
+
+func TestGenerateCycloneDX_IncludesGitVendorProperties(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "props-lib", URL: "https://github.com/owner/props"},
+		},
+	}, nil)
+
+	// Mock lock with full metadata
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:         "props-lib",
+				Ref:          "v2.0",
+				CommitHash:   "abc123def456",
+				VendoredAt:   "2026-01-15T10:00:00Z",
+				VendoredBy:   "Alice <alice@example.com>",
+				LastSyncedAt: "2026-02-01T12:00:00Z",
+			},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatCycloneDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse CycloneDX JSON: %v", err)
+	}
+
+	components := result["components"].([]interface{})
+	comp := components[0].(map[string]interface{})
+
+	// Verify properties array exists
+	properties, ok := comp["properties"].([]interface{})
+	if !ok {
+		t.Fatal("Expected 'properties' array in component")
+	}
+
+	// Build a map of property names to values for easier checking
+	propMap := make(map[string]string)
+	for _, p := range properties {
+		prop := p.(map[string]interface{})
+		name := prop["name"].(string)
+		value := prop["value"].(string)
+		propMap[name] = value
+	}
+
+	// Verify required properties
+	expectedProps := map[string]string{
+		"git-vendor:commit":        "abc123def456",
+		"git-vendor:ref":           "v2.0",
+		"git-vendor:vendored_at":   "2026-01-15T10:00:00Z",
+		"git-vendor:vendored_by":   "Alice <alice@example.com>",
+		"git-vendor:last_synced_at": "2026-02-01T12:00:00Z",
+	}
+
+	for name, expected := range expectedProps {
+		if actual, exists := propMap[name]; !exists {
+			t.Errorf("Missing property '%s'", name)
+		} else if actual != expected {
+			t.Errorf("Property '%s': expected '%s', got '%s'", name, expected, actual)
+		}
+	}
+}
+
+func TestGenerateCycloneDX_OmitsEmptyProperties(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "minimal-lib", URL: "https://github.com/owner/minimal"},
+		},
+	}, nil)
+
+	// Mock lock with MINIMAL metadata (no vendored_at, vendored_by, last_synced_at)
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "minimal-lib",
+				Ref:        "main",
+				CommitHash: "abc123",
+				// No VendoredAt, VendoredBy, LastSyncedAt
+			},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatCycloneDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse CycloneDX JSON: %v", err)
+	}
+
+	components := result["components"].([]interface{})
+	comp := components[0].(map[string]interface{})
+
+	properties := comp["properties"].([]interface{})
+
+	// Build a map of property names
+	propNames := make(map[string]bool)
+	for _, p := range properties {
+		prop := p.(map[string]interface{})
+		propNames[prop["name"].(string)] = true
+	}
+
+	// Should have commit and ref (always present)
+	if !propNames["git-vendor:commit"] {
+		t.Error("Missing required property 'git-vendor:commit'")
+	}
+	if !propNames["git-vendor:ref"] {
+		t.Error("Missing required property 'git-vendor:ref'")
+	}
+
+	// Should NOT have empty optional properties
+	optionalProps := []string{"git-vendor:vendored_at", "git-vendor:vendored_by", "git-vendor:last_synced_at"}
+	for _, name := range optionalProps {
+		if propNames[name] {
+			t.Errorf("Property '%s' should be omitted when empty", name)
+		}
+	}
+}
+
+// ============================================================================
+// Multiple Refs Per Vendor Tests
+// ============================================================================
+
+func TestGenerateCycloneDX_VendorWithMultipleRefs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config - single vendor
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "multi-ref-lib", URL: "https://github.com/owner/multi-ref"},
+		},
+	}, nil)
+
+	// Mock lock with SAME vendor tracking MULTIPLE refs (main, dev, v1.0)
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "multi-ref-lib", Ref: "main", CommitHash: "maincommit123"},
+			{Name: "multi-ref-lib", Ref: "dev", CommitHash: "devcommit456"},
+			{Name: "multi-ref-lib", Ref: "v1.0", CommitHash: "v1commit789", SourceVersionTag: "v1.0.0"},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatCycloneDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse CycloneDX JSON: %v", err)
+	}
+
+	// Should have 3 components (one per ref)
+	components := result["components"].([]interface{})
+	if len(components) != 3 {
+		t.Fatalf("Expected 3 components for vendor with 3 refs, got %d", len(components))
+	}
+
+	// Build map of versions to verify all refs are represented
+	versions := make(map[string]bool)
+	bomRefs := make(map[string]bool)
+	for _, c := range components {
+		comp := c.(map[string]interface{})
+		versions[comp["version"].(string)] = true
+		bomRefs[comp["bom-ref"].(string)] = true
+	}
+
+	// Check versions - v1.0 should use tag, others use commit hash
+	if !versions["maincommit123"] {
+		t.Error("Missing component with version 'maincommit123' (main branch)")
+	}
+	if !versions["devcommit456"] {
+		t.Error("Missing component with version 'devcommit456' (dev branch)")
+	}
+	if !versions["v1.0.0"] {
+		t.Error("Missing component with version 'v1.0.0' (v1.0 tag)")
+	}
+
+	// Check bom-refs are unique
+	if len(bomRefs) != 3 {
+		t.Errorf("Expected 3 unique bom-refs, got %d", len(bomRefs))
+	}
+}
+
+func TestGenerateSPDX_VendorWithMultipleRefs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "multi-ref-lib", URL: "https://github.com/owner/multi-ref"},
+		},
+	}, nil)
+
+	// Mock lock with multiple refs
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "multi-ref-lib", Ref: "main", CommitHash: "aaa111"},
+			{Name: "multi-ref-lib", Ref: "feature", CommitHash: "bbb222"},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatSPDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse SPDX JSON: %v", err)
+	}
+
+	// Should have 2 packages
+	packages := result["packages"].([]interface{})
+	if len(packages) != 2 {
+		t.Fatalf("Expected 2 packages for vendor with 2 refs, got %d", len(packages))
+	}
+
+	// Should have 2 relationships (one DESCRIBES per package)
+	relationships := result["relationships"].([]interface{})
+	if len(relationships) != 2 {
+		t.Fatalf("Expected 2 relationships, got %d", len(relationships))
+	}
+
+	// Verify each relationship points to a valid package
+	packageSPDXIDs := make(map[string]bool)
+	for _, p := range packages {
+		pkg := p.(map[string]interface{})
+		packageSPDXIDs[pkg["SPDXID"].(string)] = true
+	}
+
+	for i, r := range relationships {
+		rel := r.(map[string]interface{})
+		target := rel["relatedSpdxElement"].(string)
+		if !packageSPDXIDs[target] {
+			t.Errorf("Relationship %d target '%s' does not match any package SPDXID", i, target)
+		}
+	}
+}
+
+// ============================================================================
+// SPDX External Refs Tests
+// ============================================================================
+
+func TestGenerateSPDX_IncludesPURLExternalRef(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "purl-lib", URL: "https://github.com/owner/purl-test"},
+		},
+	}, nil)
+
+	// Mock lock
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "purl-lib", Ref: "main", CommitHash: "abc123"},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatSPDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse SPDX JSON: %v", err)
+	}
+
+	packages := result["packages"].([]interface{})
+	pkg := packages[0].(map[string]interface{})
+
+	// Verify externalRefs array exists
+	extRefs, ok := pkg["externalRefs"].([]interface{})
+	if !ok {
+		t.Fatal("Expected 'externalRefs' array in package")
+	}
+
+	if len(extRefs) != 1 {
+		t.Fatalf("Expected 1 external ref, got %d", len(extRefs))
+	}
+
+	// Verify PURL external ref structure
+	purlRef := extRefs[0].(map[string]interface{})
+	if purlRef["referenceCategory"] != "PACKAGE-MANAGER" {
+		t.Errorf("Expected referenceCategory 'PACKAGE-MANAGER', got %v", purlRef["referenceCategory"])
+	}
+
+	if purlRef["referenceType"] != "purl" {
+		t.Errorf("Expected referenceType 'purl', got %v", purlRef["referenceType"])
+	}
+
+	expectedPURL := "pkg:github/owner/purl-test@abc123"
+	if purlRef["referenceLocator"] != expectedPURL {
+		t.Errorf("Expected referenceLocator '%s', got %v", expectedPURL, purlRef["referenceLocator"])
+	}
+}
+
+// ============================================================================
+// SPDX Comment/Annotation Tests
+// ============================================================================
+
+func TestGenerateSPDX_IncludesMetadataComment(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	// Mock config
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "comment-lib", URL: "https://github.com/owner/comment"},
+		},
+	}, nil)
+
+	// Mock lock with metadata
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "comment-lib",
+				Ref:        "main",
+				CommitHash: "abc123",
+				VendoredAt: "2026-01-15T10:00:00Z",
+				VendoredBy: "Bob <bob@example.com>",
+			},
+		},
+	}, nil)
+
+	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	output, err := generator.Generate(SBOMFormatSPDX)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("Failed to parse SPDX JSON: %v", err)
+	}
+
+	packages := result["packages"].([]interface{})
+	pkg := packages[0].(map[string]interface{})
+
+	// Verify comment contains metadata
+	comment, ok := pkg["comment"].(string)
+	if !ok {
+		t.Fatal("Expected 'comment' field in package")
+	}
+
+	if !strings.Contains(comment, "vendored_at=2026-01-15T10:00:00Z") {
+		t.Errorf("Expected comment to contain vendored_at, got: %s", comment)
+	}
+
+	if !strings.Contains(comment, "vendored_by=Bob <bob@example.com>") {
+		t.Errorf("Expected comment to contain vendored_by, got: %s", comment)
+	}
+
+	if !strings.Contains(comment, "ref=main") {
+		t.Errorf("Expected comment to contain ref, got: %s", comment)
+	}
+
+	if !strings.Contains(comment, "commit=abc123") {
+		t.Errorf("Expected comment to contain commit, got: %s", comment)
+	}
+}
+
+// ============================================================================
 // Version Fallback Tests
 // ============================================================================
 
