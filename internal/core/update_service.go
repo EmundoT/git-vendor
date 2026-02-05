@@ -59,7 +59,8 @@ func (s *UpdateService) UpdateAllWithOptions(parallelOpts types.ParallelOptions)
 // updateAllSequential performs sequential update (original implementation)
 func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 	// Load existing lock to preserve VendoredAt and VendoredBy
-	existingLock, _ := s.lockStore.Load() // Ignore error - might not exist
+	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
+	existingLock, _ := s.lockStore.Load()
 	existingEntries := make(map[string]types.LockDetails)
 	for _, entry := range existingLock.Vendors {
 		key := entry.Name + "@" + entry.Ref
@@ -133,7 +134,8 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 // updateAllParallel performs parallel update using worker pool
 func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpts types.ParallelOptions) error {
 	// Load existing lock to preserve VendoredAt and VendoredBy
-	existingLock, _ := s.lockStore.Load() // Ignore error - might not exist
+	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
+	existingLock, _ := s.lockStore.Load()
 	existingEntries := make(map[string]types.LockDetails)
 	for _, entry := range existingLock.Vendors {
 		key := entry.Name + "@" + entry.Ref
