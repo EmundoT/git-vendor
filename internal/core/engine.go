@@ -249,6 +249,11 @@ func (m *Manager) Verify() (*types.VerifyResult, error) {
 	return m.syncer.Verify()
 }
 
+// Scan performs vulnerability scanning against OSV.dev
+func (m *Manager) Scan(failOn string) (*ScanResult, error) {
+	return m.syncer.Scan(failOn)
+}
+
 // MigrateLockfile updates an existing lockfile to add missing metadata fields
 func (m *Manager) MigrateLockfile() (int, error) {
 	return m.syncer.MigrateLockfile()

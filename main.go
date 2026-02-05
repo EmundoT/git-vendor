@@ -762,6 +762,154 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "scan":
+		// Parse command-specific flags
+		format := "table" // default format
+		failOn := ""
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			case strings.HasPrefix(arg, "--fail-on="):
+				failOn = strings.TrimPrefix(arg, "--fail-on=")
+			case arg == "--fail-on":
+				if i+1 < len(os.Args) {
+					failOn = os.Args[i+1]
+					i++
+				}
+			}
+		}
+
+		// Validate failOn value
+		if failOn != "" {
+			validThresholds := map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
+			if !validThresholds[strings.ToLower(failOn)] {
+				tui.PrintError("Invalid Flag", fmt.Sprintf("--fail-on must be one of: critical, high, medium, low (got: %s)", failOn))
+				os.Exit(1)
+			}
+			failOn = strings.ToUpper(failOn)
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Run vulnerability scan
+		result, err := manager.Scan(failOn)
+		if err != nil {
+			tui.PrintError("Scan Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			// Table format
+			fmt.Println("Scanning vendored dependencies for vulnerabilities...")
+			fmt.Println()
+
+			for _, dep := range result.Dependencies {
+				// Show dependency header
+				version := dep.Commit[:7]
+				if dep.Version != nil {
+					version = *dep.Version
+				}
+				fmt.Printf("  %s (%s)\n", dep.Name, version)
+
+				if dep.ScanStatus == "not_scanned" || dep.ScanStatus == "error" {
+					fmt.Printf("    ⚠ Unable to scan: %s\n", dep.ScanReason)
+					fmt.Println()
+					continue
+				}
+
+				if len(dep.Vulnerabilities) == 0 {
+					fmt.Println("    ✓ No vulnerabilities found")
+					fmt.Println()
+					continue
+				}
+
+				// Show vulnerabilities
+				for _, vuln := range dep.Vulnerabilities {
+					// Determine symbol based on severity
+					symbol := "✗"
+					fmt.Printf("    %s %s [%s] %s\n", symbol, vuln.ID, vuln.Severity, vuln.Summary)
+					if vuln.FixedVersion != "" {
+						fmt.Printf("      Fixed in: %s\n", vuln.FixedVersion)
+					}
+					// Show first reference URL
+					if len(vuln.References) > 0 {
+						fmt.Printf("      %s\n", vuln.References[0])
+					}
+					fmt.Println()
+				}
+			}
+
+			// Print summary
+			fmt.Printf("Summary: %d dependencies scanned\n", result.Summary.TotalDependencies)
+			if result.Summary.Vulnerabilities.Total > 0 {
+				fmt.Printf("  ✗ %d vulnerabilities found", result.Summary.Vulnerabilities.Total)
+				parts := []string{}
+				if result.Summary.Vulnerabilities.Critical > 0 {
+					parts = append(parts, fmt.Sprintf("%d critical", result.Summary.Vulnerabilities.Critical))
+				}
+				if result.Summary.Vulnerabilities.High > 0 {
+					parts = append(parts, fmt.Sprintf("%d high", result.Summary.Vulnerabilities.High))
+				}
+				if result.Summary.Vulnerabilities.Medium > 0 {
+					parts = append(parts, fmt.Sprintf("%d medium", result.Summary.Vulnerabilities.Medium))
+				}
+				if result.Summary.Vulnerabilities.Low > 0 {
+					parts = append(parts, fmt.Sprintf("%d low", result.Summary.Vulnerabilities.Low))
+				}
+				if len(parts) > 0 {
+					fmt.Printf(" (%s)", strings.Join(parts, ", "))
+				}
+				fmt.Println()
+			} else {
+				fmt.Println("  ✓ No vulnerabilities found")
+			}
+			if result.Summary.NotScanned > 0 {
+				fmt.Printf("  ⚠ %d dependencies could not be scanned\n", result.Summary.NotScanned)
+			}
+			fmt.Println()
+			fmt.Printf("Result: %s", result.Summary.Result)
+			if result.Summary.ThresholdExceeded {
+				fmt.Printf(" (%s vulnerabilities found)", strings.ToLower(failOn))
+			}
+			fmt.Println()
+		}
+
+		// Exit code based on result and threshold
+		// 0=PASS, 1=FAIL (vulns found at/above threshold), 2=WARN (some deps not scanned)
+		if failOn != "" && result.Summary.ThresholdExceeded {
+			os.Exit(1)
+		}
+		switch result.Summary.Result {
+		case "PASS":
+			os.Exit(0)
+		case "WARN":
+			os.Exit(2)
+		default: // FAIL
+			// If no --fail-on specified, vulns always cause exit 1
+			if failOn == "" && result.Summary.Vulnerabilities.Total > 0 {
+				os.Exit(1)
+			}
+			os.Exit(0) // If --fail-on specified and not exceeded, exit 0
+		}
+
 	case "status":
 		// Parse common flags
 		flags, _ := parseCommonFlags(os.Args[2:])
