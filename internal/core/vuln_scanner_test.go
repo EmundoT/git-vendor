@@ -82,285 +82,16 @@ func TestParseCVSSScore(t *testing.T) {
 // Query Building Tests
 // ============================================================================
 
-func TestBuildPURL(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	lockStore := NewMockLockStore(ctrl)
-	configStore := NewMockConfigStore(ctrl)
-
-	scanner := NewVulnScanner(lockStore, configStore)
-
-	tests := []struct {
-		name     string
-		repoURL  string
-		version  string
-		expected string
-	}{
-		{
-			name:     "GitHub URL",
-			repoURL:  "https://github.com/owner/repo",
-			version:  "v1.2.3",
-			expected: "pkg:github/owner/repo@v1.2.3",
-		},
-		{
-			name:     "GitLab URL",
-			repoURL:  "https://gitlab.com/group/project",
-			version:  "v2.0.0",
-			expected: "pkg:gitlab/group/project@v2.0.0",
-		},
-		{
-			name:     "Bitbucket URL",
-			repoURL:  "https://bitbucket.org/team/repo",
-			version:  "1.0.0",
-			expected: "pkg:bitbucket/team/repo@1.0.0",
-		},
-		{
-			name:     "URL with .git suffix",
-			repoURL:  "https://github.com/owner/repo.git",
-			version:  "v1.0.0",
-			expected: "pkg:github/owner/repo@v1.0.0",
-		},
-		{
-			name:     "Generic URL",
-			repoURL:  "https://git.example.com/myproject",
-			version:  "v3.0.0",
-			expected: "pkg:generic/myproject@v3.0.0",
-		},
-		{
-			name:     "Empty path",
-			repoURL:  "https://github.com/",
-			version:  "v1.0.0",
-			expected: "",
-		},
-		{
-			name:     "Invalid URL",
-			repoURL:  "not-a-url",
-			version:  "v1.0.0",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := scanner.buildPURL(tt.repoURL, tt.version)
-			if got != tt.expected {
-				t.Errorf("buildPURL(%s, %s) = %s, want %s", tt.repoURL, tt.version, got, tt.expected)
-			}
-		})
-	}
-}
+// Note: PURL generation is now handled by the internal/purl package.
+// See internal/purl/purl_test.go for PURL-related tests.
 
 // ============================================================================
-// OSV Query Tests with Mock Server
+// Batch Query Tests with Mock Server
 // ============================================================================
 
-func TestQueryOSV_WithKnownCVE(t *testing.T) {
-	// Create mock OSV server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("Expected POST method, got %s", r.Method)
-		}
-
-		// Return a mock response with a known CVE
-		response := osvResponse{
-			Vulns: []osvVuln{
-				{
-					ID:      "CVE-2024-1234",
-					Summary: "Remote code execution vulnerability",
-					Aliases: []string{"GHSA-xxxx-yyyy-zzzz"},
-					Severity: []osvSeverity{
-						{Type: "CVSS_V3", Score: "9.8"},
-					},
-					Affected: []osvAffected{
-						{
-							Ranges: []osvRange{
-								{
-									Type: "SEMVER",
-									Events: []osvEvent{
-										{Introduced: "1.0.0"},
-										{Fixed: "1.2.4"},
-									},
-								},
-							},
-						},
-					},
-					References: []osvRef{
-						{Type: "ADVISORY", URL: "https://github.com/owner/repo/security/advisories/GHSA-xxxx"},
-					},
-				},
-			},
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	lockStore := NewMockLockStore(ctrl)
-	configStore := NewMockConfigStore(ctrl)
-
-	// Create scanner with mock server URL
-	scanner := &VulnScanner{
-		client: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: &mockTransport{serverURL: server.URL},
-		},
-		cacheDir:    t.TempDir(),
-		cacheTTL:    24 * time.Hour,
-		lockStore:   lockStore,
-		configStore: configStore,
-	}
-
-	dep := types.LockDetails{
-		Name:             "test-vendor",
-		Ref:              "main",
-		CommitHash:       "abc123def456",
-		SourceVersionTag: "v1.2.3",
-	}
-
-	vulns, err := scanner.queryOSV(&dep, "https://github.com/owner/repo")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-
-	if len(vulns) != 1 {
-		t.Fatalf("Expected 1 vulnerability, got %d", len(vulns))
-	}
-
-	if vulns[0].ID != "CVE-2024-1234" {
-		t.Errorf("Expected CVE ID CVE-2024-1234, got %s", vulns[0].ID)
-	}
-
-	if vulns[0].Summary != "Remote code execution vulnerability" {
-		t.Errorf("Unexpected summary: %s", vulns[0].Summary)
-	}
-}
-
-func TestQueryOSV_NoCVEs(t *testing.T) {
-	// Create mock OSV server that returns no vulnerabilities
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		response := osvResponse{
-			Vulns: []osvVuln{},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	lockStore := NewMockLockStore(ctrl)
-	configStore := NewMockConfigStore(ctrl)
-
-	scanner := &VulnScanner{
-		client: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: &mockTransport{serverURL: server.URL},
-		},
-		cacheDir:    t.TempDir(),
-		cacheTTL:    24 * time.Hour,
-		lockStore:   lockStore,
-		configStore: configStore,
-	}
-
-	dep := types.LockDetails{
-		Name:       "clean-vendor",
-		Ref:        "main",
-		CommitHash: "xyz789abc",
-	}
-
-	vulns, err := scanner.queryOSV(&dep, "https://github.com/owner/clean-repo")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-
-	if len(vulns) != 0 {
-		t.Errorf("Expected 0 vulnerabilities, got %d", len(vulns))
-	}
-}
-
-func TestQueryOSV_RateLimited(t *testing.T) {
-	// Create mock OSV server that returns 429
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Retry-After", "60")
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer server.Close()
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	lockStore := NewMockLockStore(ctrl)
-	configStore := NewMockConfigStore(ctrl)
-
-	scanner := &VulnScanner{
-		client: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: &mockTransport{serverURL: server.URL},
-		},
-		cacheDir:    t.TempDir(),
-		cacheTTL:    24 * time.Hour,
-		lockStore:   lockStore,
-		configStore: configStore,
-	}
-
-	dep := types.LockDetails{
-		Name:       "rate-limited-vendor",
-		Ref:        "main",
-		CommitHash: "def456ghi",
-	}
-
-	_, err := scanner.queryOSV(&dep, "https://github.com/owner/repo")
-	if err == nil {
-		t.Fatal("Expected rate limit error, got nil")
-	}
-
-	if !isRateLimitError(err) {
-		t.Errorf("Expected rate limit error, got: %v", err)
-	}
-}
-
-func TestQueryOSV_MalformedResponse(t *testing.T) {
-	// Create mock OSV server that returns invalid JSON
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("not valid json"))
-	}))
-	defer server.Close()
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	lockStore := NewMockLockStore(ctrl)
-	configStore := NewMockConfigStore(ctrl)
-
-	scanner := &VulnScanner{
-		client: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: &mockTransport{serverURL: server.URL},
-		},
-		cacheDir:    t.TempDir(),
-		cacheTTL:    24 * time.Hour,
-		lockStore:   lockStore,
-		configStore: configStore,
-	}
-
-	dep := types.LockDetails{
-		Name:       "malformed-vendor",
-		Ref:        "main",
-		CommitHash: "mal123",
-	}
-
-	_, err := scanner.queryOSV(&dep, "https://github.com/owner/repo")
-	if err == nil {
-		t.Fatal("Expected error for malformed JSON, got nil")
-	}
-}
+// Note: Single query (queryOSV) was removed in favor of batch queries.
+// These tests cover the batch query functionality which is now the only
+// way to query OSV.dev.
 
 // ============================================================================
 // Caching Tests
@@ -1497,6 +1228,102 @@ func TestBatchQuery_Pagination(t *testing.T) {
 		}
 		if batchSizes[1] != 500 {
 			t.Errorf("Expected second batch size 500, got %d", batchSizes[1])
+		}
+	}
+}
+
+// ============================================================================
+// Batch Partial Failure Test
+// ============================================================================
+
+// TestScan_BatchPartialFailure verifies that when a batch query returns
+// fewer results than expected, the missing dependencies are properly marked
+// as not_scanned rather than left in an undefined state.
+func TestScan_BatchPartialFailure(t *testing.T) {
+	// Create a server that only returns results for some dependencies
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var batchReq osvBatchRequest
+		if err := json.NewDecoder(r.Body).Decode(&batchReq); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		// Intentionally return fewer results than queries - simulating partial failure
+		// Return results for only the first half of queries
+		resultCount := len(batchReq.Queries) / 2
+		results := make([]osvResponse, resultCount)
+		for i := range results {
+			results[i] = osvResponse{Vulns: []osvVuln{}}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(osvBatchResponse{Results: results}); err != nil {
+			t.Errorf("Failed to encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	// Create 4 vendors
+	vendors := []types.LockDetails{
+		{Name: "vendor-a", Ref: "main", CommitHash: "aaa111"},
+		{Name: "vendor-b", Ref: "main", CommitHash: "bbb222"},
+		{Name: "vendor-c", Ref: "main", CommitHash: "ccc333"},
+		{Name: "vendor-d", Ref: "main", CommitHash: "ddd444"},
+	}
+	vendorSpecs := []types.VendorSpec{
+		{Name: "vendor-a", URL: "https://github.com/owner/repo-a"},
+		{Name: "vendor-b", URL: "https://github.com/owner/repo-b"},
+		{Name: "vendor-c", URL: "https://github.com/owner/repo-c"},
+		{Name: "vendor-d", URL: "https://github.com/owner/repo-d"},
+	}
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{Vendors: vendors}, nil)
+	configStore.EXPECT().Load().Return(types.VendorConfig{Vendors: vendorSpecs}, nil)
+
+	scanner := &VulnScanner{
+		client: &http.Client{
+			Transport: &mockTransport{serverURL: server.URL},
+		},
+		cacheDir:    t.TempDir(),
+		cacheTTL:    24 * time.Hour,
+		lockStore:   lockStore,
+		configStore: configStore,
+	}
+
+	result, err := scanner.Scan("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Server returns only 2 results for 4 queries
+	// The first 2 should be scanned, the last 2 should be not_scanned
+	if result.Summary.Scanned != 2 {
+		t.Errorf("Expected 2 scanned, got %d", result.Summary.Scanned)
+	}
+	if result.Summary.NotScanned != 2 {
+		t.Errorf("Expected 2 not_scanned, got %d", result.Summary.NotScanned)
+	}
+
+	// Verify the actual dependency statuses
+	for _, dep := range result.Dependencies {
+		switch dep.Name {
+		case "vendor-a", "vendor-b":
+			if dep.ScanStatus != types.ScanStatusScanned {
+				t.Errorf("%s: expected scanned, got %s", dep.Name, dep.ScanStatus)
+			}
+		case "vendor-c", "vendor-d":
+			if dep.ScanStatus != types.ScanStatusNotScanned {
+				t.Errorf("%s: expected not_scanned, got %s", dep.Name, dep.ScanStatus)
+			}
+			if dep.ScanReason == "" {
+				t.Errorf("%s: expected scan_reason to be set for not_scanned dependency", dep.Name)
+			}
 		}
 	}
 }
