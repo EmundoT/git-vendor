@@ -39,7 +39,7 @@ func (s *LicenseService) CheckCompliance(url string) (string, error) {
 			fmt.Sprintf("Accept %s License?", detectedLicense),
 			"This license is not in the allowed list. Continue anyway?",
 		) {
-			return "", fmt.Errorf("%s", ErrComplianceFailed)
+			return "", ErrComplianceFailed
 		}
 	} else {
 		// Show compliance success

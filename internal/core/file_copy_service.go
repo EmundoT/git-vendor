@@ -52,7 +52,7 @@ func (s *FileCopyService) copyMapping(tempDir string, vendor *types.VendorSpec, 
 	// Check if source exists
 	info, err := s.fs.Stat(srcPath)
 	if err != nil {
-		return CopyStats{}, fmt.Errorf(ErrPathNotFound, srcClean)
+		return CopyStats{}, fmt.Errorf(ErrPathNotFoundMsg, srcClean)
 	}
 
 	// Copy directory or file
