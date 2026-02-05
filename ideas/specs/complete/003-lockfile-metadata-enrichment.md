@@ -1,8 +1,9 @@
 # Spec 003: Lockfile Metadata Enrichment
 
-> **Status:** In Progress
+> **Status:** Complete
 > **Priority:** P0 - Foundation
 > **Effort:** 5-7 days
+> **Completed:** 2026-02-05
 > **Dependencies:** 001 (Schema Versioning)
 > **Blocks:** 010 (SBOM), 011 (CVE Scanning), 013 (License Policy), 021 (Graph), 024 (Metrics)
 

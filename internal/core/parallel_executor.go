@@ -11,7 +11,7 @@ import (
 // VendorResult represents the result of processing a single vendor
 type VendorResult struct {
 	Vendor      types.VendorSpec
-	UpdatedRefs map[string]string // ref -> commit hash
+	UpdatedRefs map[string]RefMetadata // ref -> metadata (commit hash, version tag)
 	Stats       CopyStats
 	Error       error
 }
@@ -40,7 +40,7 @@ func NewParallelExecutor(opts types.ParallelOptions, ui UICallback) *ParallelExe
 }
 
 // SyncVendorFunc is a function type that syncs a single vendor
-type SyncVendorFunc func(v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]string, CopyStats, error)
+type SyncVendorFunc func(v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error)
 
 // ExecuteParallelSync processes vendors in parallel using a worker pool
 func (p *ParallelExecutor) ExecuteParallelSync(
@@ -139,7 +139,7 @@ func (p *ParallelExecutor) syncWorker(
 }
 
 // UpdateVendorFunc is a function type that updates a single vendor
-type UpdateVendorFunc func(v types.VendorSpec, opts SyncOptions) (map[string]string, error)
+type UpdateVendorFunc func(v types.VendorSpec, opts SyncOptions) (map[string]RefMetadata, error)
 
 // ExecuteParallelUpdate processes vendor updates in parallel
 func (p *ParallelExecutor) ExecuteParallelUpdate(
