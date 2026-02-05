@@ -10,13 +10,13 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/EmundoT/git-vendor/internal/purl"
 	"github.com/EmundoT/git-vendor/internal/types"
 	"github.com/EmundoT/git-vendor/internal/version"
 )
@@ -78,7 +78,8 @@ func NewVulnScanner(lockStore LockStore, configStore ConfigStore) *VulnScanner {
 
 	return &VulnScanner{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			// No global timeout - let context.WithTimeout control each request.
+			// This avoids the client timeout (30s) aborting batch requests (60s).
 		},
 		cacheDir:    cacheDir,
 		cacheTTL:    cacheTTL,
@@ -319,67 +320,6 @@ func (s *VulnScanner) Scan(failOn string) (*types.ScanResult, error) {
 	return result, nil
 }
 
-// queryOSV queries OSV.dev for vulnerabilities (single query)
-func (s *VulnScanner) queryOSV(dep *types.LockDetails, repoURL string) ([]osvVuln, error) {
-	// Build cache key (includes URL hash for collision prevention)
-	cacheKey := s.getCacheKey(dep, repoURL)
-
-	// Check cache first
-	if cached, ok := s.loadFromCache(cacheKey); ok {
-		return cached, nil
-	}
-
-	// Build query - try PURL first if we have version tag
-	query := s.buildQuery(dep, repoURL)
-
-	// Make request with timeout (see timeout rationale at package level)
-	ctx, cancel := context.WithTimeout(context.Background(), singleQueryTimeout)
-	defer cancel()
-
-	queryJSON, err := json.Marshal(query)
-	if err != nil {
-		return nil, fmt.Errorf("marshal query: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, osvAPIEndpoint, bytes.NewReader(queryJSON))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", fmt.Sprintf("git-vendor/%s", version.GetVersion()))
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close() //nolint:errcheck // Body close errors on HTTP responses are non-actionable
-
-	// Handle rate limiting
-	if resp.StatusCode == http.StatusTooManyRequests {
-		retryAfter := resp.Header.Get("Retry-After")
-		return nil, fmt.Errorf("rate limited, retry after %s", retryAfter)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("OSV API error: %d (failed to read body: %w)", resp.StatusCode, err)
-		}
-		return nil, fmt.Errorf("OSV API error: %d - %s", resp.StatusCode, string(body))
-	}
-
-	var result osvResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	// Cache result (ignore cache write errors - non-fatal)
-	//nolint:errcheck // Cache write errors are non-fatal
-	s.saveToCache(cacheKey, result.Vulns)
-
-	return result.Vulns, nil
-}
-
 // batchQuery performs batch vulnerability queries for efficiency.
 // It handles batching (max 1000 queries per request) and caching automatically.
 func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string]string) (map[string][]osvVuln, error) {
@@ -489,15 +429,16 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 	return results, nil
 }
 
-// buildQuery creates an OSV query for a dependency
+// buildQuery creates an OSV query for a dependency.
+// Uses the shared purl package for PURL generation consistency with SBOM generation.
 func (s *VulnScanner) buildQuery(dep *types.LockDetails, repoURL string) osvQuery {
 	// Try PURL if we have version info
 	if dep.SourceVersionTag != "" && repoURL != "" {
-		purl := s.buildPURL(repoURL, dep.SourceVersionTag)
-		if purl != "" {
+		p := purl.FromGitURL(repoURL, dep.SourceVersionTag)
+		if p != nil && p.SupportsVulnScanning() {
 			return osvQuery{
 				Package: &osvPackage{
-					PURL: purl,
+					PURL: p.String(),
 				},
 			}
 		}
@@ -507,48 +448,6 @@ func (s *VulnScanner) buildQuery(dep *types.LockDetails, repoURL string) osvQuer
 	// Note: We don't add ecosystem/name because it's unreliable to detect from URL
 	return osvQuery{
 		Commit: dep.CommitHash,
-	}
-}
-
-// buildPURL creates a Package URL for the dependency
-func (s *VulnScanner) buildPURL(repoURL, version string) string {
-	// Parse URL to extract owner/repo
-	parsed, err := url.Parse(repoURL)
-	if err != nil {
-		return ""
-	}
-
-	// Validate URL has a scheme and host (reject "not-a-url" type inputs)
-	if parsed.Scheme == "" || parsed.Host == "" {
-		return ""
-	}
-
-	// Clean the path
-	path := strings.TrimPrefix(parsed.Path, "/")
-	path = strings.TrimSuffix(path, ".git")
-
-	if path == "" {
-		return ""
-	}
-
-	// Determine PURL type based on host
-	// See: https://github.com/package-url/purl-spec/blob/master/PURL-TYPES.rst
-	host := strings.ToLower(parsed.Host)
-
-	switch {
-	case strings.Contains(host, "github.com"):
-		// pkg:github/owner/repo@version
-		return fmt.Sprintf("pkg:github/%s@%s", path, version)
-	case strings.Contains(host, "gitlab.com"):
-		// pkg:gitlab/owner/repo@version
-		return fmt.Sprintf("pkg:gitlab/%s@%s", path, version)
-	case strings.Contains(host, "bitbucket.org"):
-		// pkg:bitbucket/owner/repo@version
-		return fmt.Sprintf("pkg:bitbucket/%s@%s", path, version)
-	default:
-		// For other hosts, use generic type
-		// Note: This may not match in OSV.dev but is the correct PURL format
-		return fmt.Sprintf("pkg:generic/%s@%s", path, version)
 	}
 }
 
@@ -592,8 +491,14 @@ func (s *VulnScanner) getCacheKey(dep *types.LockDetails, repoURL string) string
 	key = strings.ReplaceAll(dep.Name, "/", "_") + "_" + key
 
 	// Limit length to avoid filesystem issues (255 char limit on most systems)
-	if len(key) > 200 {
-		key = key[:200]
+	// When truncating, add a hash suffix to prevent collisions between keys
+	// that share the same first 180 characters but differ afterward.
+	const maxLen = 200
+	if len(key) > maxLen {
+		// Use a hash of the full key to preserve uniqueness after truncation
+		fullKeyHash := sha256.Sum256([]byte(key))
+		hashSuffix := hex.EncodeToString(fullKeyHash[:8]) // 16 hex chars
+		key = key[:maxLen-17] + "_" + hashSuffix          // 183 + 1 + 16 = 200
 	}
 
 	return key + ".json"

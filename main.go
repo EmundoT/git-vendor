@@ -786,16 +786,6 @@ func main() {
 			}
 		}
 
-		// Validate failOn value
-		if failOn != "" {
-			validThresholds := map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
-			if !validThresholds[strings.ToLower(failOn)] {
-				tui.PrintError("Invalid Flag", fmt.Sprintf("--fail-on must be one of: critical, high, medium, low (got: %s)", failOn))
-				os.Exit(1)
-			}
-			failOn = strings.ToUpper(failOn)
-		}
-
 		if !core.IsVendorInitialized() {
 			tui.PrintError("Not Initialized", core.ErrNotInitialized)
 			os.Exit(1)
