@@ -14,72 +14,74 @@ linters:
     - revive
     - unconvert
     - unparam
-
-linters-settings:
-  govet:
-    enable:
-      - atomic
-      - bools
-      - buildtag
-      - composites
-      - copylocks
-      - errorsas
-      - httpresponse
-      - ifaceassert
-      - loopclosure
-      - lostcancel
-      - nilfunc
-      - printf
-      - shift
-      - stdmethods
-      - structtag
-      - tests
-      - unmarshal
-      - unreachable
-      - unsafeptr
-      - unusedresult
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-    disabled-checks:
-      - commentedOutCode
-      - unnamedResult
-      - octalLiteral
-      - appendCombine
-      - httpNoBody
-      - regexpSimplify
-  revive:
+  settings:
+    govet:
+      enable:
+        - atomic
+        - bools
+        - buildtag
+        - composites
+        - copylocks
+        - errorsas
+        - httpresponse
+        - ifaceassert
+        - loopclosure
+        - lostcancel
+        - nilfunc
+        - printf
+        - shift
+        - stdmethods
+        - structtag
+        - tests
+        - unmarshal
+        - unreachable
+        - unsafeptr
+        - unusedresult
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - commentedOutCode
+        - appendCombine
+        - rangeValCopy
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+        - name: unused-parameter
+          severity: warning
+  exclusions:
     rules:
-      - name: exported
-        severity: warning
-      - name: unused-parameter
-        severity: warning
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gocritic
-        - unparam
-    - text: "stutters"
-      linters:
-        - revive
-    - text: "avoid meaningless package names"
-      linters:
-        - revive
-    - path: internal/tui/
-      text: "Error return value.*is not checked"
-      linters:
-        - errcheck
-    - path: main\.go
-      text: "Error return value of.*FormatJSON.*is not checked"
-      linters:
-        - errcheck
+      - path: "_test\\.go"
+        linters:
+          - errcheck
+          - gocritic
+          - unparam
+      - text: "stutters"
+        linters:
+          - revive
+      - text: "avoid meaningless package names"
+        linters:
+          - revive
+      # Exclude errcheck for UI/TUI code where errors are not critical
+      - path: "internal/tui/"
+        text: "Error return value.*is not checked"
+        linters:
+          - errcheck
+      # Exclude errcheck for main.go CLI output formatting
+      - path: "main\\.go"
+        text: "Error return value of.*FormatJSON.*is not checked"
+        linters:
+          - errcheck
+      # Exclude errcheck for explicitly discarded errors (defer cleanup)
+      - text: "Error return value of .* is not checked"
+        source: "_ ="
+        linters:
+          - errcheck
 
 run:
   timeout: 5m

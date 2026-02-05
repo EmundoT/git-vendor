@@ -75,7 +75,8 @@ func NewManager() *Manager {
 	ui := &SilentUICallback{} // Default to silent
 
 	// Create syncer with injected dependencies
-	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, rootDir, ui)
+	// Pass nil for vulnScanner to use the default implementation
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, rootDir, ui, nil)
 
 	return &Manager{
 		RootDir: rootDir,
@@ -247,6 +248,11 @@ func (m *Manager) CheckUpdates() ([]types.UpdateCheckResult, error) {
 // Verify checks all vendored files against the lockfile
 func (m *Manager) Verify() (*types.VerifyResult, error) {
 	return m.syncer.Verify()
+}
+
+// Scan performs vulnerability scanning against OSV.dev
+func (m *Manager) Scan(failOn string) (*types.ScanResult, error) {
+	return m.syncer.Scan(failOn)
 }
 
 // MigrateLockfile updates an existing lockfile to add missing metadata fields
