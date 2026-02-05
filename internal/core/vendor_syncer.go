@@ -85,6 +85,7 @@ type VendorSyncer struct {
 	explorer       *RemoteExplorer
 	updateChecker  *UpdateChecker
 	verifyService  *VerifyService
+	vulnScanner    *VulnScanner
 	configStore    ConfigStore
 	lockStore      LockStore
 	gitClient      GitClient
@@ -120,6 +121,7 @@ func NewVendorSyncer(
 	explorer := NewRemoteExplorer(gitClient, fs)
 	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
 	verifyService := NewVerifyService(configStore, lockStore, cache, fs, rootDir)
+	vulnScanner := NewVulnScanner(lockStore, configStore)
 
 	return &VendorSyncer{
 		repository:     repository,
@@ -130,6 +132,7 @@ func NewVendorSyncer(
 		explorer:       explorer,
 		updateChecker:  updateChecker,
 		verifyService:  verifyService,
+		vulnScanner:    vulnScanner,
 		configStore:    configStore,
 		lockStore:      lockStore,
 		gitClient:      gitClient,
@@ -438,6 +441,11 @@ func (s *VendorSyncer) CheckUpdates() ([]types.UpdateCheckResult, error) {
 // Verify checks all vendored files against the lockfile
 func (s *VendorSyncer) Verify() (*types.VerifyResult, error) {
 	return s.verifyService.Verify()
+}
+
+// Scan performs vulnerability scanning against OSV.dev
+func (s *VendorSyncer) Scan(failOn string) (*ScanResult, error) {
+	return s.vulnScanner.Scan(failOn)
 }
 
 // MigrateLockfile updates an existing lockfile to add missing metadata fields.
