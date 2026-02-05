@@ -488,6 +488,8 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 --format=<fmt>    # Output format: cyclonedx (default) or spdx
 --output=<file>   # Write to file instead of stdout
 -o <file>         # Shorthand for --output
+--validate        # Validate generated SBOM against schema
+--help, -h        # Show detailed help for sbom command
 ```
 
 **Behavior:** The sbom command generates a Software Bill of Materials from the lockfile. Supports:
@@ -495,6 +497,8 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - **SPDX 2.3**: Alternative format for compliance requirements (EO 14028, DORA, CRA)
 - **PURL generation**: Automatic Package URL generation for GitHub, GitLab, Bitbucket
 - **Metadata mapping**: Maps lockfile fields (license, version, hashes) to SBOM components
+- **Supplier info**: Extracts supplier/manufacturer from repository URL
+- **Unique IDs**: Handles vendors with multiple refs by including commit hash in IDs
 
 ### File Paths
 
@@ -539,4 +543,22 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `Generate()` - Generate SBOM in specified format (CycloneDX or SPDX)
 - `generateCycloneDX()` - Create CycloneDX 1.5 JSON SBOM
 - `generateSPDX()` - Create SPDX 2.3 JSON SBOM
-- `getPURL()` - Generate Package URL from repository URL
+- `validateSBOM()` - Validate generated SBOM against schema
+
+**internal/purl/ (shared PURL utilities):**
+
+- `FromGitURL()` - Create PURL from git repository URL
+- `FromGitURLWithFallback()` - Create PURL with fallback to generic type
+- `String()` - Format PURL as standard string (pkg:type/namespace/name@version)
+- `SupportsVulnScanning()` - Check if PURL type is supported by OSV.dev
+- `ToOSVPackage()` - Get package identifier for OSV.dev API
+
+**internal/sbom/ (shared SBOM utilities):**
+
+- `GenerateBOMRef()` - Create unique CycloneDX BOM reference
+- `GenerateSPDXID()` - Create unique SPDX identifier for packages
+- `SanitizeSPDXID()` - Convert string to valid SPDX identifier
+- `ExtractSupplier()` - Extract supplier info from repository URL
+- `MetadataComment()` - Build SPDX comment from git-vendor metadata
+- `ValidateProjectName()` - Ensure project name is valid for SBOMs
+- `BuildSPDXNamespace()` - Construct unique SPDX document namespace

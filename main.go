@@ -1087,10 +1087,16 @@ func main() {
 		// Parse command-specific flags
 		format := "cyclonedx" // default format
 		outputFile := ""
+		validate := false
+		showHelp := false
 
 		for i := 2; i < len(os.Args); i++ {
 			arg := os.Args[i]
 			switch {
+			case arg == "--help" || arg == "-h":
+				showHelp = true
+			case arg == "--validate":
+				validate = true
 			case arg == "--format" && i+1 < len(os.Args):
 				format = os.Args[i+1]
 				i++
@@ -1105,6 +1111,31 @@ func main() {
 				outputFile = os.Args[i+1]
 				i++
 			}
+		}
+
+		// Show help if requested
+		if showHelp {
+			fmt.Println("Generate Software Bill of Materials (SBOM) from vendored dependencies")
+			fmt.Println()
+			fmt.Println("Usage: git-vendor sbom [options]")
+			fmt.Println()
+			fmt.Println("Options:")
+			fmt.Println("  --format <fmt>   Output format: cyclonedx (default) or spdx")
+			fmt.Println("  --output <file>  Write to file instead of stdout")
+			fmt.Println("  -o <file>        Shorthand for --output")
+			fmt.Println("  --validate       Validate generated SBOM against schema")
+			fmt.Println("  --help, -h       Show this help message")
+			fmt.Println()
+			fmt.Println("Formats:")
+			fmt.Println("  cyclonedx   CycloneDX 1.5 JSON - security-focused, widely supported by scanners")
+			fmt.Println("  spdx        SPDX 2.3 JSON - compliance-focused for license analysis")
+			fmt.Println()
+			fmt.Println("Examples:")
+			fmt.Println("  git-vendor sbom                          # Output CycloneDX to stdout")
+			fmt.Println("  git-vendor sbom --format spdx            # Output SPDX to stdout")
+			fmt.Println("  git-vendor sbom -o sbom.json             # Write CycloneDX to file")
+			fmt.Println("  git-vendor sbom --format spdx --validate # Generate and validate SPDX")
+			os.Exit(0)
 		}
 
 		// Validate format
@@ -1133,8 +1164,17 @@ func main() {
 			}
 		}
 
-		// Generate SBOM
-		output, err := manager.GenerateSBOM(sbomFormat, projectName)
+		// Generate SBOM with options
+		opts := core.SBOMOptions{
+			ProjectName: projectName,
+			Validate:    validate,
+		}
+		generator := core.NewSBOMGeneratorWithOptions(
+			core.NewFileLockStore(core.VendorDir),
+			core.NewFileConfigStore(core.VendorDir),
+			opts,
+		)
+		output, err := generator.Generate(sbomFormat)
 		if err != nil {
 			tui.PrintError("SBOM Generation Failed", err.Error())
 			os.Exit(1)
