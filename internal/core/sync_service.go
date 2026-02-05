@@ -216,7 +216,8 @@ func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[strin
 // buildLockMap builds a map of vendor name to ref to commit hash
 func (s *SyncService) buildLockMap(lock types.VendorLock) map[string]map[string]string {
 	lockMap := make(map[string]map[string]string)
-	for _, l := range lock.Vendors {
+	for i := range lock.Vendors {
+		l := &lock.Vendors[i]
 		if lockMap[l.Name] == nil {
 			lockMap[l.Name] = make(map[string]string)
 		}

@@ -261,11 +261,12 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 
 		if scanErr != nil {
 			// Handle different error types
-			if isRateLimitError(scanErr) {
+			switch {
+			case isRateLimitError(scanErr):
 				depScan.ScanStatus = "not_scanned"
 				depScan.ScanReason = "Rate limited by OSV.dev API"
 				result.Summary.NotScanned++
-			} else if isNetworkError(scanErr) {
+			case isNetworkError(scanErr):
 				// Try to use stale cache
 				staleVulns, cacheErr := s.loadStaleCache(lockEntry)
 				if cacheErr == nil && staleVulns != nil {
@@ -278,7 +279,7 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 					depScan.ScanReason = fmt.Sprintf("Network error: %v", scanErr)
 					result.Summary.NotScanned++
 				}
-			} else {
+			default:
 				depScan.ScanStatus = "error"
 				depScan.ScanReason = scanErr.Error()
 				result.Summary.NotScanned++
@@ -830,6 +831,6 @@ func (s *VulnScanner) ClearCache() error {
 }
 
 // GetCacheKey returns the cache key for testing purposes
-func (s *VulnScanner) GetCacheKey(dep types.LockDetails) string {
-	return s.getCacheKey(&dep)
+func (s *VulnScanner) GetCacheKey(dep *types.LockDetails) string {
+	return s.getCacheKey(dep)
 }

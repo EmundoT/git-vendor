@@ -270,9 +270,10 @@ func main() {
 		// Load lockfile to get metadata (best effort)
 		lock, _ := manager.GetLock() //nolint:errcheck
 		lockMap := make(map[string]types.LockDetails)
-		for _, entry := range lock.Vendors {
+		for i := range lock.Vendors {
+			entry := &lock.Vendors[i]
 			key := entry.Name + "@" + entry.Ref
-			lockMap[key] = entry
+			lockMap[key] = *entry
 		}
 
 		// Check for conflicts (best-effort, don't fail list command if detection fails)
@@ -1209,7 +1210,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		if flags.Mode == core.OutputJSON {
+		switch {
+		case flags.Mode == core.OutputJSON:
 			_ = callback.FormatJSON(core.JSONOutput{
 				Status:  "success",
 				Message: fmt.Sprintf("Migrated %d entries", migrated),
@@ -1217,7 +1219,7 @@ func main() {
 					"migrated_entries": migrated,
 				},
 			})
-		} else if migrated > 0 {
+		case migrated > 0:
 			callback.ShowSuccess(fmt.Sprintf("Migrated %s to schema v1.1", core.Pluralize(migrated, "entry", "entries")))
 			fmt.Println()
 			fmt.Println("The following metadata was added:")
@@ -1227,7 +1229,7 @@ func main() {
 			fmt.Println("  • last_synced_at: from updated timestamp")
 			fmt.Println()
 			fmt.Println("Run 'git-vendor update' to fetch source_version_tag for tagged releases.")
-		} else {
+		default:
 			callback.ShowSuccess("Lockfile already up to date - no migration needed")
 		}
 

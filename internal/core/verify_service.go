@@ -65,7 +65,8 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 	// Build map of expected files from lockfile
 	expectedFiles := make(map[string]expectedFileInfo)
 
-	for _, lockEntry := range lock.Vendors {
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
 		if lockEntry.FileHashes != nil {
 			for path, hash := range lockEntry.FileHashes {
 				expectedFiles[path] = expectedFileInfo{
@@ -158,7 +159,8 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 func (s *VerifyService) buildExpectedFilesFromCache(lock types.VendorLock) (map[string]expectedFileInfo, error) {
 	expectedFiles := make(map[string]expectedFileInfo)
 
-	for _, lockEntry := range lock.Vendors {
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
 		// Load cache for this vendor@ref
 		cache, err := s.cache.Load(lockEntry.Name, lockEntry.Ref)
 		if err != nil {
