@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/EmundoT/git-vendor/internal/hostdetect"
 )
 
 // Type represents the package type in a PURL
@@ -82,42 +84,19 @@ func (p *PURL) String() string {
 	return sb.String()
 }
 
-// FromGitURL creates a PURL from a git repository URL and version/commit
+// FromGitURL creates a PURL from a git repository URL and version/commit.
+// Uses the shared hostdetect package for consistent provider detection across
+// the codebase (SBOM generation, supplier extraction, CVE scanning).
 func FromGitURL(repoURL, version string) *PURL {
-	if repoURL == "" {
+	info := hostdetect.FromURL(repoURL)
+	if info == nil {
 		return nil
 	}
-
-	u, err := url.Parse(repoURL)
-	if err != nil {
-		return nil
-	}
-
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 2 {
-		return nil
-	}
-
-	host := strings.ToLower(u.Host)
-	purlType := detectType(host)
-
-	var namespace, name string
-	if len(parts) > 2 {
-		// GitLab nested groups: group/subgroup/repo
-		namespace = strings.Join(parts[:len(parts)-1], "/")
-		name = parts[len(parts)-1]
-	} else {
-		namespace = parts[0]
-		name = parts[1]
-	}
-
-	// Strip .git suffix from name
-	name = strings.TrimSuffix(name, ".git")
 
 	return &PURL{
-		Type:      purlType,
-		Namespace: namespace,
-		Name:      name,
+		Type:      providerToType(info.Provider),
+		Namespace: info.Owner,
+		Name:      info.Repo,
 		Version:   version,
 	}
 }
@@ -137,14 +116,15 @@ func FromGitURLWithFallback(repoURL, version, vendorName string) *PURL {
 	}
 }
 
-// detectType determines the PURL type from a hostname
-func detectType(host string) Type {
-	switch {
-	case strings.Contains(host, "github.com") || strings.Contains(host, "github"):
+// providerToType converts a hostdetect.Provider to a purl.Type.
+// This bridges the shared host detection with PURL-specific type constants.
+func providerToType(p hostdetect.Provider) Type {
+	switch p {
+	case hostdetect.ProviderGitHub:
 		return TypeGitHub
-	case strings.Contains(host, "gitlab.com") || strings.Contains(host, "gitlab"):
+	case hostdetect.ProviderGitLab:
 		return TypeGitLab
-	case strings.Contains(host, "bitbucket.org") || strings.Contains(host, "bitbucket"):
+	case hostdetect.ProviderBitbucket:
 		return TypeBitbucket
 	default:
 		return TypeGeneric

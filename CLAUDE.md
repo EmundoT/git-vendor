@@ -545,9 +545,16 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `generateSPDX()` - Create SPDX 2.3 JSON SBOM
 - `validateSBOM()` - Validate generated SBOM against schema
 
+**internal/hostdetect/ (shared host detection utilities):**
+
+- `FromURL()` - Parse repository URL and extract provider, owner, repo
+- `DetectProvider()` - Determine provider type from hostname (exact match → suffix → contains)
+- `IsKnownProvider()` - Check if provider is recognized (GitHub, GitLab, Bitbucket)
+- `SupportsCVEScanning()` - Check if provider is supported by vulnerability databases
+
 **internal/purl/ (shared PURL utilities):**
 
-- `FromGitURL()` - Create PURL from git repository URL
+- `FromGitURL()` - Create PURL from git repository URL (uses hostdetect for consistency)
 - `FromGitURLWithFallback()` - Create PURL with fallback to generic type
 - `String()` - Format PURL as standard string (pkg:type/namespace/name@version)
 - `SupportsVulnScanning()` - Check if PURL type is supported by OSV.dev
@@ -556,9 +563,9 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 **internal/sbom/ (shared SBOM utilities):**
 
 - `GenerateBOMRef()` - Create unique CycloneDX BOM reference
-- `GenerateSPDXID()` - Create unique SPDX identifier for packages
-- `SanitizeSPDXID()` - Convert string to valid SPDX identifier
-- `ExtractSupplier()` - Extract supplier info from repository URL
+- `GenerateSPDXID()` - Create unique SPDX identifier for packages (includes max length truncation)
+- `SanitizeSPDXID()` - Convert string to valid SPDX identifier (pattern [a-zA-Z0-9.-]+, max 128 chars)
+- `ExtractSupplier()` - Extract supplier info from repository URL (uses hostdetect for consistency)
 - `MetadataComment()` - Build SPDX comment from git-vendor metadata
 - `ValidateProjectName()` - Ensure project name is valid for SBOMs
 - `BuildSPDXNamespace()` - Construct unique SPDX document namespace

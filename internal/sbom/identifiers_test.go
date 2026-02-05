@@ -333,13 +333,14 @@ func TestBuildSPDXNamespace(t *testing.T) {
 	}
 }
 
-// Edge case: Very long vendor name
+// Edge case: Very long vendor name - should be truncated
 func TestSanitizeSPDXID_LongName(t *testing.T) {
 	longName := strings.Repeat("a", 1000)
 	result := SanitizeSPDXID(longName)
 
-	if len(result) != 1000 {
-		t.Errorf("Expected length 1000, got %d", len(result))
+	// Should be truncated to MaxSPDXIDLength
+	if len(result) != MaxSPDXIDLength {
+		t.Errorf("Expected length %d, got %d", MaxSPDXIDLength, len(result))
 	}
 
 	// Verify all characters are valid
@@ -347,5 +348,17 @@ func TestSanitizeSPDXID_LongName(t *testing.T) {
 		if !isValidSPDXChar(r) {
 			t.Errorf("Invalid character at position %d: %c", i, r)
 		}
+	}
+}
+
+// Test that MaxSPDXIDLength constant is reasonable
+func TestMaxSPDXIDLength(t *testing.T) {
+	// Sanity check: should be at least 64 chars for practical use
+	if MaxSPDXIDLength < 64 {
+		t.Errorf("MaxSPDXIDLength (%d) is too small for practical use", MaxSPDXIDLength)
+	}
+	// Should be at most 256 to avoid issues with tools
+	if MaxSPDXIDLength > 256 {
+		t.Errorf("MaxSPDXIDLength (%d) may cause issues with some tools", MaxSPDXIDLength)
 	}
 }
