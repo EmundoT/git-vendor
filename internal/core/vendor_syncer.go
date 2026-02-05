@@ -145,7 +145,7 @@ func (s *VendorSyncer) Init() error {
 	if err := s.fs.MkdirAll(s.rootDir, 0755); err != nil {
 		return err
 	}
-	if err := s.fs.MkdirAll(filepath.Join(s.rootDir, LicenseDir), 0755); err != nil {
+	if err := s.fs.MkdirAll(filepath.Join(s.rootDir, LicensesDir), 0755); err != nil {
 		return err
 	}
 	// Save empty config with no vendors instead of empty vendor
@@ -188,7 +188,7 @@ func (s *VendorSyncer) RemoveVendor(name string) error {
 	}
 
 	// Remove license file
-	licensePath := filepath.Join(s.rootDir, LicenseDir, name+".txt")
+	licensePath := filepath.Join(s.rootDir, LicensesDir, name+".txt")
 	_ = s.fs.Remove(licensePath) //nolint:errcheck // cleanup operation, error not critical
 
 	// Update lockfile

@@ -75,7 +75,7 @@ func (m *Manager) LockPath() string {
 
 // LicensePath returns the path for a vendor's license file
 func (m *Manager) LicensePath(name string) string {
-	return m.syncer.rootDir + "/" + LicenseDir + "/" + name + ".txt"
+	return m.syncer.rootDir + "/" + LicensesDir + "/" + name + ".txt"
 }
 
 // IsGitInstalled checks if git is available on the system

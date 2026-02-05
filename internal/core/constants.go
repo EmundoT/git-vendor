@@ -12,26 +12,6 @@ const (
 	LicensesDir = "licenses"
 	// CacheDir is the directory for incremental sync cache
 	CacheDir = ".cache"
-
-	// Backwards-compatible aliases
-	// ConfigName is an alias for ConfigFile (deprecated: use ConfigFile)
-	ConfigName = ConfigFile
-	// LockName is an alias for LockFile (deprecated: use LockFile)
-	LockName = LockFile
-	// LicenseDir is an alias for LicensesDir (deprecated: use LicensesDir)
-	LicenseDir = LicensesDir
-)
-
-// Full paths (relative to project root)
-const (
-	// ConfigPath is the full path to vendor.yml
-	ConfigPath = VendorDir + "/" + ConfigFile
-	// LockPath is the full path to vendor.lock
-	LockPath = VendorDir + "/" + LockFile
-	// LicensesPath is the full path to the licenses directory
-	LicensesPath = VendorDir + "/" + LicensesDir
-	// CachePath is the full path to the cache directory
-	CachePath = VendorDir + "/" + CacheDir
 )
 
 // Git refs
@@ -62,39 +42,3 @@ var LicenseFileNames = []string{
 	"LICENSE.md",
 	"COPYING",
 }
-
-// LicenseFallbackFileNames is an extended list of license filenames for fallback detection.
-// This includes more variations and platform-specific names.
-var LicenseFallbackFileNames = []string{
-	"LICENSE",
-	"LICENSE.txt",
-	"LICENSE.md",
-	"COPYING",
-	"COPYING.txt",
-	"COPYING.md",
-	"LICENSE-MIT",
-	"LICENSE-APACHE",
-	"LICENCE", // British spelling
-	"LICENCE.txt",
-	"LICENCE.md",
-}
-
-// Cache limits
-const (
-	// MaxCacheFiles is the maximum number of files to track in incremental sync cache
-	MaxCacheFiles = 1000
-)
-
-// API retry configuration
-const (
-	// MaxAPIRetries is the maximum number of retry attempts for API calls
-	MaxAPIRetries = 3
-	// MaxGitPushRetries is the maximum number of retry attempts for git push operations
-	MaxGitPushRetries = 4
-)
-
-// Timeouts (in seconds)
-const (
-	// GitOperationTimeoutSecs is the default timeout for git operations
-	GitOperationTimeoutSecs = 30
-)

@@ -416,7 +416,7 @@ func TestUpdateAll_LicensePathSet(t *testing.T) {
 
 	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
 		entry := l.Vendors[0]
-		expectedPath := filepath.Join("/mock/vendor", LicenseDir, "test-vendor.txt")
+		expectedPath := filepath.Join("/mock/vendor", LicensesDir, "test-vendor.txt")
 		if entry.LicensePath != expectedPath {
 			t.Errorf("Expected license path '%s', got '%s'", expectedPath, entry.LicensePath)
 		}
