@@ -2,7 +2,6 @@ version: "2"
 
 linters-settings:
   govet:
-    enable-all: false
     enable:
       - atomic
       - bools
@@ -24,9 +23,6 @@ linters-settings:
       - unreachable
       - unsafeptr
       - unusedresult
-    disable:
-      - shadow      # Too strict - common pattern
-      - fieldalignment  # Micro-optimization, not worth the code churn
   errcheck:
     check-type-assertions: true
     check-blank: true
@@ -35,12 +31,12 @@ linters-settings:
       - diagnostic
       - performance
     disabled-checks:
-      - commentedOutCode  # Commented code is sometimes intentional
-      - unnamedResult     # Named results not always clearer
-      - octalLiteral      # 0755 vs 0o755 is stylistic
-      - appendCombine     # Sometimes clearer to append separately
-      - httpNoBody        # Stylistic preference
-      - regexpSimplify    # Subjective improvement
+      - commentedOutCode
+      - unnamedResult
+      - octalLiteral
+      - appendCombine
+      - httpNoBody
+      - regexpSimplify
   revive:
     rules:
       - name: exported
@@ -89,4 +85,3 @@ linters:
 run:
   timeout: 5m
   tests: true
-  modules-download-mode: readonly
