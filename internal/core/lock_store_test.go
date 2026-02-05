@@ -365,8 +365,14 @@ func TestValidateSchemaVersion(t *testing.T) {
 			wantWarning: false,
 		},
 		{
-			name:        "newer minor version 1.1 warns",
+			name:        "current version 1.1",
 			version:     "1.1",
+			wantErr:     false,
+			wantWarning: false,
+		},
+		{
+			name:        "newer minor version 1.2 warns",
+			version:     "1.2",
 			wantErr:     false,
 			wantWarning: true,
 		},
@@ -450,8 +456,13 @@ func TestFileLockStore_Load_VersionCompatibility(t *testing.T) {
 			wantErr:       false,
 		},
 		{
-			name:          "newer minor 1.1 loads with warning",
+			name:          "current version 1.1 loads",
 			schemaVersion: "1.1",
+			wantErr:       false,
+		},
+		{
+			name:          "newer minor 1.2 loads with warning",
+			schemaVersion: "1.2",
 			wantErr:       false,
 		},
 		{

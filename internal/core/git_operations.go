@@ -24,6 +24,7 @@ type GitClient interface {
 	Clone(dir, url string, opts *types.CloneOptions) error
 	ListTree(dir, ref, subdir string) ([]string, error)
 	GetCommitLog(dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error)
+	GetTagForCommit(dir, commitHash string) (string, error)
 }
 
 // SystemGitClient implements GitClient using system git commands
@@ -205,6 +206,80 @@ func (g *SystemGitClient) GetCommitLog(dir, oldHash, newHash string, maxCount in
 	}
 
 	return commits, nil
+}
+
+// GetTagForCommit returns a git tag that points to the given commit hash, if any.
+// Prefers semver-looking tags (v1.0.0, 1.0.0) over other tags.
+func (g *SystemGitClient) GetTagForCommit(dir, commitHash string) (string, error) {
+	// Get tags pointing to this exact commit
+	cmd := exec.Command("git", "tag", "--points-at", commitHash)
+	cmd.Dir = dir
+
+	out, err := cmd.Output()
+	if err != nil {
+		// No tags found, not an error
+		return "", nil
+	}
+
+	tagsOutput := strings.TrimSpace(string(out))
+	if tagsOutput == "" {
+		return "", nil
+	}
+
+	tags := strings.Split(tagsOutput, "\n")
+	if len(tags) == 0 || tags[0] == "" {
+		return "", nil
+	}
+
+	// Prefer semver-looking tags (v1.0.0, 1.0.0)
+	for _, tag := range tags {
+		if isSemverTag(tag) {
+			return tag, nil
+		}
+	}
+
+	// Fall back to first tag
+	return tags[0], nil
+}
+
+// isSemverTag checks if a tag looks like a semantic version
+func isSemverTag(tag string) bool {
+	tag = strings.TrimPrefix(tag, "v")
+	matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+`, tag)
+	return matched
+}
+
+// GetGitUserIdentity returns the git user identity in "Name <email>" format.
+// Returns empty string if not configured.
+func GetGitUserIdentity() string {
+	nameCmd := exec.Command("git", "config", "user.name")
+	nameOut, err := nameCmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	emailCmd := exec.Command("git", "config", "user.email")
+	emailOut, err := emailCmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	name := strings.TrimSpace(string(nameOut))
+	email := strings.TrimSpace(string(emailOut))
+
+	if name == "" && email == "" {
+		return ""
+	}
+
+	if name != "" && email != "" {
+		return fmt.Sprintf("%s <%s>", name, email)
+	}
+
+	if name != "" {
+		return name
+	}
+
+	return email
 }
 
 // run executes a git command
