@@ -385,6 +385,9 @@ go test -v ./...
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
 - `github.com/fsnotify/fsnotify` - file system watching (watch mode)
+- `github.com/CycloneDX/cyclonedx-go` - CycloneDX SBOM generation
+- `github.com/spdx/tools-golang` - SPDX SBOM generation
+- `github.com/google/uuid` - UUID generation for SBOM serial numbers
 
 **Testing:**
 
@@ -442,6 +445,7 @@ git-vendor status                    # Check if local files match lockfile
 git-vendor check-updates             # Preview available updates
 git-vendor diff <vendor>             # Show commit history between locked and latest
 git-vendor watch                     # Auto-sync on config changes
+git-vendor sbom [options]            # Generate SBOM (CycloneDX/SPDX)
 git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/powershell)
 ```
 
@@ -477,6 +481,24 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - **Modified files**: Hash mismatch between expected and actual
 - **Deleted files**: Files in lockfile but missing from disk
 - **Added files**: Files in vendor directories but not in lockfile
+
+### SBOM Command Flags
+
+```bash
+--format=<fmt>    # Output format: cyclonedx (default) or spdx
+--output=<file>   # Write to file instead of stdout
+-o <file>         # Shorthand for --output
+--validate        # Validate generated SBOM against schema
+--help, -h        # Show detailed help for sbom command
+```
+
+**Behavior:** The sbom command generates a Software Bill of Materials from the lockfile. Supports:
+- **CycloneDX 1.5**: Default format, widely supported by vulnerability scanners
+- **SPDX 2.3**: Alternative format for compliance requirements (EO 14028, DORA, CRA)
+- **PURL generation**: Automatic Package URL generation for GitHub, GitLab, Bitbucket
+- **Metadata mapping**: Maps lockfile fields (license, version, hashes) to SBOM components
+- **Supplier info**: Extracts supplier/manufacturer from repository URL
+- **Unique IDs**: Handles vendors with multiple refs by including commit hash in IDs
 
 ### File Paths
 
@@ -515,3 +537,35 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 - `ValidateDestPath()` - Security check for path traversal
 - `CopyFile()` / `CopyDir()` - File operations
+
+**sbom_generator.go:**
+
+- `Generate()` - Generate SBOM in specified format (CycloneDX or SPDX)
+- `generateCycloneDX()` - Create CycloneDX 1.5 JSON SBOM
+- `generateSPDX()` - Create SPDX 2.3 JSON SBOM
+- `validateSBOM()` - Validate generated SBOM against schema
+
+**internal/hostdetect/ (shared host detection utilities):**
+
+- `FromURL()` - Parse repository URL and extract provider, owner, repo
+- `DetectProvider()` - Determine provider type from hostname (exact match → suffix → contains)
+- `IsKnownProvider()` - Check if provider is recognized (GitHub, GitLab, Bitbucket)
+- `SupportsCVEScanning()` - Check if provider is supported by vulnerability databases
+
+**internal/purl/ (shared PURL utilities):**
+
+- `FromGitURL()` - Create PURL from git repository URL (uses hostdetect for consistency)
+- `FromGitURLWithFallback()` - Create PURL with fallback to generic type
+- `String()` - Format PURL as standard string (pkg:type/namespace/name@version)
+- `SupportsVulnScanning()` - Check if PURL type is supported by OSV.dev
+- `ToOSVPackage()` - Get package identifier for OSV.dev API
+
+**internal/sbom/ (shared SBOM utilities):**
+
+- `GenerateBOMRef()` - Create unique CycloneDX BOM reference
+- `GenerateSPDXID()` - Create unique SPDX identifier for packages (includes max length truncation)
+- `SanitizeSPDXID()` - Convert string to valid SPDX identifier (pattern [a-zA-Z0-9.-]+, max 128 chars)
+- `ExtractSupplier()` - Extract supplier info from repository URL (uses hostdetect for consistency)
+- `MetadataComment()` - Build SPDX comment from git-vendor metadata
+- `ValidateProjectName()` - Ensure project name is valid for SBOMs
+- `BuildSPDXNamespace()` - Construct unique SPDX document namespace

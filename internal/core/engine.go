@@ -264,6 +264,12 @@ func (m *Manager) WatchConfig(callback func() error) error {
 	return m.syncer.WatchConfig(callback)
 }
 
+// GenerateSBOM generates a Software Bill of Materials in the specified format
+func (m *Manager) GenerateSBOM(format SBOMFormat, projectName string) ([]byte, error) {
+	generator := NewSBOMGenerator(m.syncer.lockStore, m.syncer.configStore, m.syncer.fs, projectName)
+	return generator.Generate(format)
+}
+
 // UpdateVerboseMode updates the verbose flag for git operations
 func (m *Manager) UpdateVerboseMode(verbose bool) {
 	// Update the global git client
