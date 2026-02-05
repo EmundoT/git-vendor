@@ -1,3 +1,5 @@
+version: "2"
+
 linters-settings:
   govet:
     enable-all: false
@@ -60,30 +62,29 @@ linters:
     - revive
     - unconvert
     - unparam
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gocritic
-        - unparam
-    - text: "stutters"
-      linters:
-        - revive
-    - text: "avoid meaningless package names"
-      linters:
-        - revive
-    # Exclude errcheck for UI/TUI code where errors are not critical
-    - path: internal/tui/
-      text: "Error return value.*is not checked"
-      linters:
-        - errcheck
-    # Exclude errcheck for main.go CLI output formatting
-    - path: main\.go
-      text: "Error return value of.*FormatJSON.*is not checked"
-      linters:
-        - errcheck
+  exclusions:
+    rules:
+      - path: "_test\\.go"
+        linters:
+          - errcheck
+          - gocritic
+          - unparam
+      - text: "stutters"
+        linters:
+          - revive
+      - text: "avoid meaningless package names"
+        linters:
+          - revive
+      # Exclude errcheck for UI/TUI code where errors are not critical
+      - path: "internal/tui/"
+        text: "Error return value.*is not checked"
+        linters:
+          - errcheck
+      # Exclude errcheck for main.go CLI output formatting
+      - path: "main\\.go"
+        text: "Error return value of.*FormatJSON.*is not checked"
+        linters:
+          - errcheck
 
 run:
   timeout: 5m

@@ -2,10 +2,12 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,16 +25,16 @@ func TestCVSSToSeverity(t *testing.T) {
 		score    float64
 		severity string
 	}{
-		{"Critical - 9.8", 9.8, "CRITICAL"},
-		{"Critical - 9.0", 9.0, "CRITICAL"},
-		{"High - 8.5", 8.5, "HIGH"},
-		{"High - 7.0", 7.0, "HIGH"},
-		{"Medium - 5.0", 5.0, "MEDIUM"},
-		{"Medium - 4.0", 4.0, "MEDIUM"},
-		{"Low - 3.5", 3.5, "LOW"},
-		{"Low - 0.1", 0.1, "LOW"},
-		{"Unknown - 0.0", 0.0, "UNKNOWN"},
-		{"Unknown - negative", -1.0, "UNKNOWN"},
+		{"Critical - 9.8", 9.8, types.SeverityCritical},
+		{"Critical - 9.0", 9.0, types.SeverityCritical},
+		{"High - 8.5", 8.5, types.SeverityHigh},
+		{"High - 7.0", 7.0, types.SeverityHigh},
+		{"Medium - 5.0", 5.0, types.SeverityMedium},
+		{"Medium - 4.0", 4.0, types.SeverityMedium},
+		{"Low - 3.5", 3.5, types.SeverityLow},
+		{"Low - 0.1", 0.1, types.SeverityLow},
+		{"Unknown - 0.0", 0.0, types.SeverityUnknown},
+		{"Unknown - negative", -1.0, types.SeverityUnknown},
 	}
 
 	for _, tt := range tests {
@@ -384,7 +386,8 @@ func TestCaching(t *testing.T) {
 	}
 
 	// Initially, cache should be empty
-	cacheKey := scanner.GetCacheKey(&dep)
+	testRepoURL := "https://github.com/owner/cached-repo"
+	cacheKey := scanner.GetCacheKey(&dep, testRepoURL)
 	cached, ok := scanner.loadFromCache(cacheKey)
 	if ok {
 		t.Error("Expected cache miss on first access")
@@ -437,7 +440,8 @@ func TestCaching_Expiration(t *testing.T) {
 		CommitHash: "expire123",
 	}
 
-	cacheKey := scanner.GetCacheKey(&dep)
+	testRepoURL := "https://github.com/owner/expiring-repo"
+	cacheKey := scanner.GetCacheKey(&dep, testRepoURL)
 
 	// Save to cache
 	testVulns := []osvVuln{{ID: "CVE-EXPIRED"}}
@@ -482,7 +486,7 @@ func TestScan_EmptyLockfile(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	if result.Summary.Result != "PASS" {
+	if result.Summary.Result != types.ScanResultPass {
 		t.Errorf("Expected PASS for empty lockfile, got %s", result.Summary.Result)
 	}
 
@@ -544,7 +548,7 @@ func TestScan_NoVulnerabilities(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	if result.Summary.Result != "PASS" {
+	if result.Summary.Result != types.ScanResultPass {
 		t.Errorf("Expected PASS, got %s", result.Summary.Result)
 	}
 
@@ -625,7 +629,7 @@ func TestScan_WithVulnerabilities(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	if result.Summary.Result != "FAIL" {
+	if result.Summary.Result != types.ScanResultFail {
 		t.Errorf("Expected FAIL, got %s", result.Summary.Result)
 	}
 
@@ -866,7 +870,7 @@ func TestScan_JSONOutput(t *testing.T) {
 	}
 
 	// Verify JSON structure
-	var parsed ScanResult
+	var parsed types.ScanResult
 	if err := json.Unmarshal(jsonBytes, &parsed); err != nil {
 		t.Fatalf("Failed to unmarshal JSON: %v", err)
 	}
@@ -917,14 +921,15 @@ func TestScan_NetworkError_UseStaleCache(t *testing.T) {
 	scanner.cacheDir = cacheDir
 	scanner.cacheTTL = 1 * time.Millisecond // Expired TTL
 
-	cacheKey := scanner.GetCacheKey(&dep)
+	testRepoURL := "https://github.com/owner/network-test"
+	cacheKey := scanner.GetCacheKey(&dep, testRepoURL)
 	scanner.saveToCache(cacheKey, []osvVuln{{ID: "CVE-STALE", Summary: "Stale cached vuln"}})
 
 	// Wait for cache to expire
 	time.Sleep(10 * time.Millisecond)
 
 	// Verify stale cache can still be loaded
-	staleVulns, err := scanner.loadStaleCache(&dep)
+	staleVulns, err := scanner.loadStaleCache(&dep, testRepoURL)
 	if err != nil {
 		t.Fatalf("Failed to load stale cache: %v", err)
 	}
@@ -977,8 +982,9 @@ func TestGetCacheKey(t *testing.T) {
 	scanner := NewVulnScanner(lockStore, configStore)
 
 	tests := []struct {
-		name string
-		dep  types.LockDetails
+		name    string
+		dep     types.LockDetails
+		repoURL string
 	}{
 		{
 			name: "With version tag",
@@ -987,6 +993,7 @@ func TestGetCacheKey(t *testing.T) {
 				CommitHash:       "abc123def456",
 				SourceVersionTag: "v1.2.3",
 			},
+			repoURL: "https://github.com/owner/versioned",
 		},
 		{
 			name: "Without version tag",
@@ -994,6 +1001,7 @@ func TestGetCacheKey(t *testing.T) {
 				Name:       "unversioned",
 				CommitHash: "xyz789abc",
 			},
+			repoURL: "https://github.com/owner/unversioned",
 		},
 		{
 			name: "With special characters",
@@ -1002,6 +1010,7 @@ func TestGetCacheKey(t *testing.T) {
 				CommitHash:       "abc123",
 				SourceVersionTag: "v1.0.0",
 			},
+			repoURL: "https://github.com/owner/special",
 		},
 		{
 			name: "Very long name",
@@ -1009,12 +1018,21 @@ func TestGetCacheKey(t *testing.T) {
 				Name:       "this-is-a-very-long-vendor-name-that-might-cause-issues-with-filesystem-limits-if-not-handled-properly-in-the-cache-key-generation-code",
 				CommitHash: "abc123def456789",
 			},
+			repoURL: "https://github.com/owner/long-name",
+		},
+		{
+			name: "Empty URL",
+			dep: types.LockDetails{
+				Name:       "no-url",
+				CommitHash: "abc123",
+			},
+			repoURL: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			key := scanner.GetCacheKey(&tt.dep)
+			key := scanner.GetCacheKey(&tt.dep, tt.repoURL)
 			if key == "" {
 				t.Error("Cache key should not be empty")
 			}
@@ -1037,6 +1055,32 @@ func TestGetCacheKey(t *testing.T) {
 				t.Errorf("Cache key too long: %d chars", len(key))
 			}
 		})
+	}
+}
+
+// TestGetCacheKey_URLCollisionPrevention verifies that different repos with
+// the same version tag generate different cache keys.
+func TestGetCacheKey_URLCollisionPrevention(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	scanner := NewVulnScanner(lockStore, configStore)
+
+	// Two different repos with the same version tag
+	dep := types.LockDetails{
+		Name:             "shared-lib",
+		CommitHash:       "abc123def456",
+		SourceVersionTag: "v1.0.0",
+	}
+
+	key1 := scanner.GetCacheKey(&dep, "https://github.com/owner1/shared-lib")
+	key2 := scanner.GetCacheKey(&dep, "https://github.com/owner2/shared-lib")
+
+	if key1 == key2 {
+		t.Errorf("Cache keys should differ for different URLs: key1=%s, key2=%s", key1, key2)
 	}
 }
 
@@ -1117,5 +1161,342 @@ func TestConvertVulns_NoDuplicateReferences(t *testing.T) {
 	expectedRefs := 2 // example.com/advisory and nvd.nist.gov
 	if len(vulns[0].References) != expectedRefs {
 		t.Errorf("Expected %d unique references, got %d: %v", expectedRefs, len(vulns[0].References), vulns[0].References)
+	}
+}
+
+// ============================================================================
+// Details Field Test
+// ============================================================================
+
+func TestConvertVulns_IncludesDetails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	scanner := NewVulnScanner(lockStore, configStore)
+
+	// Create vulnerability with details field
+	osvVulns := []osvVuln{
+		{
+			ID:      "CVE-2024-DETAILS",
+			Summary: "Short summary",
+			Details: "This is a longer detailed description of the vulnerability that provides additional context about the impact and affected components.",
+		},
+	}
+
+	vulns := scanner.convertVulns(osvVulns)
+
+	if len(vulns) != 1 {
+		t.Fatalf("Expected 1 vulnerability, got %d", len(vulns))
+	}
+
+	if vulns[0].Details == "" {
+		t.Error("Expected Details field to be populated")
+	}
+
+	if vulns[0].Details != osvVulns[0].Details {
+		t.Errorf("Expected Details=%q, got %q", osvVulns[0].Details, vulns[0].Details)
+	}
+}
+
+// ============================================================================
+// Network Error Detection Tests
+// ============================================================================
+
+func TestIsNetworkError(t *testing.T) {
+	tests := []struct {
+		name     string
+		errMsg   string
+		expected bool
+	}{
+		{"nil error", "", false},
+		{"connection refused", "dial tcp: connection refused", true},
+		{"no such host", "lookup example.com: no such host", true},
+		{"network unreachable", "connect: network is unreachable", true},
+		{"timeout", "context deadline exceeded: timeout", true},
+		{"i/o timeout", "read tcp: i/o timeout", true},
+		{"dial tcp", "dial tcp 127.0.0.1:443: connect: connection refused", true},
+		{"rate limited", "rate limited, retry after 60", false},
+		{"generic error", "something went wrong", false},
+		{"OSV API error", "OSV API error: 500", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var err error
+			if tt.errMsg != "" {
+				err = fmt.Errorf(tt.errMsg)
+			}
+			got := isNetworkError(err)
+			if got != tt.expected {
+				t.Errorf("isNetworkError(%q) = %v, want %v", tt.errMsg, got, tt.expected)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// FailOn Validation Tests
+// ============================================================================
+
+func TestScan_InvalidFailOnValue(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	scanner := NewVulnScanner(lockStore, configStore)
+	scanner.cacheDir = t.TempDir()
+
+	// Test invalid failOn value - should return error before loading lockfile
+	_, err := scanner.Scan("invalid")
+	if err == nil {
+		t.Fatal("Expected error for invalid failOn value, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "invalid fail-on threshold") {
+		t.Errorf("Expected 'invalid fail-on threshold' error, got: %v", err)
+	}
+}
+
+func TestScan_ValidFailOnValues(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Test with an empty lockfile to verify valid failOn values are accepted
+	validValues := []string{"critical", "CRITICAL", "high", "HIGH", "medium", "MEDIUM", "low", "LOW", ""}
+
+	for _, failOn := range validValues {
+		t.Run("failOn="+failOn, func(t *testing.T) {
+			lockStore := NewMockLockStore(ctrl)
+			configStore := NewMockConfigStore(ctrl)
+
+			lockStore.EXPECT().Load().Return(types.VendorLock{Vendors: []types.LockDetails{}}, nil)
+			configStore.EXPECT().Load().Return(types.VendorConfig{Vendors: []types.VendorSpec{}}, nil)
+
+			scanner := NewVulnScanner(lockStore, configStore)
+			scanner.cacheDir = t.TempDir()
+
+			result, err := scanner.Scan(failOn)
+			if err != nil {
+				t.Errorf("Unexpected error for failOn=%q: %v", failOn, err)
+			}
+			if result == nil {
+				t.Error("Expected non-nil result")
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Empty Commit Hash Handling Tests
+// ============================================================================
+
+func TestScan_EmptyCommitHash(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	// Mock lockfile with a vendor that has empty commit hash
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "empty-hash-vendor",
+				Ref:        "main",
+				CommitHash: "", // Empty commit hash
+			},
+		},
+	}, nil)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "empty-hash-vendor", URL: "https://github.com/owner/repo"},
+		},
+	}, nil)
+
+	scanner := NewVulnScanner(lockStore, configStore)
+	scanner.cacheDir = t.TempDir()
+
+	result, err := scanner.Scan("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if len(result.Dependencies) != 1 {
+		t.Fatalf("Expected 1 dependency, got %d", len(result.Dependencies))
+	}
+
+	dep := result.Dependencies[0]
+	if dep.ScanStatus != types.ScanStatusNotScanned {
+		t.Errorf("Expected status %s, got %s", types.ScanStatusNotScanned, dep.ScanStatus)
+	}
+
+	if !strings.Contains(dep.ScanReason, "Empty commit hash") {
+		t.Errorf("Expected ScanReason to mention empty commit hash, got: %s", dep.ScanReason)
+	}
+
+	if result.Summary.NotScanned != 1 {
+		t.Errorf("Expected NotScanned=1, got %d", result.Summary.NotScanned)
+	}
+
+	if result.Summary.Result != types.ScanResultWarn {
+		t.Errorf("Expected WARN result for not-scanned deps, got %s", result.Summary.Result)
+	}
+}
+
+// ============================================================================
+// Corrupt Cache Handling Test
+// ============================================================================
+
+func TestLoadFromCache_CorruptFile(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	cacheDir := t.TempDir()
+	scanner := NewVulnScanner(lockStore, configStore)
+	scanner.cacheDir = cacheDir
+
+	// Create a corrupt cache file
+	cacheFile := filepath.Join(cacheDir, "corrupt.json")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("Failed to create cache dir: %v", err)
+	}
+	if err := os.WriteFile(cacheFile, []byte("not valid json{{{"), 0o644); err != nil {
+		t.Fatalf("Failed to create corrupt cache file: %v", err)
+	}
+
+	// Verify file exists before
+	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+		t.Fatal("Cache file should exist before load attempt")
+	}
+
+	// Load should return cache miss and clean up corrupt file
+	cached, ok := scanner.loadFromCache("corrupt.json")
+	if ok {
+		t.Error("Expected cache miss for corrupt file")
+	}
+	if cached != nil {
+		t.Error("Expected nil cached value for corrupt file")
+	}
+
+	// Verify corrupt file was removed
+	if _, err := os.Stat(cacheFile); !os.IsNotExist(err) {
+		t.Error("Corrupt cache file should be removed after load attempt")
+	}
+}
+
+// ============================================================================
+// Batch Pagination Test
+// ============================================================================
+
+// TestBatchQuery_Pagination verifies that batch queries are properly split
+// when there are more than maxBatchSize (1000) dependencies.
+// Note: This is a unit test that tests the batching logic, not a full integration test.
+func TestBatchQuery_Pagination(t *testing.T) {
+	// Track batch request sizes
+	var batchSizes []int
+	requestCount := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+
+		// Parse the batch request to count queries
+		var batchReq osvBatchRequest
+		if err := json.NewDecoder(r.Body).Decode(&batchReq); err != nil {
+			t.Errorf("Failed to decode batch request: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		batchSizes = append(batchSizes, len(batchReq.Queries))
+
+		// Generate response with empty vulns for each query
+		results := make([]osvResponse, len(batchReq.Queries))
+		for i := range results {
+			results[i] = osvResponse{Vulns: []osvVuln{}}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(osvBatchResponse{Results: results}); err != nil {
+			t.Errorf("Failed to encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	// Create 1500 vendors (needs 2 batches: 1000 + 500)
+	numVendors := 1500
+	vendors := make([]types.LockDetails, numVendors)
+	vendorSpecs := make([]types.VendorSpec, numVendors)
+
+	for i := 0; i < numVendors; i++ {
+		name := fmt.Sprintf("vendor-%d", i)
+		vendors[i] = types.LockDetails{
+			Name:       name,
+			Ref:        "main",
+			CommitHash: fmt.Sprintf("commit%d", i),
+		}
+		vendorSpecs[i] = types.VendorSpec{
+			Name: name,
+			URL:  fmt.Sprintf("https://github.com/owner/repo-%d", i),
+		}
+	}
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{Vendors: vendors}, nil)
+	configStore.EXPECT().Load().Return(types.VendorConfig{Vendors: vendorSpecs}, nil)
+
+	scanner := &VulnScanner{
+		client: &http.Client{
+			Timeout:   60 * time.Second,
+			Transport: &mockTransport{serverURL: server.URL},
+		},
+		cacheDir:    t.TempDir(),
+		cacheTTL:    24 * time.Hour,
+		lockStore:   lockStore,
+		configStore: configStore,
+	}
+
+	result, err := scanner.Scan("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify all dependencies were scanned
+	if result.Summary.TotalDependencies != numVendors {
+		t.Errorf("Expected %d dependencies, got %d", numVendors, result.Summary.TotalDependencies)
+	}
+
+	if result.Summary.Scanned != numVendors {
+		t.Errorf("Expected %d scanned, got %d", numVendors, result.Summary.Scanned)
+	}
+
+	// Verify batching - should have 2 requests (1000 + 500)
+	if requestCount != 2 {
+		t.Errorf("Expected 2 batch requests, got %d", requestCount)
+	}
+
+	// Verify batch sizes
+	if len(batchSizes) != 2 {
+		t.Errorf("Expected 2 batch sizes recorded, got %d", len(batchSizes))
+	} else {
+		if batchSizes[0] != 1000 {
+			t.Errorf("Expected first batch size 1000, got %d", batchSizes[0])
+		}
+		if batchSizes[1] != 500 {
+			t.Errorf("Expected second batch size 500, got %d", batchSizes[1])
+		}
 	}
 }
