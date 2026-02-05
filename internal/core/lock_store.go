@@ -68,6 +68,7 @@ func validateSchemaVersion(version string, warnWriter io.Writer) error {
 
 	if major == MaxSupportedMajor && minor > MaxSupportedMinor {
 		if warnWriter != nil {
+			//nolint:errcheck // Warning output - error is non-actionable
 			fmt.Fprintf(warnWriter,
 				"Warning: Lockfile schema version %q is newer than expected (%d.%d)\n"+
 					"  Some metadata fields may be ignored. Consider updating git-vendor.\n",

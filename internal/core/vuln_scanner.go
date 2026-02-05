@@ -3,9 +3,12 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,69 +28,30 @@ const (
 	cacheSubDir         = ".cache/osv" // Relative to vendor directory
 	scanSchemaVersion   = "1.0"
 	maxBatchSize        = 1000 // OSV.dev batch limit
+
+	// Timeout rationale:
+	// - Single query: 30s is generous for a single HTTP round-trip to OSV.dev,
+	//   accounting for occasional API slowness while avoiding indefinite hangs.
+	// - Batch query: 60s allows for larger payloads (up to 1000 queries),
+	//   which take longer for OSV.dev to process.
+	// These values align with typical CLI tool expectations for network operations.
+	singleQueryTimeout = 30 * time.Second
+	batchQueryTimeout  = 60 * time.Second
 )
 
 // Package-level compiled regex for CVSS score extraction
 var cvssScoreRegex = regexp.MustCompile(`^(\d+\.?\d*)$`)
 
-// SeverityThreshold maps severity names to numeric levels for comparison
-var SeverityThreshold = map[string]int{
-	"CRITICAL": 4,
-	"HIGH":     3,
-	"MEDIUM":   2,
-	"LOW":      1,
-	"UNKNOWN":  0,
-}
+// VulnScannerInterface defines the contract for vulnerability scanning.
+// This interface enables mocking in tests and potential alternative implementations.
+type VulnScannerInterface interface {
+	// Scan performs vulnerability scanning on all vendored dependencies.
+	// failOn specifies the severity threshold (critical|high|medium|low) for failing.
+	// Returns nil error even if vulnerabilities are found; check result.Summary.Result.
+	Scan(failOn string) (*types.ScanResult, error)
 
-// ScanResult represents the complete vulnerability scan output
-type ScanResult struct {
-	SchemaVersion string           `json:"schema_version"`
-	Timestamp     string           `json:"timestamp"`
-	Summary       ScanSummary      `json:"summary"`
-	Dependencies  []DependencyScan `json:"dependencies"`
-}
-
-// ScanSummary contains aggregate statistics for the scan
-type ScanSummary struct {
-	TotalDependencies int        `json:"total_dependencies"`
-	Scanned           int        `json:"scanned"`
-	NotScanned        int        `json:"not_scanned"`
-	Vulnerabilities   VulnCounts `json:"vulnerabilities"`
-	Result            string     `json:"result"` // PASS, FAIL, WARN
-	FailOnThreshold   string     `json:"fail_on_threshold,omitempty"`
-	ThresholdExceeded bool       `json:"threshold_exceeded,omitempty"`
-}
-
-// VulnCounts holds vulnerability counts by severity
-type VulnCounts struct {
-	Critical int `json:"critical"`
-	High     int `json:"high"`
-	Medium   int `json:"medium"`
-	Low      int `json:"low"`
-	Unknown  int `json:"unknown"`
-	Total    int `json:"total"`
-}
-
-// DependencyScan represents scan results for a single dependency
-type DependencyScan struct {
-	Name            string          `json:"name"`
-	Version         *string         `json:"version"`
-	Commit          string          `json:"commit"`
-	URL             string          `json:"url,omitempty"`
-	ScanStatus      string          `json:"scan_status"` // scanned, not_scanned, error
-	ScanReason      string          `json:"scan_reason,omitempty"`
-	Vulnerabilities []Vulnerability `json:"vulnerabilities"`
-}
-
-// Vulnerability represents a single CVE/vulnerability finding
-type Vulnerability struct {
-	ID           string   `json:"id"`
-	Aliases      []string `json:"aliases"`
-	Severity     string   `json:"severity"`
-	CVSSScore    float64  `json:"cvss_score,omitempty"`
-	Summary      string   `json:"summary"`
-	FixedVersion string   `json:"fixed_version,omitempty"`
-	References   []string `json:"references"`
+	// ClearCache removes all cached OSV responses.
+	ClearCache() error
 }
 
 // VulnScanner handles vulnerability scanning against OSV.dev
@@ -198,8 +162,19 @@ type cacheEntry struct {
 	CachedAt time.Time `json:"cached_at"`
 }
 
-// Scan performs vulnerability scanning on all vendored dependencies
-func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
+// Scan performs vulnerability scanning on all vendored dependencies.
+// failOn specifies the severity threshold for failing (critical|high|medium|low).
+// An empty string means no threshold check.
+func (s *VulnScanner) Scan(failOn string) (*types.ScanResult, error) {
+	// Validate failOn parameter
+	if failOn != "" {
+		normalized := strings.ToLower(failOn)
+		if !types.ValidSeverityThresholds[normalized] {
+			return nil, fmt.Errorf("invalid fail-on threshold %q: must be one of critical, high, medium, low", failOn)
+		}
+		failOn = strings.ToUpper(normalized)
+	}
+
 	// Load lockfile
 	lock, err := s.lockStore.Load()
 	if err != nil {
@@ -218,11 +193,11 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 		vendorURLs[v.Name] = v.URL
 	}
 
-	result := &ScanResult{
+	result := &types.ScanResult{
 		SchemaVersion: scanSchemaVersion,
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
-		Dependencies:  make([]DependencyScan, 0, len(lock.Vendors)),
-		Summary: ScanSummary{
+		Dependencies:  make([]types.DependencyScan, 0, len(lock.Vendors)),
+		Summary: types.ScanSummary{
 			TotalDependencies: len(lock.Vendors),
 			FailOnThreshold:   failOn,
 		},
@@ -231,10 +206,16 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 	// Use batch query for efficiency
 	vulnResults, batchErr := s.batchQuery(lock.Vendors, vendorURLs)
 
+	// Track which deps were successfully included in batch
+	batchedDeps := make(map[string]bool)
+	for name := range vulnResults {
+		batchedDeps[name] = true
+	}
+
 	// Process each vendor
 	for i := range lock.Vendors {
 		lockEntry := &lock.Vendors[i]
-		depScan := DependencyScan{
+		depScan := types.DependencyScan{
 			Name:   lockEntry.Name,
 			Commit: lockEntry.CommitHash,
 			URL:    vendorURLs[lockEntry.Name],
@@ -246,48 +227,64 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 			depScan.Version = &version
 		}
 
+		// Handle empty commit hash - skip with warning
+		if lockEntry.CommitHash == "" {
+			depScan.ScanStatus = types.ScanStatusNotScanned
+			depScan.ScanReason = "Empty commit hash - cannot query vulnerability database"
+			result.Summary.NotScanned++
+			result.Dependencies = append(result.Dependencies, depScan)
+			continue
+		}
+
 		// Check batch results
 		var vulns []osvVuln
 		var scanErr error
 
 		if batchErr != nil {
+			// Batch failed entirely
 			scanErr = batchErr
 		} else if v, ok := vulnResults[lockEntry.Name]; ok {
+			// Found in batch results
 			vulns = v
-		} else {
-			// Fallback to individual query if not in batch results
-			vulns, scanErr = s.queryOSV(lockEntry, vendorURLs[lockEntry.Name])
+		} else if !batchedDeps[lockEntry.Name] {
+			// Not in batch results - mark as not scanned due to partial failure
+			// This handles the case where batch succeeded but this dep wasn't included
+			depScan.ScanStatus = types.ScanStatusNotScanned
+			depScan.ScanReason = "Not included in batch query results"
+			result.Summary.NotScanned++
+			result.Dependencies = append(result.Dependencies, depScan)
+			continue
 		}
 
 		if scanErr != nil {
 			// Handle different error types
 			switch {
 			case isRateLimitError(scanErr):
-				depScan.ScanStatus = "not_scanned"
+				depScan.ScanStatus = types.ScanStatusNotScanned
 				depScan.ScanReason = "Rate limited by OSV.dev API"
 				result.Summary.NotScanned++
 			case isNetworkError(scanErr):
 				// Try to use stale cache
-				staleVulns, cacheErr := s.loadStaleCache(lockEntry)
+				staleVulns, cacheErr := s.loadStaleCache(lockEntry, vendorURLs[lockEntry.Name])
 				if cacheErr == nil && staleVulns != nil {
 					vulns = staleVulns
-					depScan.ScanStatus = "scanned"
+					depScan.ScanStatus = types.ScanStatusScanned
 					depScan.ScanReason = "Using cached data (network unavailable)"
 					result.Summary.Scanned++ // Count stale cache as scanned
 				} else {
-					depScan.ScanStatus = "not_scanned"
+					depScan.ScanStatus = types.ScanStatusNotScanned
 					depScan.ScanReason = fmt.Sprintf("Network error: %v", scanErr)
 					result.Summary.NotScanned++
 				}
 			default:
-				depScan.ScanStatus = "error"
+				depScan.ScanStatus = types.ScanStatusError
 				depScan.ScanReason = scanErr.Error()
 				result.Summary.NotScanned++
 			}
 		}
 
 		if depScan.ScanStatus == "" {
-			depScan.ScanStatus = "scanned"
+			depScan.ScanStatus = types.ScanStatusScanned
 			result.Summary.Scanned++
 		}
 
@@ -300,13 +297,13 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 		for _, v := range depScan.Vulnerabilities {
 			result.Summary.Vulnerabilities.Total++
 			switch v.Severity {
-			case "CRITICAL":
+			case types.SeverityCritical:
 				result.Summary.Vulnerabilities.Critical++
-			case "HIGH":
+			case types.SeverityHigh:
 				result.Summary.Vulnerabilities.High++
-			case "MEDIUM":
+			case types.SeverityMedium:
 				result.Summary.Vulnerabilities.Medium++
-			case "LOW":
+			case types.SeverityLow:
 				result.Summary.Vulnerabilities.Low++
 			default:
 				result.Summary.Vulnerabilities.Unknown++
@@ -324,8 +321,8 @@ func (s *VulnScanner) Scan(failOn string) (*ScanResult, error) {
 
 // queryOSV queries OSV.dev for vulnerabilities (single query)
 func (s *VulnScanner) queryOSV(dep *types.LockDetails, repoURL string) ([]osvVuln, error) {
-	// Build cache key
-	cacheKey := s.getCacheKey(dep)
+	// Build cache key (includes URL hash for collision prevention)
+	cacheKey := s.getCacheKey(dep, repoURL)
 
 	// Check cache first
 	if cached, ok := s.loadFromCache(cacheKey); ok {
@@ -335,8 +332,8 @@ func (s *VulnScanner) queryOSV(dep *types.LockDetails, repoURL string) ([]osvVul
 	// Build query - try PURL first if we have version tag
 	query := s.buildQuery(dep, repoURL)
 
-	// Make request
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Make request with timeout (see timeout rationale at package level)
+	ctx, cancel := context.WithTimeout(context.Background(), singleQueryTimeout)
 	defer cancel()
 
 	queryJSON, err := json.Marshal(query)
@@ -355,7 +352,7 @@ func (s *VulnScanner) queryOSV(dep *types.LockDetails, repoURL string) ([]osvVul
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // Body close errors on HTTP responses are non-actionable
 
 	// Handle rate limiting
 	if resp.StatusCode == http.StatusTooManyRequests {
@@ -383,14 +380,19 @@ func (s *VulnScanner) queryOSV(dep *types.LockDetails, repoURL string) ([]osvVul
 	return result.Vulns, nil
 }
 
-// batchQuery performs batch vulnerability queries for efficiency
+// batchQuery performs batch vulnerability queries for efficiency.
+// It handles batching (max 1000 queries per request) and caching automatically.
 func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string]string) (map[string][]osvVuln, error) {
 	results := make(map[string][]osvVuln)
 
-	// First, check cache for all deps
+	// First, check cache for all deps (also filter out empty commit hashes)
 	var uncachedIdxs []int
 	for i := range deps {
-		cacheKey := s.getCacheKey(&deps[i])
+		// Skip deps with empty commit hash
+		if deps[i].CommitHash == "" {
+			continue
+		}
+		cacheKey := s.getCacheKey(&deps[i], vendorURLs[deps[i].Name])
 		if vulns, ok := s.loadFromCache(cacheKey); ok {
 			results[deps[i].Name] = vulns
 		} else {
@@ -413,7 +415,7 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 		depIdxMap[queryIdx] = depIdx
 	}
 
-	// Split into batches if needed
+	// Split into batches if needed (OSV.dev has a 1000 query limit per batch)
 	for batchStart := 0; batchStart < len(queries); batchStart += maxBatchSize {
 		batchEnd := batchStart + maxBatchSize
 		if batchEnd > len(queries) {
@@ -422,8 +424,8 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 
 		batchQueries := queries[batchStart:batchEnd]
 
-		// Make batch request
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		// Make batch request with timeout (see timeout rationale at package level)
+		ctx, cancel := context.WithTimeout(context.Background(), batchQueryTimeout)
 
 		batchReq := osvBatchRequest{Queries: batchQueries}
 		reqJSON, err := json.Marshal(batchReq)
@@ -447,14 +449,14 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
-			resp.Body.Close()
+			resp.Body.Close() //nolint:errcheck // Non-actionable
 			cancel()
 			return results, fmt.Errorf("rate limited")
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			resp.Body.Close() //nolint:errcheck // Non-actionable
 			cancel()
 			if err != nil {
 				return results, fmt.Errorf("OSV batch API error: %d (failed to read body: %w)", resp.StatusCode, err)
@@ -464,11 +466,11 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 
 		var batchResp osvBatchResponse
 		if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
-			resp.Body.Close()
+			resp.Body.Close() //nolint:errcheck // Non-actionable
 			cancel()
 			return results, fmt.Errorf("decode batch response: %w", err)
 		}
-		resp.Body.Close()
+		resp.Body.Close() //nolint:errcheck // Non-actionable
 		cancel()
 
 		// Process results and cache
@@ -477,7 +479,7 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 			if depIdx, ok := depIdxMap[globalIdx]; ok {
 				results[deps[depIdx].Name] = batchResp.Results[i].Vulns
 				// Cache individual results (ignore cache write errors)
-				cacheKey := s.getCacheKey(&deps[depIdx])
+				cacheKey := s.getCacheKey(&deps[depIdx], vendorURLs[deps[depIdx].Name])
 				//nolint:errcheck // Cache write errors are non-fatal
 				s.saveToCache(cacheKey, batchResp.Results[i].Vulns)
 			}
@@ -550,9 +552,11 @@ func (s *VulnScanner) buildPURL(repoURL, version string) string {
 	}
 }
 
-// getCacheKey generates a safe cache key for a dependency
-func (s *VulnScanner) getCacheKey(dep *types.LockDetails) string {
-	// Create a deterministic key based on commit and version
+// getCacheKey generates a safe cache key for a dependency.
+// It includes a hash of the repository URL to prevent collisions between
+// different repos that might have the same version tag.
+func (s *VulnScanner) getCacheKey(dep *types.LockDetails, repoURL string) string {
+	// Create a deterministic key based on commit, version, and URL
 	key := dep.CommitHash
 	if dep.SourceVersionTag != "" {
 		// Use at most 8 characters from commit hash
@@ -561,6 +565,13 @@ func (s *VulnScanner) getCacheKey(dep *types.LockDetails) string {
 			shortHash = shortHash[:8]
 		}
 		key = dep.SourceVersionTag + "_" + shortHash
+	}
+
+	// Add URL hash to prevent cache collisions between repos with same version
+	// e.g., v1.0.0 from repo-a vs v1.0.0 from repo-b
+	if repoURL != "" {
+		urlHash := sha256.Sum256([]byte(repoURL))
+		key = key + "_" + hex.EncodeToString(urlHash[:4]) // 8 hex chars
 	}
 
 	// Comprehensive sanitization for filesystem safety
@@ -588,7 +599,9 @@ func (s *VulnScanner) getCacheKey(dep *types.LockDetails) string {
 	return key + ".json"
 }
 
-// loadFromCache loads cached OSV response if valid
+// loadFromCache loads cached OSV response if valid.
+// Returns (vulns, true) on cache hit, (nil, false) on miss or error.
+// Corrupt cache files are logged and deleted automatically.
 func (s *VulnScanner) loadFromCache(key string) ([]osvVuln, bool) {
 	path := filepath.Join(s.cacheDir, key)
 
@@ -599,6 +612,10 @@ func (s *VulnScanner) loadFromCache(key string) ([]osvVuln, bool) {
 
 	var entry cacheEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
+		// Corrupt cache file - log warning and remove it
+		log.Printf("Warning: corrupt cache file %s, removing: %v", key, err)
+		//nolint:errcheck // Best effort cleanup
+		os.Remove(path)
 		return nil, false
 	}
 
@@ -610,9 +627,10 @@ func (s *VulnScanner) loadFromCache(key string) ([]osvVuln, bool) {
 	return entry.Vulns, true
 }
 
-// loadStaleCache loads cached data even if expired (for offline use)
-func (s *VulnScanner) loadStaleCache(dep *types.LockDetails) ([]osvVuln, error) {
-	key := s.getCacheKey(dep)
+// loadStaleCache loads cached data even if expired (for offline use).
+// This is used as a fallback when network is unavailable.
+func (s *VulnScanner) loadStaleCache(dep *types.LockDetails, repoURL string) ([]osvVuln, error) {
+	key := s.getCacheKey(dep, repoURL)
 	path := filepath.Join(s.cacheDir, key)
 
 	data, err := os.ReadFile(path)
@@ -622,6 +640,10 @@ func (s *VulnScanner) loadStaleCache(dep *types.LockDetails) ([]osvVuln, error) 
 
 	var entry cacheEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
+		// Corrupt cache file - log warning and remove it
+		log.Printf("Warning: corrupt cache file %s, removing: %v", key, err)
+		//nolint:errcheck // Best effort cleanup
+		os.Remove(path)
 		return nil, err
 	}
 
@@ -654,15 +676,16 @@ func (s *VulnScanner) saveToCache(key string, vulns []osvVuln) error {
 }
 
 // convertVulns converts OSV vulnerabilities to our format
-func (s *VulnScanner) convertVulns(osvVulns []osvVuln) []Vulnerability {
-	vulns := make([]Vulnerability, 0, len(osvVulns))
+func (s *VulnScanner) convertVulns(osvVulns []osvVuln) []types.Vulnerability {
+	vulns := make([]types.Vulnerability, 0, len(osvVulns))
 
 	for i := range osvVulns {
 		ov := &osvVulns[i]
-		v := Vulnerability{
+		v := types.Vulnerability{
 			ID:      ov.ID,
 			Aliases: ov.Aliases,
 			Summary: ov.Summary,
+			Details: ov.Details, // Include extended description from OSV
 		}
 
 		// Extract CVSS score and severity
@@ -678,7 +701,7 @@ func (s *VulnScanner) convertVulns(osvVulns []osvVuln) []Vulnerability {
 
 		// If no CVSS, default to UNKNOWN
 		if v.Severity == "" {
-			v.Severity = "UNKNOWN"
+			v.Severity = types.SeverityUnknown
 		}
 
 		// Extract fixed version
@@ -757,38 +780,44 @@ func parseCVSSScore(cvssStr string) float64 {
 	return 0
 }
 
-// CVSSToSeverity converts a CVSS score to severity string
+// CVSSToSeverity converts a CVSS score to severity string.
+// Thresholds based on CVSS v3.0 qualitative severity rating scale:
+// - Critical: 9.0-10.0
+// - High: 7.0-8.9
+// - Medium: 4.0-6.9
+// - Low: 0.1-3.9
+// - Unknown: 0.0 (no score available)
 func CVSSToSeverity(score float64) string {
 	switch {
 	case score >= 9.0:
-		return "CRITICAL"
+		return types.SeverityCritical
 	case score >= 7.0:
-		return "HIGH"
+		return types.SeverityHigh
 	case score >= 4.0:
-		return "MEDIUM"
+		return types.SeverityMedium
 	case score > 0:
-		return "LOW"
+		return types.SeverityLow
 	default:
-		return "UNKNOWN"
+		return types.SeverityUnknown
 	}
 }
 
-// determineResult determines the overall scan result
-func (s *VulnScanner) determineResult(result *ScanResult, failOn string) string {
+// determineResult determines the overall scan result based on vulnerabilities found.
+func (s *VulnScanner) determineResult(result *types.ScanResult, failOn string) string {
 	vulns := result.Summary.Vulnerabilities
 
 	// Check if threshold is exceeded
 	thresholdExceeded := false
 	if failOn != "" {
-		thresholdLevel := SeverityThreshold[strings.ToUpper(failOn)]
+		thresholdLevel := types.SeverityThreshold[strings.ToUpper(failOn)]
 		switch {
-		case vulns.Critical > 0 && SeverityThreshold["CRITICAL"] >= thresholdLevel:
+		case vulns.Critical > 0 && types.SeverityThreshold[types.SeverityCritical] >= thresholdLevel:
 			thresholdExceeded = true
-		case vulns.High > 0 && SeverityThreshold["HIGH"] >= thresholdLevel:
+		case vulns.High > 0 && types.SeverityThreshold[types.SeverityHigh] >= thresholdLevel:
 			thresholdExceeded = true
-		case vulns.Medium > 0 && SeverityThreshold["MEDIUM"] >= thresholdLevel:
+		case vulns.Medium > 0 && types.SeverityThreshold[types.SeverityMedium] >= thresholdLevel:
 			thresholdExceeded = true
-		case vulns.Low > 0 && SeverityThreshold["LOW"] >= thresholdLevel:
+		case vulns.Low > 0 && types.SeverityThreshold[types.SeverityLow] >= thresholdLevel:
 			thresholdExceeded = true
 		}
 	}
@@ -798,11 +827,11 @@ func (s *VulnScanner) determineResult(result *ScanResult, failOn string) string 
 	// Determine result
 	switch {
 	case vulns.Total > 0:
-		return "FAIL"
+		return types.ScanResultFail
 	case result.Summary.NotScanned > 0:
-		return "WARN"
+		return types.ScanResultWarn
 	default:
-		return "PASS"
+		return types.ScanResultPass
 	}
 }
 
@@ -830,7 +859,8 @@ func (s *VulnScanner) ClearCache() error {
 	return os.RemoveAll(s.cacheDir)
 }
 
-// GetCacheKey returns the cache key for testing purposes
-func (s *VulnScanner) GetCacheKey(dep *types.LockDetails) string {
-	return s.getCacheKey(dep)
+// GetCacheKey returns the cache key for testing purposes.
+// repoURL is used to prevent cache collisions between repos with same version.
+func (s *VulnScanner) GetCacheKey(dep *types.LockDetails, repoURL string) string {
+	return s.getCacheKey(dep, repoURL)
 }

@@ -445,7 +445,7 @@ func (s *VendorSyncer) Verify() (*types.VerifyResult, error) {
 }
 
 // Scan performs vulnerability scanning against OSV.dev
-func (s *VendorSyncer) Scan(failOn string) (*ScanResult, error) {
+func (s *VendorSyncer) Scan(failOn string) (*types.ScanResult, error) {
 	return s.vulnScanner.Scan(failOn)
 }
 

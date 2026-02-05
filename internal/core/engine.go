@@ -250,7 +250,7 @@ func (m *Manager) Verify() (*types.VerifyResult, error) {
 }
 
 // Scan performs vulnerability scanning against OSV.dev
-func (m *Manager) Scan(failOn string) (*ScanResult, error) {
+func (m *Manager) Scan(failOn string) (*types.ScanResult, error) {
 	return m.syncer.Scan(failOn)
 }
 
