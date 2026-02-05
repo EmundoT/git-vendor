@@ -14,6 +14,19 @@ const (
 	CacheDir = ".cache"
 )
 
+// Full paths relative to project root.
+// Use these instead of manually concatenating VendorDir + "/" + filename.
+const (
+	// ConfigPath is the full path to vendor.yml
+	ConfigPath = VendorDir + "/" + ConfigFile
+	// LockPath is the full path to vendor.lock
+	LockPath = VendorDir + "/" + LockFile
+	// LicensesPath is the full path to the licenses directory
+	LicensesPath = VendorDir + "/" + LicensesDir
+	// CachePath is the full path to the cache directory
+	CachePath = VendorDir + "/" + CacheDir
+)
+
 // Git refs
 const (
 	// DefaultRef is the default git ref used when none is specified

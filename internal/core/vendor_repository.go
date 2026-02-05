@@ -1,8 +1,6 @@
 package core
 
 import (
-	"fmt"
-
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
@@ -27,7 +25,7 @@ func (r *VendorRepository) Find(name string) (*types.VendorSpec, error) {
 
 	vendor := FindVendor(config.Vendors, name)
 	if vendor == nil {
-		return nil, fmt.Errorf(ErrVendorNotFoundMsg, name)
+		return nil, NewVendorNotFoundError(name)
 	}
 
 	return vendor, nil
@@ -82,7 +80,7 @@ func (r *VendorRepository) Delete(name string) error {
 
 	index := FindVendorIndex(config.Vendors, name)
 	if index < 0 {
-		return fmt.Errorf(ErrVendorNotFoundMsg, name)
+		return NewVendorNotFoundError(name)
 	}
 
 	config.Vendors = append(config.Vendors[:index], config.Vendors[index+1:]...)
