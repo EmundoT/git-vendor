@@ -19,6 +19,12 @@ type SyncOptions struct {
 	Parallel   types.ParallelOptions // Parallel processing options
 }
 
+// RefMetadata holds per-ref metadata collected during sync
+type RefMetadata struct {
+	CommitHash string
+	VersionTag string // Git tag pointing to commit, if any
+}
+
 // SyncService handles vendor synchronization operations
 type SyncService struct {
 	configStore ConfigStore
@@ -176,7 +182,7 @@ func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[strin
 	executor := NewParallelExecutor(opts.Parallel, s.ui)
 
 	// Define sync function for a single vendor
-	syncFunc := func(v types.VendorSpec, lockedRefs map[string]string, syncOpts SyncOptions) (map[string]string, CopyStats, error) {
+	syncFunc := func(v types.VendorSpec, lockedRefs map[string]string, syncOpts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 		updatedRefs, stats, err := s.syncVendor(&v, lockedRefs, syncOpts)
 		if err != nil {
 			progress.Fail(err)
@@ -321,8 +327,8 @@ func (s *SyncService) previewSyncVendor(v *types.VendorSpec, lockedRefs map[stri
 }
 
 // syncVendor syncs a single vendor
-// Returns a map of ref to commit hash and total stats for all synced refs
-func (s *SyncService) syncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]string, CopyStats, error) {
+// Returns a map of ref to RefMetadata and total stats for all synced refs
+func (s *SyncService) syncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 	// Check cache for all refs first (if cache enabled)
 	canSkipClone := false
 	if !opts.NoCache && !opts.Force && lockedRefs != nil {
@@ -339,11 +345,12 @@ func (s *SyncService) syncVendor(v *types.VendorSpec, lockedRefs map[string]stri
 	// If all refs are cached and up-to-date, skip git operations entirely
 	if canSkipClone {
 		fmt.Printf("⚡ %s (cache hit, skipping download)\n", v.Name)
-		results := make(map[string]string)
+		results := make(map[string]RefMetadata)
 		var totalStats CopyStats
 
 		for _, spec := range v.Specs {
-			results[spec.Ref] = lockedRefs[spec.Ref]
+			// For cached syncs, we don't have access to version tag
+			results[spec.Ref] = RefMetadata{CommitHash: lockedRefs[spec.Ref]}
 			// Files already exist, count them
 			stats := CopyStats{FileCount: len(spec.Mapping)}
 			totalStats.Add(stats)
@@ -397,16 +404,16 @@ func (s *SyncService) syncVendor(v *types.VendorSpec, lockedRefs map[string]stri
 		return nil, CopyStats{}, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, v.URL, err)
 	}
 
-	results := make(map[string]string)
+	results := make(map[string]RefMetadata)
 	var totalStats CopyStats
 
 	// Sync each ref
 	for _, spec := range v.Specs {
-		hash, stats, err := s.syncRef(tempDir, v, spec, lockedRefs, opts)
+		metadata, stats, err := s.syncRef(tempDir, v, spec, lockedRefs, opts)
 		if err != nil {
 			return nil, CopyStats{}, err
 		}
-		results[spec.Ref] = hash
+		results[spec.Ref] = metadata
 		totalStats.Add(stats)
 
 		// Display stats with proper pluralization
@@ -421,8 +428,8 @@ func (s *SyncService) syncVendor(v *types.VendorSpec, lockedRefs map[string]stri
 		// Get the first ref's commit hash for context (if multiple refs, use the first)
 		firstHash := ""
 		firstRef := ""
-		for ref, hash := range results {
-			firstHash = hash
+		for ref, metadata := range results {
+			firstHash = metadata.CommitHash
 			firstRef = ref
 			break
 		}
@@ -444,7 +451,7 @@ func (s *SyncService) syncVendor(v *types.VendorSpec, lockedRefs map[string]stri
 }
 
 // syncRef syncs a single ref for a vendor
-func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string, opts SyncOptions) (string, CopyStats, error) {
+func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string, opts SyncOptions) (RefMetadata, CopyStats, error) {
 	targetCommit := ""
 	isLocked := false
 
@@ -461,24 +468,24 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 	if isLocked {
 		// Locked sync - checkout specific commit
 		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
-			return "", CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
+			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 		}
 		if err := s.gitClient.Checkout(tempDir, targetCommit); err != nil {
 			// Detect stale lock hash error and provide helpful message
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "reference is not a tree") || strings.Contains(errMsg, "not a valid object") {
-				return "", CopyStats{}, fmt.Errorf(ErrStaleCommitMsg, targetCommit[:7])
+				return RefMetadata{}, CopyStats{}, fmt.Errorf(ErrStaleCommitMsg, targetCommit[:7])
 			}
-			return "", CopyStats{}, fmt.Errorf(ErrCheckoutFailed, targetCommit, err)
+			return RefMetadata{}, CopyStats{}, fmt.Errorf(ErrCheckoutFailed, targetCommit, err)
 		}
 	} else {
 		// Unlocked sync - checkout latest
 		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
-			return "", CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
+			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 		}
 		if err := s.gitClient.Checkout(tempDir, "FETCH_HEAD"); err != nil {
 			if err := s.gitClient.Checkout(tempDir, spec.Ref); err != nil {
-				return "", CopyStats{}, fmt.Errorf(ErrRefCheckoutFailed, spec.Ref, err)
+				return RefMetadata{}, CopyStats{}, fmt.Errorf(ErrRefCheckoutFailed, spec.Ref, err)
 			}
 		}
 	}
@@ -486,19 +493,22 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 	// Get current commit hash
 	hash, err := s.gitClient.GetHeadHash(tempDir)
 	if err != nil {
-		return "", CopyStats{}, fmt.Errorf("failed to get commit hash for %s @ %s: %w", v.Name, spec.Ref, err)
+		return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to get commit hash for %s @ %s: %w", v.Name, spec.Ref, err)
 	}
+
+	// Get version tag for this commit (if any)
+	versionTag, _ := s.gitClient.GetTagForCommit(tempDir, hash)
 
 	// Copy license file (don't count in stats)
 	if err := s.license.CopyLicense(tempDir, v.Name); err != nil {
-		return "", CopyStats{}, err
+		return RefMetadata{}, CopyStats{}, err
 	}
 
 	// Copy files according to mappings and collect stats
 	fmt.Printf("  ⠿ Copying files...\n")
 	stats, err := s.fileCopy.CopyMappings(tempDir, v, spec)
 	if err != nil {
-		return "", CopyStats{}, err
+		return RefMetadata{}, CopyStats{}, err
 	}
 
 	// Build and save cache (if cache enabled)
@@ -510,7 +520,7 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 		}
 	}
 
-	return hash, stats, nil
+	return RefMetadata{CommitHash: hash, VersionTag: versionTag}, stats, nil
 }
 
 // fetchWithFallback tries shallow fetch first, falls back to full fetch if needed
