@@ -85,7 +85,7 @@ type VendorSyncer struct {
 	explorer       *RemoteExplorer
 	updateChecker  *UpdateChecker
 	verifyService  *VerifyService
-	vulnScanner    *VulnScanner
+	vulnScanner    VulnScannerInterface // Interface for testability
 	configStore    ConfigStore
 	lockStore      LockStore
 	gitClient      GitClient
@@ -95,7 +95,8 @@ type VendorSyncer struct {
 	ui             UICallback
 }
 
-// NewVendorSyncer creates a new VendorSyncer with injected dependencies
+// NewVendorSyncer creates a new VendorSyncer with injected dependencies.
+// vulnScanner is optional - if nil, a default VulnScanner will be created.
 func NewVendorSyncer(
 	configStore ConfigStore,
 	lockStore LockStore,
@@ -104,6 +105,7 @@ func NewVendorSyncer(
 	licenseChecker LicenseChecker,
 	rootDir string,
 	ui UICallback,
+	vulnScanner VulnScannerInterface,
 ) *VendorSyncer {
 	if ui == nil {
 		ui = &SilentUICallback{}
@@ -121,7 +123,11 @@ func NewVendorSyncer(
 	explorer := NewRemoteExplorer(gitClient, fs)
 	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
 	verifyService := NewVerifyService(configStore, lockStore, cache, fs, rootDir)
-	vulnScanner := NewVulnScanner(lockStore, configStore)
+
+	// Use provided scanner or create default
+	if vulnScanner == nil {
+		vulnScanner = NewVulnScanner(lockStore, configStore)
+	}
 
 	return &VendorSyncer{
 		repository:     repository,
