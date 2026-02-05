@@ -88,7 +88,7 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 
 		// Add lock entries for each ref
 		for ref, metadata := range updatedRefs {
-			licenseFile := filepath.Join(s.rootDir, LicenseDir, v.Name+".txt")
+			licenseFile := filepath.Join(s.rootDir, LicensesDir, v.Name+".txt")
 
 			// Compute file hashes for all destination files
 			fileHashes := s.computeFileHashes(&v, ref)
@@ -185,7 +185,7 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 
 		// Add lock entries for each ref
 		for ref, metadata := range results[i].UpdatedRefs {
-			licenseFile := filepath.Join(s.rootDir, LicenseDir, results[i].Vendor.Name+".txt")
+			licenseFile := filepath.Join(s.rootDir, LicensesDir, results[i].Vendor.Name+".txt")
 
 			// Compute file hashes for all destination files
 			fileHashes := s.computeFileHashes(&results[i].Vendor, ref)
