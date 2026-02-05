@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -108,12 +109,8 @@ func (g *SBOMGenerator) generateCycloneDX(lock *types.VendorLock, urlMap map[str
 	bom.Components = &components
 
 	// Encode to JSON
-	encoder := cdx.NewBOMEncoder(nil, cdx.BOMFileFormatJSON)
-	encoder.SetPretty(true)
-
-	// Use a buffer to encode
 	var buf strings.Builder
-	encoder = cdx.NewBOMEncoder(&buf, cdx.BOMFileFormatJSON)
+	encoder := cdx.NewBOMEncoder(&buf, cdx.BOMFileFormatJSON)
 	encoder.SetPretty(true)
 	if err := encoder.Encode(bom); err != nil {
 		return nil, fmt.Errorf("encode CycloneDX: %w", err)
@@ -223,9 +220,11 @@ func (g *SBOMGenerator) generateSPDX(lock *types.VendorLock, urlMap map[string]s
 		packages = append(packages, pkg)
 
 		// Add DESCRIBES relationship from document to package
+		// IMPORTANT: RefB must match the package's SPDXID exactly (including "Package-" prefix)
+		packageSPDXID := "Package-" + sanitizeSPDXID(vendor.Name)
 		relationships = append(relationships, &spdx23.Relationship{
 			RefA:         common.MakeDocElementID("", "DOCUMENT"),
-			RefB:         common.MakeDocElementID("", sanitizeSPDXID(vendor.Name)),
+			RefB:         common.MakeDocElementID("", packageSPDXID),
 			Relationship: "DESCRIBES",
 		})
 	}
@@ -233,7 +232,7 @@ func (g *SBOMGenerator) generateSPDX(lock *types.VendorLock, urlMap map[string]s
 	doc.Packages = packages
 	doc.Relationships = relationships
 
-	// Encode to JSON
+	// Use proper JSON encoding via the SPDX library's struct tags
 	return spdxToJSON(doc)
 }
 
@@ -357,109 +356,131 @@ func sanitizeSPDXID(s string) string {
 	return result.String()
 }
 
-// spdxToJSON converts an SPDX document to JSON bytes
-func spdxToJSON(doc *spdx23.Document) ([]byte, error) {
-	// Use the SPDX JSON marshaling
-	var buf strings.Builder
-
-	// Manual JSON construction for SPDX 2.3 format
-	buf.WriteString("{\n")
-	buf.WriteString(fmt.Sprintf("  \"spdxVersion\": \"%s\",\n", doc.SPDXVersion))
-	buf.WriteString(fmt.Sprintf("  \"dataLicense\": \"%s\",\n", doc.DataLicense))
-	buf.WriteString(fmt.Sprintf("  \"SPDXID\": \"SPDXRef-%s\",\n", doc.SPDXIdentifier))
-	buf.WriteString(fmt.Sprintf("  \"name\": \"%s\",\n", doc.DocumentName))
-	buf.WriteString(fmt.Sprintf("  \"documentNamespace\": \"%s\",\n", doc.DocumentNamespace))
-
-	// Creation info
-	buf.WriteString("  \"creationInfo\": {\n")
-	buf.WriteString(fmt.Sprintf("    \"created\": \"%s\",\n", doc.CreationInfo.Created))
-	buf.WriteString("    \"creators\": [\n")
-	for i, creator := range doc.CreationInfo.Creators {
-		comma := ","
-		if i == len(doc.CreationInfo.Creators)-1 {
-			comma = ""
-		}
-		buf.WriteString(fmt.Sprintf("      \"%s: %s\"%s\n", creator.CreatorType, creator.Creator, comma))
-	}
-	buf.WriteString("    ]\n")
-	buf.WriteString("  },\n")
-
-	// Packages
-	buf.WriteString("  \"packages\": [\n")
-	for i, pkg := range doc.Packages {
-		buf.WriteString("    {\n")
-		buf.WriteString(fmt.Sprintf("      \"SPDXID\": \"SPDXRef-%s\",\n", pkg.PackageSPDXIdentifier))
-		buf.WriteString(fmt.Sprintf("      \"name\": \"%s\",\n", pkg.PackageName))
-		buf.WriteString(fmt.Sprintf("      \"versionInfo\": \"%s\",\n", pkg.PackageVersion))
-		buf.WriteString(fmt.Sprintf("      \"downloadLocation\": \"%s\",\n", pkg.PackageDownloadLocation))
-		buf.WriteString(fmt.Sprintf("      \"licenseDeclared\": \"%s\",\n", pkg.PackageLicenseDeclared))
-		buf.WriteString(fmt.Sprintf("      \"licenseConcluded\": \"%s\",\n", pkg.PackageLicenseConcluded))
-		buf.WriteString(fmt.Sprintf("      \"copyrightText\": \"%s\",\n", pkg.PackageCopyrightText))
-		buf.WriteString(fmt.Sprintf("      \"filesAnalyzed\": %t", pkg.FilesAnalyzed))
-
-		// Checksums
-		if len(pkg.PackageChecksums) > 0 {
-			buf.WriteString(",\n      \"checksums\": [\n")
-			for j, checksum := range pkg.PackageChecksums {
-				comma := ","
-				if j == len(pkg.PackageChecksums)-1 {
-					comma = ""
-				}
-				buf.WriteString(fmt.Sprintf("        {\"algorithm\": \"%s\", \"checksumValue\": \"%s\"}%s\n",
-					checksum.Algorithm, checksum.Value, comma))
-			}
-			buf.WriteString("      ]")
-		}
-
-		// External references
-		if len(pkg.PackageExternalReferences) > 0 {
-			buf.WriteString(",\n      \"externalRefs\": [\n")
-			for j, ref := range pkg.PackageExternalReferences {
-				comma := ","
-				if j == len(pkg.PackageExternalReferences)-1 {
-					comma = ""
-				}
-				buf.WriteString(fmt.Sprintf("        {\"referenceCategory\": \"%s\", \"referenceType\": \"%s\", \"referenceLocator\": \"%s\"}%s\n",
-					ref.Category, ref.RefType, ref.Locator, comma))
-			}
-			buf.WriteString("      ]")
-		}
-
-		// Comment (annotation)
-		if pkg.PackageComment != "" {
-			buf.WriteString(fmt.Sprintf(",\n      \"comment\": \"%s\"", escapeJSON(pkg.PackageComment)))
-		}
-
-		buf.WriteString("\n    }")
-		if i < len(doc.Packages)-1 {
-			buf.WriteString(",")
-		}
-		buf.WriteString("\n")
-	}
-	buf.WriteString("  ],\n")
-
-	// Relationships
-	buf.WriteString("  \"relationships\": [\n")
-	for i, rel := range doc.Relationships {
-		comma := ","
-		if i == len(doc.Relationships)-1 {
-			comma = ""
-		}
-		buf.WriteString(fmt.Sprintf("    {\"spdxElementId\": \"%s\", \"relationshipType\": \"%s\", \"relatedSpdxElement\": \"%s\"}%s\n",
-			rel.RefA.ElementRefID, rel.Relationship, rel.RefB.ElementRefID, comma))
-	}
-	buf.WriteString("  ]\n")
-	buf.WriteString("}\n")
-
-	return []byte(buf.String()), nil
+// spdxJSON is the JSON representation of an SPDX document
+// Using explicit struct to ensure proper JSON field names per SPDX 2.3 spec
+type spdxJSON struct {
+	SPDXVersion       string                `json:"spdxVersion"`
+	DataLicense       string                `json:"dataLicense"`
+	SPDXID            string                `json:"SPDXID"`
+	Name              string                `json:"name"`
+	DocumentNamespace string                `json:"documentNamespace"`
+	CreationInfo      spdxCreationInfoJSON  `json:"creationInfo"`
+	Packages          []spdxPackageJSON     `json:"packages"`
+	Relationships     []spdxRelationshipJSON `json:"relationships"`
 }
 
-// escapeJSON escapes special characters for JSON strings
-func escapeJSON(s string) string {
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "\"", "\\\"")
-	s = strings.ReplaceAll(s, "\n", "\\n")
-	s = strings.ReplaceAll(s, "\r", "\\r")
-	s = strings.ReplaceAll(s, "\t", "\\t")
-	return s
+type spdxCreationInfoJSON struct {
+	Created  string   `json:"created"`
+	Creators []string `json:"creators"`
+}
+
+type spdxPackageJSON struct {
+	SPDXID           string              `json:"SPDXID"`
+	Name             string              `json:"name"`
+	VersionInfo      string              `json:"versionInfo"`
+	DownloadLocation string              `json:"downloadLocation"`
+	LicenseDeclared  string              `json:"licenseDeclared"`
+	LicenseConcluded string              `json:"licenseConcluded"`
+	CopyrightText    string              `json:"copyrightText"`
+	FilesAnalyzed    bool                `json:"filesAnalyzed"`
+	Checksums        []spdxChecksumJSON  `json:"checksums,omitempty"`
+	ExternalRefs     []spdxExternalRefJSON `json:"externalRefs,omitempty"`
+	Comment          string              `json:"comment,omitempty"`
+}
+
+type spdxChecksumJSON struct {
+	Algorithm     string `json:"algorithm"`
+	ChecksumValue string `json:"checksumValue"`
+}
+
+type spdxExternalRefJSON struct {
+	ReferenceCategory string `json:"referenceCategory"`
+	ReferenceType     string `json:"referenceType"`
+	ReferenceLocator  string `json:"referenceLocator"`
+}
+
+type spdxRelationshipJSON struct {
+	SPDXElementID      string `json:"spdxElementId"`
+	RelationshipType   string `json:"relationshipType"`
+	RelatedSPDXElement string `json:"relatedSpdxElement"`
+}
+
+// spdxToJSON converts an SPDX document to JSON bytes using proper struct marshaling
+func spdxToJSON(doc *spdx23.Document) ([]byte, error) {
+	// Build creators list
+	creators := make([]string, 0, len(doc.CreationInfo.Creators))
+	for _, c := range doc.CreationInfo.Creators {
+		creators = append(creators, fmt.Sprintf("%s: %s", c.CreatorType, c.Creator))
+	}
+
+	// Build packages
+	packages := make([]spdxPackageJSON, 0, len(doc.Packages))
+	for _, pkg := range doc.Packages {
+		p := spdxPackageJSON{
+			SPDXID:           fmt.Sprintf("SPDXRef-%s", pkg.PackageSPDXIdentifier),
+			Name:             pkg.PackageName,
+			VersionInfo:      pkg.PackageVersion,
+			DownloadLocation: pkg.PackageDownloadLocation,
+			LicenseDeclared:  pkg.PackageLicenseDeclared,
+			LicenseConcluded: pkg.PackageLicenseConcluded,
+			CopyrightText:    pkg.PackageCopyrightText,
+			FilesAnalyzed:    pkg.FilesAnalyzed,
+			Comment:          pkg.PackageComment,
+		}
+
+		// Add checksums
+		if len(pkg.PackageChecksums) > 0 {
+			checksums := make([]spdxChecksumJSON, 0, len(pkg.PackageChecksums))
+			for _, cs := range pkg.PackageChecksums {
+				checksums = append(checksums, spdxChecksumJSON{
+					Algorithm:     string(cs.Algorithm),
+					ChecksumValue: cs.Value,
+				})
+			}
+			p.Checksums = checksums
+		}
+
+		// Add external refs
+		if len(pkg.PackageExternalReferences) > 0 {
+			refs := make([]spdxExternalRefJSON, 0, len(pkg.PackageExternalReferences))
+			for _, ref := range pkg.PackageExternalReferences {
+				refs = append(refs, spdxExternalRefJSON{
+					ReferenceCategory: string(ref.Category),
+					ReferenceType:     ref.RefType,
+					ReferenceLocator:  ref.Locator,
+				})
+			}
+			p.ExternalRefs = refs
+		}
+
+		packages = append(packages, p)
+	}
+
+	// Build relationships
+	relationships := make([]spdxRelationshipJSON, 0, len(doc.Relationships))
+	for _, rel := range doc.Relationships {
+		relationships = append(relationships, spdxRelationshipJSON{
+			SPDXElementID:      fmt.Sprintf("SPDXRef-%s", rel.RefA.ElementRefID),
+			RelationshipType:   rel.Relationship,
+			RelatedSPDXElement: fmt.Sprintf("SPDXRef-%s", rel.RefB.ElementRefID),
+		})
+	}
+
+	// Build JSON document
+	jsonDoc := spdxJSON{
+		SPDXVersion:       doc.SPDXVersion,
+		DataLicense:       doc.DataLicense,
+		SPDXID:            fmt.Sprintf("SPDXRef-%s", doc.SPDXIdentifier),
+		Name:              doc.DocumentName,
+		DocumentNamespace: doc.DocumentNamespace,
+		CreationInfo: spdxCreationInfoJSON{
+			Created:  doc.CreationInfo.Created,
+			Creators: creators,
+		},
+		Packages:      packages,
+		Relationships: relationships,
+	}
+
+	// Marshal with indentation for readability
+	return json.MarshalIndent(jsonDoc, "", "  ")
 }
