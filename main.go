@@ -102,7 +102,7 @@ func main() {
 
 	case "add":
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -138,7 +138,7 @@ func main() {
 
 	case "edit":
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -191,7 +191,7 @@ func main() {
 		name := args[0]
 
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -257,7 +257,7 @@ func main() {
 		manager.SetUICallback(callback)
 
 		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -473,7 +473,7 @@ func main() {
 		}
 
 		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -554,7 +554,7 @@ func main() {
 		}
 
 		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -590,7 +590,7 @@ func main() {
 		manager.SetUICallback(callback)
 
 		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -692,7 +692,7 @@ func main() {
 		}
 
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -776,7 +776,7 @@ func main() {
 		manager.SetUICallback(callback)
 
 		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -859,7 +859,7 @@ func main() {
 		manager.SetUICallback(callback)
 
 		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -986,7 +986,7 @@ func main() {
 		vendorName := args[0]
 
 		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -1022,7 +1022,7 @@ func main() {
 		manager.SetUICallback(callback)
 
 		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -1050,7 +1050,7 @@ func main() {
 		manager.SetUICallback(callback)
 
 		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
