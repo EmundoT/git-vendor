@@ -2,18 +2,28 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+
 	"github.com/EmundoT/git-vendor/cmd"
 	"github.com/EmundoT/git-vendor/internal/core"
 	"github.com/EmundoT/git-vendor/internal/tui"
 	"github.com/EmundoT/git-vendor/internal/types"
 	"github.com/EmundoT/git-vendor/internal/version"
-	"os"
-	"strings"
 )
 
 // Version information is managed in internal/version package
 // GoReleaser injects version info directly via ldflags
+
+// formatShortDate formats an RFC3339 timestamp to just the date portion
+func formatShortDate(timestamp string) string {
+	if len(timestamp) >= 10 {
+		return timestamp[:10]
+	}
+	return timestamp
+}
 
 // parseCommonFlags extracts common non-interactive flags from args
 // Returns: flags, remainingArgs
@@ -257,6 +267,14 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Load lockfile to get metadata (best effort)
+		lock, _ := manager.GetLock() //nolint:errcheck
+		lockMap := make(map[string]types.LockDetails)
+		for _, entry := range lock.Vendors {
+			key := entry.Name + "@" + entry.Ref
+			lockMap[key] = entry
+		}
+
 		// Check for conflicts (best-effort, don't fail list command if detection fails)
 		conflicts, _ := manager.DetectConflicts() //nolint:errcheck
 		conflictMap := make(map[string]bool)
@@ -281,10 +299,20 @@ func main() {
 							"to":   m.To,
 						})
 					}
-					specsData = append(specsData, map[string]interface{}{
+					specData := map[string]interface{}{
 						"ref":      s.Ref,
 						"mappings": mappingsData,
-					})
+					}
+					// Add lockfile metadata if available
+					if entry, ok := lockMap[v.Name+"@"+s.Ref]; ok {
+						specData["commit_hash"] = entry.CommitHash
+						specData["license_spdx"] = entry.LicenseSPDX
+						specData["source_version_tag"] = entry.SourceVersionTag
+						specData["vendored_at"] = entry.VendoredAt
+						specData["vendored_by"] = entry.VendoredBy
+						specData["last_synced_at"] = entry.LastSyncedAt
+					}
+					specsData = append(specsData, specData)
 				}
 				vendorData = append(vendorData, map[string]interface{}{
 					"name":         v.Name,
@@ -309,7 +337,7 @@ func main() {
 			}
 		default:
 			// Normal output mode
-			fmt.Println(tui.StyleTitle("Configured Vendors:"))
+			fmt.Println(tui.StyleTitle("Vendored Dependencies:"))
 			fmt.Println()
 
 			for _, v := range cfg.Vendors {
@@ -319,12 +347,42 @@ func main() {
 					conflictIndicator = " ⚠"
 				}
 
-				fmt.Printf("📦 %s%s\n", v.Name, conflictIndicator)
-				fmt.Printf("   %s\n", v.URL)
-				fmt.Printf("   License: %s\n", v.License)
+				fmt.Printf("  %s%s\n", v.Name, conflictIndicator)
+				fmt.Printf("    URL:      %s\n", v.URL)
 
 				for _, s := range v.Specs {
-					fmt.Printf("   └─ @ %s\n", s.Ref)
+					// Get lock entry for this ref
+					key := v.Name + "@" + s.Ref
+					entry, hasLock := lockMap[key]
+
+					if hasLock {
+						fmt.Printf("    Ref:      %s @ %s\n", s.Ref, entry.CommitHash[:7])
+						if entry.SourceVersionTag != "" {
+							fmt.Printf("    Version:  %s\n", entry.SourceVersionTag)
+						}
+						if entry.LicenseSPDX != "" {
+							fmt.Printf("    License:  %s\n", entry.LicenseSPDX)
+						} else if v.License != "" {
+							fmt.Printf("    License:  %s\n", v.License)
+						}
+						if entry.VendoredAt != "" {
+							vendoredInfo := formatShortDate(entry.VendoredAt)
+							if entry.VendoredBy != "" {
+								vendoredInfo += " by " + entry.VendoredBy
+							}
+							fmt.Printf("    Vendored: %s\n", vendoredInfo)
+						}
+						if entry.LastSyncedAt != "" {
+							fmt.Printf("    Synced:   %s\n", formatShortDate(entry.LastSyncedAt))
+						}
+					} else {
+						fmt.Printf("    Ref:      %s (not synced)\n", s.Ref)
+						if v.License != "" {
+							fmt.Printf("    License:  %s\n", v.License)
+						}
+					}
+
+					// Show mappings
 					for i, m := range s.Mapping {
 						dest := m.To
 						if dest == "" {
@@ -336,7 +394,7 @@ func main() {
 							prefix = "      └─"
 						}
 
-						fmt.Printf("%s %s (remote) → %s (local)\n", prefix, m.From, dest)
+						fmt.Printf("%s %s → %s\n", prefix, m.From, dest)
 					}
 				}
 				fmt.Println()
@@ -619,6 +677,91 @@ func main() {
 			fmt.Printf("• Vendors: %s\n", core.Pluralize(len(cfg.Vendors), "vendor", "vendors"))
 		}
 
+	case "verify":
+		// Parse command-specific flags
+		format := "table" // default format
+		for _, arg := range os.Args[2:] {
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			}
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Run verification
+		result, err := manager.Verify()
+		if err != nil {
+			tui.PrintError("Verification Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			// Table format
+			fmt.Println("Verifying vendored dependencies...")
+			fmt.Println()
+
+			for _, f := range result.Files {
+				var symbol, status string
+				switch f.Status {
+				case "verified":
+					symbol = "\u2713" // checkmark
+					status = "[OK]"
+				case "modified":
+					symbol = "\u2717" // x mark
+					status = "[MODIFIED]"
+				case "added":
+					symbol = "?"
+					status = "[ADDED]"
+				case "deleted":
+					symbol = "\u2717" // x mark
+					status = "[DELETED]"
+				}
+				fmt.Printf("%s %-50s %s\n", symbol, f.Path, status)
+			}
+
+			fmt.Println()
+			fmt.Printf("Summary: %d files checked\n", result.Summary.TotalFiles)
+			fmt.Printf("  \u2713 %d verified\n", result.Summary.Verified)
+			if result.Summary.Modified > 0 || result.Summary.Deleted > 0 {
+				fmt.Printf("  \u2717 %d errors (%d modified, %d deleted)\n",
+					result.Summary.Modified+result.Summary.Deleted,
+					result.Summary.Modified, result.Summary.Deleted)
+			}
+			if result.Summary.Added > 0 {
+				fmt.Printf("  ? %d warnings (%d added)\n", result.Summary.Added, result.Summary.Added)
+			}
+			fmt.Println()
+			fmt.Printf("Result: %s\n", result.Summary.Result)
+		}
+
+		// Exit code based on result
+		// 0=PASS, 1=FAIL, 2=WARN
+		switch result.Summary.Result {
+		case "PASS":
+			os.Exit(0)
+		case "WARN":
+			os.Exit(2)
+		default: // FAIL
+			os.Exit(1)
+		}
+
 	case "status":
 		// Parse common flags
 		flags, _ := parseCommonFlags(os.Args[2:])
@@ -891,6 +1034,53 @@ func main() {
 		if err != nil {
 			callback.ShowError("Watch Failed", err.Error())
 			os.Exit(1)
+		}
+
+	case "migrate":
+		// Parse common flags
+		flags, _ := parseCommonFlags(os.Args[2:])
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		if !core.IsVendorInitialized() {
+			callback.ShowError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Migrate lockfile to add missing metadata fields
+		migrated, err := manager.MigrateLockfile()
+		if err != nil {
+			callback.ShowError("Migration Failed", err.Error())
+			os.Exit(1)
+		}
+
+		if flags.Mode == core.OutputJSON {
+			_ = callback.FormatJSON(core.JSONOutput{
+				Status:  "success",
+				Message: fmt.Sprintf("Migrated %d entries", migrated),
+				Data: map[string]interface{}{
+					"migrated_entries": migrated,
+				},
+			})
+		} else if migrated > 0 {
+			callback.ShowSuccess(fmt.Sprintf("Migrated %s to schema v1.1", core.Pluralize(migrated, "entry", "entries")))
+			fmt.Println()
+			fmt.Println("The following metadata was added:")
+			fmt.Println("  • license_spdx: from vendor.yml license field")
+			fmt.Println("  • vendored_at: approximated from updated timestamp")
+			fmt.Println("  • vendored_by: set to 'unknown (migrated)'")
+			fmt.Println("  • last_synced_at: from updated timestamp")
+			fmt.Println()
+			fmt.Println("Run 'git-vendor update' to fetch source_version_tag for tagged releases.")
+		} else {
+			callback.ShowSuccess("Lockfile already up to date - no migration needed")
 		}
 
 	default:
