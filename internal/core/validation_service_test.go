@@ -517,7 +517,7 @@ func TestDetectConflicts_EmptyOwners(t *testing.T) {
 	gitClient := NewSystemGitClient(false)
 	fs := NewOSFileSystem()
 	licenseChecker := NewGitHubLicenseChecker(nil, AllowedLicenses)
-	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir, nil)
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir, nil, nil)
 	m := NewManagerWithSyncer(syncer)
 
 	// Create a config with overlapping paths that could trigger the bug
@@ -578,7 +578,7 @@ func TestDetectConflicts_NoPanic(t *testing.T) {
 	gitClient := NewSystemGitClient(false)
 	fs := NewOSFileSystem()
 	licenseChecker := NewGitHubLicenseChecker(nil, AllowedLicenses)
-	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir, nil)
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, vendorDir, nil, nil)
 	m := NewManagerWithSyncer(syncer)
 
 	// Test with empty config
