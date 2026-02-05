@@ -1083,6 +1083,75 @@ func main() {
 			callback.ShowSuccess("Lockfile already up to date - no migration needed")
 		}
 
+	case "sbom":
+		// Parse command-specific flags
+		format := "cyclonedx" // default format
+		outputFile := ""
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--format" && i+1 < len(os.Args):
+				format = os.Args[i+1]
+				i++
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			case arg == "--output" && i+1 < len(os.Args):
+				outputFile = os.Args[i+1]
+				i++
+			case strings.HasPrefix(arg, "--output="):
+				outputFile = strings.TrimPrefix(arg, "--output=")
+			case arg == "-o" && i+1 < len(os.Args):
+				outputFile = os.Args[i+1]
+				i++
+			}
+		}
+
+		// Validate format
+		var sbomFormat core.SBOMFormat
+		switch format {
+		case "cyclonedx":
+			sbomFormat = core.SBOMFormatCycloneDX
+		case "spdx":
+			sbomFormat = core.SBOMFormatSPDX
+		default:
+			tui.PrintError("Invalid Format", fmt.Sprintf("'%s' is not a valid SBOM format. Use 'cyclonedx' or 'spdx'", format))
+			os.Exit(1)
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Determine project name from current directory
+		projectName := "unknown-project"
+		if cwd, err := os.Getwd(); err == nil {
+			parts := strings.Split(cwd, string(os.PathSeparator))
+			if len(parts) > 0 {
+				projectName = parts[len(parts)-1]
+			}
+		}
+
+		// Generate SBOM
+		output, err := manager.GenerateSBOM(sbomFormat, projectName)
+		if err != nil {
+			tui.PrintError("SBOM Generation Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Write output
+		if outputFile != "" {
+			if err := os.WriteFile(outputFile, output, 0644); err != nil {
+				tui.PrintError("Write Failed", err.Error())
+				os.Exit(1)
+			}
+			tui.PrintSuccess(fmt.Sprintf("SBOM written to %s", outputFile))
+		} else {
+			// Write to stdout
+			fmt.Print(string(output))
+		}
+
 	default:
 		tui.PrintError("Unknown Command", fmt.Sprintf("'%s' is not a valid git-vendor command", command))
 		fmt.Println()
