@@ -787,7 +787,7 @@ func main() {
 		}
 
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -1291,7 +1291,7 @@ func main() {
 		}
 
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
