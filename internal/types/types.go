@@ -33,16 +33,25 @@ type PathMapping struct {
 
 // VendorLock represents the lock file (vendor.lock) storing resolved commit hashes.
 type VendorLock struct {
-	Vendors []LockDetails `yaml:"vendors"`
+	SchemaVersion string        `yaml:"schema_version,omitempty"`
+	Vendors       []LockDetails `yaml:"vendors"`
 }
 
 // LockDetails contains the locked state for a specific vendor and ref.
 type LockDetails struct {
-	Name        string `yaml:"name"`
-	Ref         string `yaml:"ref"`
-	CommitHash  string `yaml:"commit_hash"`
-	LicensePath string `yaml:"license_path"` // Automatically managed
-	Updated     string `yaml:"updated"`
+	Name        string            `yaml:"name"`
+	Ref         string            `yaml:"ref"`
+	CommitHash  string            `yaml:"commit_hash"`
+	LicensePath string            `yaml:"license_path"`          // Automatically managed
+	Updated     string            `yaml:"updated"`
+	FileHashes  map[string]string `yaml:"file_hashes,omitempty"` // path -> SHA-256 hash
+
+	// Metadata fields (schema v1.1)
+	LicenseSPDX      string `yaml:"license_spdx,omitempty"`       // SPDX license identifier
+	SourceVersionTag string `yaml:"source_version_tag,omitempty"` // Git tag matching commit (if any)
+	VendoredAt       string `yaml:"vendored_at,omitempty"`        // ISO 8601 timestamp of initial vendoring
+	VendoredBy       string `yaml:"vendored_by,omitempty"`        // Git user identity who vendored it
+	LastSyncedAt     string `yaml:"last_synced_at,omitempty"`     // ISO 8601 timestamp of most recent sync
 }
 
 // PathConflict represents a conflict between two vendors mapping to overlapping paths
@@ -158,4 +167,31 @@ type HookContext struct {
 type ParallelOptions struct {
 	Enabled    bool // Whether parallel processing is enabled
 	MaxWorkers int  // Maximum concurrent workers (0 = use NumCPU)
+}
+
+// VerifyResult represents the outcome of verification
+type VerifyResult struct {
+	SchemaVersion string        `json:"schema_version"`
+	Timestamp     string        `json:"timestamp"`
+	Summary       VerifySummary `json:"summary"`
+	Files         []FileStatus  `json:"files"`
+}
+
+// VerifySummary contains aggregate statistics for verification
+type VerifySummary struct {
+	TotalFiles int    `json:"total_files"`
+	Verified   int    `json:"verified"`
+	Modified   int    `json:"modified"`
+	Added      int    `json:"added"`
+	Deleted    int    `json:"deleted"`
+	Result     string `json:"result"` // PASS, FAIL, WARN
+}
+
+// FileStatus represents the verification status of a single file
+type FileStatus struct {
+	Path         string  `json:"path"`
+	Vendor       *string `json:"vendor"`
+	Status       string  `json:"status"` // verified, modified, added, deleted
+	ExpectedHash *string `json:"expected_hash,omitempty"`
+	ActualHash   *string `json:"actual_hash,omitempty"`
 }

@@ -250,6 +250,9 @@ func TestSaveVendor_NewVendor(t *testing.T) {
 		return nil
 	})
 
+	// UpdateAll loads existing lock to preserve metadata
+	lock.EXPECT().Load().Return(types.VendorLock{}, nil).AnyTimes()
+
 	// UpdateAll will sync the new vendor - mock all sync operations
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
@@ -258,6 +261,7 @@ func TestSaveVendor_NewVendor(t *testing.T) {
 	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
 	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123hash", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "file.go", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
@@ -292,6 +296,9 @@ func TestSaveVendor_UpdateExisting(t *testing.T) {
 		return nil
 	})
 
+	// UpdateAll loads existing lock to preserve metadata
+	lock.EXPECT().Load().Return(types.VendorLock{}, nil).AnyTimes()
+
 	// UpdateAll will sync the updated vendor - mock all sync operations
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
@@ -300,6 +307,7 @@ func TestSaveVendor_UpdateExisting(t *testing.T) {
 	git.EXPECT().Fetch("/tmp/test-12345", 1, "develop").Return(nil)
 	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("def456hash", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "file.go", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
@@ -368,6 +376,9 @@ func TestRemoveVendor_HappyPath(t *testing.T) {
 	// Verify license file removal was attempted
 	fs.EXPECT().Remove(gomock.Any()).Return(nil)
 
+	// UpdateAll loads existing lock to preserve metadata
+	lock.EXPECT().Load().Return(types.VendorLock{}, nil).AnyTimes()
+
 	// UpdateAll will sync the remaining vendor (vendor-2) - mock all sync operations
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
@@ -376,6 +387,7 @@ func TestRemoveVendor_HappyPath(t *testing.T) {
 	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
 	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("xyz789hash", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "file.go", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()

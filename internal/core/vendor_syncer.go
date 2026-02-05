@@ -84,6 +84,7 @@ type VendorSyncer struct {
 	validation     *ValidationService
 	explorer       *RemoteExplorer
 	updateChecker  *UpdateChecker
+	verifyService  *VerifyService
 	configStore    ConfigStore
 	lockStore      LockStore
 	gitClient      GitClient
@@ -114,10 +115,11 @@ func NewVendorSyncer(
 	cache := NewFileCacheStore(fs, rootDir)
 	hooks := NewHookService(ui)
 	sync := NewSyncService(configStore, lockStore, gitClient, fs, fileCopy, license, cache, hooks, ui, rootDir)
-	update := NewUpdateService(configStore, lockStore, sync, ui, rootDir)
+	update := NewUpdateService(configStore, lockStore, sync, cache, ui, rootDir)
 	validation := NewValidationService(configStore)
 	explorer := NewRemoteExplorer(gitClient, fs)
 	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
+	verifyService := NewVerifyService(configStore, lockStore, cache, fs, rootDir)
 
 	return &VendorSyncer{
 		repository:     repository,
@@ -127,6 +129,7 @@ func NewVendorSyncer(
 		validation:     validation,
 		explorer:       explorer,
 		updateChecker:  updateChecker,
+		verifyService:  verifyService,
 		configStore:    configStore,
 		lockStore:      lockStore,
 		gitClient:      gitClient,
@@ -423,11 +426,79 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 // syncVendor is exposed for testing - delegates to sync service with default options
 //
 //nolint:gocritic // test wrapper maintains value signature for compatibility
-func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]string, CopyStats, error) {
+func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 	return s.sync.syncVendor(&v, lockedRefs, SyncOptions{})
 }
 
 // CheckUpdates checks for available updates for all vendors
 func (s *VendorSyncer) CheckUpdates() ([]types.UpdateCheckResult, error) {
 	return s.updateChecker.CheckUpdates()
+}
+
+// Verify checks all vendored files against the lockfile
+func (s *VendorSyncer) Verify() (*types.VerifyResult, error) {
+	return s.verifyService.Verify()
+}
+
+// MigrateLockfile updates an existing lockfile to add missing metadata fields.
+// For fields that can't be computed (VendoredAt, VendoredBy), it uses best guesses.
+// Returns the number of entries migrated and any error.
+func (s *VendorSyncer) MigrateLockfile() (int, error) {
+	lock, err := s.lockStore.Load()
+	if err != nil {
+		return 0, fmt.Errorf("failed to load lockfile: %w", err)
+	}
+
+	// Load config to get license info
+	config, err := s.configStore.Load()
+	if err != nil {
+		return 0, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Build vendor config map for license lookup
+	vendorLicenses := make(map[string]string)
+	for _, v := range config.Vendors {
+		vendorLicenses[v.Name] = v.License
+	}
+
+	migrated := 0
+	for i := range lock.Vendors {
+		entry := &lock.Vendors[i]
+
+		// Check if entry needs migration (missing VendoredAt indicates old format)
+		if entry.VendoredAt != "" {
+			continue
+		}
+
+		migrated++
+
+		// Use Updated timestamp as VendoredAt (best guess)
+		if entry.Updated != "" {
+			entry.VendoredAt = entry.Updated
+		}
+
+		// Set VendoredBy to "unknown" since we can't determine original user
+		entry.VendoredBy = "unknown (migrated)"
+
+		// Use Updated as LastSyncedAt
+		if entry.Updated != "" {
+			entry.LastSyncedAt = entry.Updated
+		}
+
+		// Get LicenseSPDX from config
+		if license, ok := vendorLicenses[entry.Name]; ok && entry.LicenseSPDX == "" {
+			entry.LicenseSPDX = license
+		}
+
+		// Note: SourceVersionTag cannot be determined without network access
+		// It will be populated on next update
+	}
+
+	if migrated > 0 {
+		if err := s.lockStore.Save(lock); err != nil {
+			return 0, fmt.Errorf("failed to save migrated lockfile: %w", err)
+		}
+	}
+
+	return migrated, nil
 }
