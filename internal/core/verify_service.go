@@ -22,6 +22,9 @@ type VerifyServiceInterface interface {
 	Verify() (*types.VerifyResult, error)
 }
 
+// Compile-time interface satisfaction check.
+var _ VerifyServiceInterface = (*VerifyService)(nil)
+
 // VerifyService handles verification of vendored files against lockfile
 type VerifyService struct {
 	configStore ConfigStore

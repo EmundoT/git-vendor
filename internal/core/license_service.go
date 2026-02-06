@@ -14,6 +14,9 @@ type LicenseServiceInterface interface {
 	CheckLicense(url string) (string, error)
 }
 
+// Compile-time interface satisfaction check.
+var _ LicenseServiceInterface = (*LicenseService)(nil)
+
 // LicenseService handles license checking and file management
 type LicenseService struct {
 	licenseChecker LicenseChecker

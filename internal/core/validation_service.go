@@ -15,6 +15,9 @@ type ValidationServiceInterface interface {
 	DetectConflicts() ([]types.PathConflict, error)
 }
 
+// Compile-time interface satisfaction check.
+var _ ValidationServiceInterface = (*ValidationService)(nil)
+
 // ValidationService handles config validation and conflict detection
 type ValidationService struct {
 	configStore ConfigStore
