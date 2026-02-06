@@ -39,7 +39,7 @@ func (s *LicenseService) CheckCompliance(url string) (string, error) {
 			fmt.Sprintf("Accept %s License?", detectedLicense),
 			"This license is not in the allowed list. Continue anyway?",
 		) {
-			return "", fmt.Errorf("%s", ErrComplianceFailed)
+			return "", ErrComplianceFailed
 		}
 	} else {
 		// Show compliance success
@@ -67,7 +67,7 @@ func (s *LicenseService) CopyLicense(tempDir, vendorName string) error {
 	}
 
 	// Ensure license directory exists
-	licenseDir := filepath.Join(s.rootDir, LicenseDir)
+	licenseDir := filepath.Join(s.rootDir, LicensesDir)
 	if err := s.fs.MkdirAll(licenseDir, 0755); err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (s *LicenseService) CopyLicense(tempDir, vendorName string) error {
 
 // GetLicensePath returns the path to a vendor's license file
 func (s *LicenseService) GetLicensePath(vendorName string) string {
-	return filepath.Join(s.rootDir, LicenseDir, vendorName+".txt")
+	return filepath.Join(s.rootDir, LicensesDir, vendorName+".txt")
 }
 
 // CheckLicense checks the license for a URL (delegates to checker)
