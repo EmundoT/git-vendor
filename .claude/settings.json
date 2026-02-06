@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '## Git Context' && echo \"**Branch:** $(git branch --show-current)\" && echo '**Recent commits:**' && echo '```text' && git log --oneline -5 --decorate && echo '```' && echo '**Working tree:**' && echo '```text' && git status --short && echo '```'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '## Git Context (post-compaction)' && echo \"**Branch:** $(git branch --show-current)\" && echo '**Recent commits:**' && echo '```text' && git log --oneline -5 --decorate && echo '```' && echo '**Working tree:**' && echo '```text' && git status --short && echo '```' && echo '**Diff from main:**' && echo '```text' && git diff --stat origin/main...HEAD 2>/dev/null && echo '```'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

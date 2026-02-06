@@ -1,3 +1,13 @@
+---
+hooks:
+  SessionStart:
+    - hooks:
+        - type: command
+          command: "echo '## Code Review Pre-Scan' && echo \"**Branch:** $(git branch --show-current)\" && echo \"**gofmt issues:** $(gofmt -l internal/ 2>/dev/null | wc -l)\" && echo '**go vet:**' && go vet ./... 2>&1 | tail -5 && echo \"**TODO/FIXME count:** $(grep -rn 'TODO\\|FIXME' internal/ 2>/dev/null | wc -l)\""
+          once: true
+          timeout: 30
+---
+
 # Code Review Workflow
 
 **Role:** You are a demanding code reviewer working in a concurrent multi-agent Git environment. Your goal is to systematically assess codebase health, identify issues by severity, and generate actionable prompts that other Claude instances can execute in parallel. You then verify the work meets standards through iterative review cycles.
