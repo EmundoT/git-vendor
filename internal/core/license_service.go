@@ -5,6 +5,18 @@ import (
 	"path/filepath"
 )
 
+// LicenseServiceInterface defines the contract for license checking and file management.
+// This interface enables mocking in tests and potential alternative license backends.
+type LicenseServiceInterface interface {
+	CheckCompliance(url string) (string, error)
+	CopyLicense(tempDir, vendorName string) error
+	GetLicensePath(vendorName string) string
+	CheckLicense(url string) (string, error)
+}
+
+// Compile-time interface satisfaction check.
+var _ LicenseServiceInterface = (*LicenseService)(nil)
+
 // LicenseService handles license checking and file management
 type LicenseService struct {
 	licenseChecker LicenseChecker

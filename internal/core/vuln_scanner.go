@@ -54,6 +54,9 @@ type VulnScannerInterface interface {
 	ClearCache() error
 }
 
+// Compile-time interface satisfaction check.
+var _ VulnScannerInterface = (*VulnScanner)(nil)
+
 // VulnScanner handles vulnerability scanning against OSV.dev
 type VulnScanner struct {
 	client      *http.Client

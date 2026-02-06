@@ -4,6 +4,20 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// VendorRepositoryInterface defines the contract for vendor CRUD operations.
+// This interface enables mocking in tests and potential alternative storage backends.
+type VendorRepositoryInterface interface {
+	Find(name string) (*types.VendorSpec, error)
+	FindAll() ([]types.VendorSpec, error)
+	Exists(name string) (bool, error)
+	Save(vendor *types.VendorSpec) error
+	Delete(name string) error
+	GetConfig() (types.VendorConfig, error)
+}
+
+// Compile-time interface satisfaction check.
+var _ VendorRepositoryInterface = (*VendorRepository)(nil)
+
 // VendorRepository handles vendor CRUD operations
 type VendorRepository struct {
 	configStore ConfigStore

@@ -7,6 +7,17 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// RemoteExplorerInterface defines the contract for remote repository browsing and URL parsing.
+// This interface enables mocking in tests and potential alternative exploration strategies.
+type RemoteExplorerInterface interface {
+	FetchRepoDir(url, ref, subdir string) ([]string, error)
+	ListLocalDir(path string) ([]string, error)
+	ParseSmartURL(rawURL string) (string, string, string)
+}
+
+// Compile-time interface satisfaction check.
+var _ RemoteExplorerInterface = (*RemoteExplorer)(nil)
+
 // RemoteExplorer handles remote repository browsing and URL parsing
 type RemoteExplorer struct {
 	gitClient GitClient

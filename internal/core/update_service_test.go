@@ -58,7 +58,7 @@ func TestUpdateAll_HappyPath_SingleVendor(t *testing.T) {
 		return nil
 	})
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -113,7 +113,7 @@ func TestUpdateAll_HappyPath_MultipleVendors(t *testing.T) {
 		return nil
 	})
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -131,7 +131,7 @@ func TestUpdateAll_ConfigLoadFails(t *testing.T) {
 	// Mock: Config load fails
 	config.EXPECT().Load().Return(types.VendorConfig{}, fmt.Errorf("config file corrupt"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -191,7 +191,7 @@ func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
 		return nil
 	})
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -227,7 +227,7 @@ func TestUpdateAll_LockSaveFails(t *testing.T) {
 	// Mock: Lock save fails
 	lock.EXPECT().Save(gomock.Any()).Return(fmt.Errorf("disk full"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -256,7 +256,7 @@ func TestUpdateAll_EmptyConfig(t *testing.T) {
 		return nil
 	})
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -302,7 +302,7 @@ func TestUpdateAll_TimestampFormat(t *testing.T) {
 		return nil
 	})
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -381,7 +381,7 @@ func TestUpdateAll_MultipleSpecsPerVendor(t *testing.T) {
 		return nil
 	})
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.UpdateAll()
@@ -423,7 +423,7 @@ func TestUpdateAll_LicensePathSet(t *testing.T) {
 		return nil
 	})
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.UpdateAll()
