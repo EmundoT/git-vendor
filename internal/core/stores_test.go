@@ -258,7 +258,7 @@ func TestLoadLock(t *testing.T) {
 					Name:        "test-vendor",
 					Ref:         "main",
 					CommitHash:  "abc123def456",
-					LicensePath: "vendor/licenses/test-vendor.txt",
+					LicensePath: VendorDir + "/" + LicensesDir + "/test-vendor.txt",
 					Updated:     "2025-01-01T00:00:00Z",
 				},
 			},
@@ -282,8 +282,9 @@ func TestLoadLock(t *testing.T) {
 		if loadedLock.Vendors[0].CommitHash != "abc123def456" {
 			t.Errorf("Expected commit hash 'abc123def456', got %q", loadedLock.Vendors[0].CommitHash)
 		}
-		if loadedLock.Vendors[0].LicensePath != "vendor/licenses/test-vendor.txt" {
-			t.Errorf("Expected license path 'vendor/licenses/test-vendor.txt', got %q", loadedLock.Vendors[0].LicensePath)
+		expectedLicensePath := VendorDir + "/" + LicensesDir + "/test-vendor.txt"
+		if loadedLock.Vendors[0].LicensePath != expectedLicensePath {
+			t.Errorf("Expected license path %q, got %q", expectedLicensePath, loadedLock.Vendors[0].LicensePath)
 		}
 	})
 
@@ -399,7 +400,7 @@ func TestSaveLock(t *testing.T) {
 					Name:        "test-vendor",
 					Ref:         "v1.0.0",
 					CommitHash:  "abc123def456789",
-					LicensePath: "vendor/licenses/test-vendor.txt",
+					LicensePath: VendorDir + "/" + LicensesDir + "/test-vendor.txt",
 					Updated:     "2025-01-15T12:30:45Z",
 				},
 			},
@@ -426,7 +427,8 @@ func TestSaveLock(t *testing.T) {
 		if v.CommitHash != "abc123def456789" {
 			t.Errorf("CommitHash not preserved: got %q", v.CommitHash)
 		}
-		if v.LicensePath != "vendor/licenses/test-vendor.txt" {
+		expectedLicensePath := VendorDir + "/" + LicensesDir + "/test-vendor.txt"
+		if v.LicensePath != expectedLicensePath {
 			t.Errorf("LicensePath not preserved: got %q", v.LicensePath)
 		}
 		if v.Updated != "2025-01-15T12:30:45Z" {

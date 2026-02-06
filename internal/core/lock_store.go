@@ -95,7 +95,7 @@ type FileLockStore struct {
 // NewFileLockStore creates a new FileLockStore
 func NewFileLockStore(rootDir string) *FileLockStore {
 	return &FileLockStore{
-		store: NewYAMLStore[types.VendorLock](rootDir, LockName, false), // allowMissing=false
+		store: NewYAMLStore[types.VendorLock](rootDir, LockFile, false), // allowMissing=false
 	}
 }
 

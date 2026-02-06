@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -87,8 +88,8 @@ func TestCheckCompliance_RejectedLicense(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error when user rejects non-allowed license")
 	}
-	if err.Error() != ErrComplianceFailed {
-		t.Errorf("Expected '%s', got '%s'", ErrComplianceFailed, err.Error())
+	if !errors.Is(err, ErrComplianceFailed) {
+		t.Errorf("Expected ErrComplianceFailed, got '%s'", err.Error())
 	}
 	if detectedLicense != "" {
 		t.Errorf("Expected empty license on rejection, got '%s'", detectedLicense)

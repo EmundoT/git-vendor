@@ -69,7 +69,7 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 
 	baseURL, smartRef, smartPath := manager.ParseSmartURL(rawURL)
 	url = baseURL
-	ref = "main"
+	ref = core.DefaultRef
 	if smartRef != "" {
 		ref = smartRef
 	}

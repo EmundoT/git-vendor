@@ -713,7 +713,7 @@ Every command that produces data must support:
 
 ### 9.5 Error Handling
 
-All errors must follow this format:
+**User-facing errors** should follow this display format:
 ```
 Error: <what went wrong>
   Context: <relevant details>
@@ -726,6 +726,29 @@ Error: Cannot scan dependency "utils" for vulnerabilities
   Context: No version tag found; commit abc123 does not map to a known package version
   Fix: Tag the source repository with a semver version, then run `git vendor sync utils`
 ```
+
+**Implementation follows idiomatic Go conventions:**
+
+1. **Use `fmt.Errorf`** for most errors (the default):
+   - Informational errors that are logged or displayed
+   - Wrapping underlying errors with context (`fmt.Errorf("failed to sync: %w", err)`)
+   - Internal errors where callers don't need to branch on error type
+
+2. **Use sentinel errors** (`errors.New`) when callers need `errors.Is()`:
+   - `ErrNotInitialized` — vendor directory doesn't exist
+   - `ErrComplianceFailed` — license compliance check failed
+
+3. **Use custom error types** when callers need `errors.As()` or structured data:
+   - `VendorNotFoundError` — vendor name doesn't exist in config
+   - `GroupNotFoundError` — group tag doesn't exist
+   - `PathNotFoundError` — source path doesn't exist in repo
+   - `StaleCommitError` — locked commit was deleted/force-pushed
+   - `CheckoutError` — git checkout failed (wraps underlying cause)
+   - `ValidationError` — configuration validation failed
+
+Custom types implement the Error/Context/Fix format in their `Error()` method. Helper functions (`IsVendorNotFound()`, etc.) provide convenient type checking.
+
+**Location:** `internal/core/errors.go` and `internal/core/constants.go`
 
 ---
 
