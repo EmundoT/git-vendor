@@ -51,7 +51,7 @@ func TestCheckGitHubLicense(t *testing.T) {
 	// Mock: License checker returns MIT
 	license.EXPECT().CheckLicense("https://github.com/owner/repo").Return("MIT", nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	detectedLicense, err := syncer.CheckGitHubLicense("https://github.com/owner/repo")
