@@ -2,6 +2,7 @@ package types
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -622,10 +623,14 @@ func TestVendorConfig_YAML_UnicodeContent(t *testing.T) {
 }
 
 func TestLockDetails_YAML_LargeFileHashes(t *testing.T) {
-	// Test with many file hashes (simulating a large vendor)
+	// Test with many file hashes (simulating a large vendor with 100 files)
 	fileHashes := make(map[string]string)
 	for i := 0; i < 100; i++ {
-		fileHashes[strings.Repeat("a", 10)+string(rune('a'+i%26))] = "sha256:hash" + string(rune('0'+i%10))
+		fileHashes[fmt.Sprintf("lib/path%03d/file.go", i)] = fmt.Sprintf("sha256:hash%064d", i)
+	}
+
+	if len(fileHashes) != 100 {
+		t.Fatalf("expected 100 unique file hashes, got %d", len(fileHashes))
 	}
 
 	details := LockDetails{

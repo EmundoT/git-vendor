@@ -6,7 +6,6 @@ package testutil
 import (
 	"encoding/json"
 	"reflect"
-	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -54,27 +53,70 @@ func AssertYAMLRoundTrip[T any](t *testing.T, original T) {
 	}
 }
 
+// yamlMapContainsKeyRecursive checks if a key exists anywhere in a nested map structure.
+// Handles both map[string]any and map[any]any which YAML can produce.
+func yamlMapContainsKeyRecursive(m map[string]any, key string) bool {
+	if _, exists := m[key]; exists {
+		return true
+	}
+	for _, v := range m {
+		switch nested := v.(type) {
+		case map[string]any:
+			if yamlMapContainsKeyRecursive(nested, key) {
+				return true
+			}
+		case map[any]any:
+			// Convert map[any]any to map[string]any for recursive check
+			converted := make(map[string]any)
+			for k, val := range nested {
+				if strKey, ok := k.(string); ok {
+					converted[strKey] = val
+				}
+			}
+			if yamlMapContainsKeyRecursive(converted, key) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // AssertYAMLOmitsField verifies a field is not present in marshalled YAML output.
-// Checks for "fieldName:" pattern in the output.
+// Parses YAML into a map and recursively checks for key presence to avoid false
+// positives from string values containing field-like patterns.
 func AssertYAMLOmitsField(t *testing.T, v any, fieldName string) {
 	t.Helper()
 	data, err := yaml.Marshal(v)
 	if err != nil {
 		t.Fatalf("failed to marshal: %v", err)
 	}
-	if strings.Contains(string(data), fieldName+":") {
+
+	var parsed map[string]any
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal for field check: %v", err)
+	}
+
+	if yamlMapContainsKeyRecursive(parsed, fieldName) {
 		t.Errorf("expected field %q to be omitted from YAML output, got:\n%s", fieldName, string(data))
 	}
 }
 
 // AssertYAMLContainsField verifies a field is present in marshalled YAML output.
+// Parses YAML into a map and recursively checks for key presence to avoid false
+// positives from string values containing field-like patterns.
 func AssertYAMLContainsField(t *testing.T, v any, fieldName string) {
 	t.Helper()
 	data, err := yaml.Marshal(v)
 	if err != nil {
 		t.Fatalf("failed to marshal: %v", err)
 	}
-	if !strings.Contains(string(data), fieldName+":") {
+
+	var parsed map[string]any
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal for field check: %v", err)
+	}
+
+	if !yamlMapContainsKeyRecursive(parsed, fieldName) {
 		t.Errorf("expected field %q to be present in YAML output, got:\n%s", fieldName, string(data))
 	}
 }
@@ -102,27 +144,57 @@ func AssertJSONRoundTrip[T any](t *testing.T, original T) {
 	}
 }
 
+// mapContainsKeyRecursive checks if a key exists anywhere in a nested map structure.
+func mapContainsKeyRecursive(m map[string]any, key string) bool {
+	if _, exists := m[key]; exists {
+		return true
+	}
+	for _, v := range m {
+		if nested, ok := v.(map[string]any); ok {
+			if mapContainsKeyRecursive(nested, key) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // AssertJSONOmitsField verifies a field is not present in marshalled JSON output.
-// Checks for "fieldName" (with quotes) pattern in the output.
+// Parses JSON into a map and recursively checks for key presence to avoid false
+// positives from string values containing field-like patterns.
 func AssertJSONOmitsField(t *testing.T, v any, fieldName string) {
 	t.Helper()
 	data, err := json.Marshal(v)
 	if err != nil {
 		t.Fatalf("failed to marshal: %v", err)
 	}
-	if strings.Contains(string(data), `"`+fieldName+`"`) {
+
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal for field check: %v", err)
+	}
+
+	if mapContainsKeyRecursive(parsed, fieldName) {
 		t.Errorf("expected field %q to be omitted from JSON output, got:\n%s", fieldName, string(data))
 	}
 }
 
 // AssertJSONContainsField verifies a field is present in marshalled JSON output.
+// Parses JSON into a map and recursively checks for key presence to avoid false
+// positives from string values containing field-like patterns.
 func AssertJSONContainsField(t *testing.T, v any, fieldName string) {
 	t.Helper()
 	data, err := json.Marshal(v)
 	if err != nil {
 		t.Fatalf("failed to marshal: %v", err)
 	}
-	if !strings.Contains(string(data), `"`+fieldName+`"`) {
+
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal for field check: %v", err)
+	}
+
+	if !mapContainsKeyRecursive(parsed, fieldName) {
 		t.Errorf("expected field %q to be present in JSON output, got:\n%s", fieldName, string(data))
 	}
 }
