@@ -185,10 +185,10 @@ func TestCopyMappings_AutoNaming(t *testing.T) {
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.syncVendor(vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -230,10 +230,10 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes() // For license copy
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.syncVendor(vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -260,10 +260,10 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 	// Mock: Stat returns error (path not found)
 	fs.EXPECT().Stat(gomock.Any()).Return(nil, fmt.Errorf("path not found")).AnyTimes()
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.syncVendor(vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {

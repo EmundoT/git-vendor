@@ -141,7 +141,7 @@ func TestListLocalDir(t *testing.T) {
 
 	fs.EXPECT().ReadDir("/some/path").Return([]string{"file1.go", "file2.go", "subdir/"}, nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	items, err := syncer.ListLocalDir("/some/path")
@@ -175,7 +175,7 @@ func TestFetchRepoDir_HappyPath(t *testing.T) {
 	// Mock: ListTree returns files
 	git.EXPECT().ListTree("/tmp/test-12345", "main", "src").Return([]string{"file1.go", "file2.go", "subdir/"}, nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	files, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "src")
@@ -197,7 +197,7 @@ func TestFetchRepoDir_CloneFails(t *testing.T) {
 	// Mock: Clone fails
 	git.EXPECT().Clone("/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(fmt.Errorf("network timeout"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "src")
@@ -225,7 +225,7 @@ func TestFetchRepoDir_SpecificRef(t *testing.T) {
 	// Mock: ListTree returns files
 	git.EXPECT().ListTree("/tmp/test-12345", "v1.0.0", "").Return([]string{"file.go"}, nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "v1.0.0", "")
@@ -250,7 +250,7 @@ func TestFetchRepoDir_ListTreeFails(t *testing.T) {
 	// Mock: ListTree fails
 	git.EXPECT().ListTree("/tmp/test-12345", "main", "nonexistent").Return(nil, fmt.Errorf("invalid tree object"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "nonexistent")

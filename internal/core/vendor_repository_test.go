@@ -30,7 +30,7 @@ func TestInit_CreatesEmptyConfig(t *testing.T) {
 		return nil
 	})
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.Init()
@@ -46,7 +46,7 @@ func TestInit_DirectoryCreationFails(t *testing.T) {
 	// Mock: MkdirAll fails for vendor directory
 	fs.EXPECT().MkdirAll("/mock/vendor", gomock.Any()).Return(fmt.Errorf("permission denied"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.Init()
@@ -68,7 +68,7 @@ func TestInit_ConfigSaveFails(t *testing.T) {
 	// Mock: Config save fails
 	config.EXPECT().Save(gomock.Any()).Return(fmt.Errorf("disk full"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.Init()
@@ -92,7 +92,7 @@ func TestGetConfig(t *testing.T) {
 
 	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	cfg, err := syncer.GetConfig()
@@ -116,7 +116,7 @@ func TestGetLockHash(t *testing.T) {
 
 	lock.EXPECT().GetHash("test-vendor", "main").Return("abc123hash")
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	hash := syncer.GetLockHash("test-vendor", "main")
@@ -199,7 +199,7 @@ func TestAudit(t *testing.T) {
 
 			// Create syncer with capturing UI
 			captureUI := &capturingUICallback{}
-			syncer := NewVendorSyncer(config, lock, git, fs, license, "/mock/vendor", captureUI)
+			syncer := NewVendorSyncer(config, lock, git, fs, license, "/mock/vendor", captureUI, nil)
 
 			// Execute
 			syncer.Audit()
@@ -269,7 +269,7 @@ func TestSaveVendor_NewVendor(t *testing.T) {
 	// UpdateAll saves the lock after syncing
 	lock.EXPECT().Save(gomock.Any()).Return(nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.SaveVendor(&vendor)
@@ -315,7 +315,7 @@ func TestSaveVendor_UpdateExisting(t *testing.T) {
 	// UpdateAll saves the lock after syncing
 	lock.EXPECT().Save(gomock.Any()).Return(nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute - update URL
 	updatedVendor := createTestVendorSpec("existing-vendor", "https://github.com/owner/new-repo", "develop")
@@ -334,7 +334,7 @@ func TestSaveVendor_ConfigSaveFails(t *testing.T) {
 	// Mock: Config save fails
 	config.EXPECT().Save(gomock.Any()).Return(fmt.Errorf("permission denied"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
@@ -395,7 +395,7 @@ func TestRemoveVendor_HappyPath(t *testing.T) {
 	// UpdateAll saves the lock after syncing
 	lock.EXPECT().Save(gomock.Any()).Return(nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute - remove vendor-1
 	err := syncer.RemoveVendor("vendor-1")
@@ -411,7 +411,7 @@ func TestRemoveVendor_VendorNotFound(t *testing.T) {
 	vendor1 := createTestVendorSpec("vendor-1", "https://github.com/owner/repo1", "main")
 	config.EXPECT().Load().Return(createTestConfig(vendor1), nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute - try to remove nonexistent vendor
 	err := syncer.RemoveVendor("nonexistent-vendor")
@@ -430,7 +430,7 @@ func TestRemoveVendor_ConfigLoadFails(t *testing.T) {
 	// Mock: Config load fails
 	config.EXPECT().Load().Return(types.VendorConfig{}, fmt.Errorf("config file corrupted"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.RemoveVendor("any-vendor")
@@ -452,7 +452,7 @@ func TestRemoveVendor_ConfigSaveFails(t *testing.T) {
 	// Mock: Config save fails - this causes early return, so fs.Remove is never called
 	config.EXPECT().Save(gomock.Any()).Return(fmt.Errorf("disk full"))
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	err := syncer.RemoveVendor("vendor-1")

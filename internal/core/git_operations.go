@@ -13,6 +13,9 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// Package-level compiled regex for semver matching
+var semverRegex = regexp.MustCompile(`^\d+\.\d+\.\d+`)
+
 // GitClient handles git command operations
 type GitClient interface {
 	Init(dir string) error
@@ -245,8 +248,7 @@ func (g *SystemGitClient) GetTagForCommit(dir, commitHash string) (string, error
 // isSemverTag checks if a tag looks like a semantic version
 func isSemverTag(tag string) bool {
 	tag = strings.TrimPrefix(tag, "v")
-	matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+`, tag)
-	return matched
+	return semverRegex.MatchString(tag)
 }
 
 // GetGitUserIdentity returns the git user identity in "Name <email>" format.
