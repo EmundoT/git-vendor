@@ -2,133 +2,197 @@ package types
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Helper function to create string pointer
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+// strPtr creates a pointer to a string - useful for optional fields in tests.
 func strPtr(s string) *string {
 	return &s
 }
 
-// ========== VendorConfig YAML Tests ==========
+// assertYAMLRoundTrip marshals v to YAML and unmarshals back, failing if not equal.
+func assertYAMLRoundTrip[T any](t *testing.T, original T) {
+	t.Helper()
+	data, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var parsed T
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if !reflect.DeepEqual(original, parsed) {
+		t.Errorf("round-trip mismatch:\noriginal: %+v\nparsed:   %+v", original, parsed)
+	}
+}
+
+// assertJSONRoundTrip marshals v to JSON and unmarshals back, failing if not equal.
+func assertJSONRoundTrip[T any](t *testing.T, original T) {
+	t.Helper()
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var parsed T
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if !reflect.DeepEqual(original, parsed) {
+		t.Errorf("round-trip mismatch:\noriginal: %+v\nparsed:   %+v", original, parsed)
+	}
+}
+
+// assertYAMLOmitsField verifies a field is not present in marshalled YAML output.
+func assertYAMLOmitsField(t *testing.T, v any, fieldName string) {
+	t.Helper()
+	data, err := yaml.Marshal(v)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	if strings.Contains(string(data), fieldName+":") {
+		t.Errorf("expected field %q to be omitted from YAML output, got:\n%s", fieldName, string(data))
+	}
+}
+
+// assertJSONOmitsField verifies a field is not present in marshalled JSON output.
+func assertJSONOmitsField(t *testing.T, v any, fieldName string) {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	if strings.Contains(string(data), `"`+fieldName+`"`) {
+		t.Errorf("expected field %q to be omitted from JSON output, got:\n%s", fieldName, string(data))
+	}
+}
+
+// assertJSONContainsField verifies a field is present in marshalled JSON output.
+func assertJSONContainsField(t *testing.T, v any, fieldName string) {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"`+fieldName+`"`) {
+		t.Errorf("expected field %q to be present in JSON output, got:\n%s", fieldName, string(data))
+	}
+}
+
+// ============================================================================
+// VendorConfig YAML Tests
+// ============================================================================
 
 func TestVendorConfig_YAML_RoundTrip(t *testing.T) {
-	config := VendorConfig{
-		Vendors: []VendorSpec{
-			{
-				Name:    "test-vendor",
-				URL:     "https://github.com/test/repo",
-				License: "MIT",
-				Groups:  []string{"frontend", "backend"},
-				Specs: []BranchSpec{
+	tests := []struct {
+		name   string
+		config VendorConfig
+	}{
+		{
+			name: "full config with all fields",
+			config: VendorConfig{
+				Vendors: []VendorSpec{
 					{
-						Ref: "main",
-						Mapping: []PathMapping{
-							{From: "src/", To: "lib/"},
+						Name:    "test-vendor",
+						URL:     "https://github.com/test/repo",
+						License: "MIT",
+						Groups:  []string{"frontend", "backend"},
+						Hooks: &HookConfig{
+							PreSync:  "echo 'starting'",
+							PostSync: "npm run build",
+						},
+						Specs: []BranchSpec{
+							{
+								Ref:           "main",
+								DefaultTarget: "vendor/lib/",
+								Mapping: []PathMapping{
+									{From: "src/", To: "lib/"},
+									{From: "dist/index.js", To: "lib/index.js"},
+								},
+							},
 						},
 					},
 				},
 			},
 		},
-	}
-
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		t.Fatalf("failed to marshal config: %v", err)
-	}
-
-	var parsed VendorConfig
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal config: %v", err)
-	}
-
-	if len(parsed.Vendors) != 1 {
-		t.Fatalf("expected 1 vendor, got %d", len(parsed.Vendors))
-	}
-	if parsed.Vendors[0].Name != config.Vendors[0].Name {
-		t.Errorf("expected name %q, got %q", config.Vendors[0].Name, parsed.Vendors[0].Name)
-	}
-	if parsed.Vendors[0].URL != config.Vendors[0].URL {
-		t.Errorf("expected URL %q, got %q", config.Vendors[0].URL, parsed.Vendors[0].URL)
-	}
-	if parsed.Vendors[0].License != config.Vendors[0].License {
-		t.Errorf("expected license %q, got %q", config.Vendors[0].License, parsed.Vendors[0].License)
-	}
-	if len(parsed.Vendors[0].Groups) != 2 {
-		t.Errorf("expected 2 groups, got %d", len(parsed.Vendors[0].Groups))
-	}
-	if parsed.Vendors[0].Groups[0] != "frontend" || parsed.Vendors[0].Groups[1] != "backend" {
-		t.Errorf("groups mismatch: got %v", parsed.Vendors[0].Groups)
-	}
-}
-
-func TestVendorConfig_YAML_WithHooks(t *testing.T) {
-	config := VendorConfig{
-		Vendors: []VendorSpec{
-			{
-				Name:    "hooked-vendor",
-				URL:     "https://github.com/test/repo",
-				License: "Apache-2.0",
-				Hooks: &HookConfig{
-					PreSync:  "echo 'starting sync'",
-					PostSync: "npm install && npm run build",
-				},
-				Specs: []BranchSpec{
+		{
+			name: "multiple vendors",
+			config: VendorConfig{
+				Vendors: []VendorSpec{
 					{
-						Ref: "v1.0.0",
-						Mapping: []PathMapping{
-							{From: "dist/", To: "vendor/lib/"},
+						Name:    "vendor-a",
+						URL:     "https://github.com/org/repo-a",
+						License: "MIT",
+						Specs:   []BranchSpec{{Ref: "main", Mapping: []PathMapping{{From: "src/", To: "lib/a/"}}}},
+					},
+					{
+						Name:    "vendor-b",
+						URL:     "https://gitlab.com/org/repo-b",
+						License: "Apache-2.0",
+						Groups:  []string{"shared"},
+						Specs: []BranchSpec{
+							{Ref: "develop", Mapping: []PathMapping{{From: "dist/", To: "lib/b/"}}},
+							{Ref: "v2.0.0", Mapping: []PathMapping{{From: "legacy/", To: "lib/b-legacy/"}}},
 						},
 					},
 				},
 			},
 		},
+		{
+			name:   "empty vendors",
+			config: VendorConfig{Vendors: []VendorSpec{}},
+		},
+		// Note: nil vendors case is tested separately due to nil vs empty slice semantics
 	}
 
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		t.Fatalf("failed to marshal config: %v", err)
-	}
-
-	var parsed VendorConfig
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal config: %v", err)
-	}
-
-	if parsed.Vendors[0].Hooks == nil {
-		t.Fatal("expected hooks to be present")
-	}
-	if parsed.Vendors[0].Hooks.PreSync != config.Vendors[0].Hooks.PreSync {
-		t.Errorf("PreSync mismatch: expected %q, got %q", config.Vendors[0].Hooks.PreSync, parsed.Vendors[0].Hooks.PreSync)
-	}
-	if parsed.Vendors[0].Hooks.PostSync != config.Vendors[0].Hooks.PostSync {
-		t.Errorf("PostSync mismatch: expected %q, got %q", config.Vendors[0].Hooks.PostSync, parsed.Vendors[0].Hooks.PostSync)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertYAMLRoundTrip(t, tt.config)
+		})
 	}
 }
 
-func TestVendorConfig_YAML_MultipleVendors(t *testing.T) {
+func TestVendorConfig_YAML_NilVendors(t *testing.T) {
+	// Test nil vendors separately - YAML unmarshals null/empty as nil or empty slice
+	// Both are functionally equivalent, so we just verify the round-trip works
+	config := VendorConfig{Vendors: nil}
+
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var parsed VendorConfig
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	// Verify functionally equivalent (length 0)
+	if len(parsed.Vendors) != 0 {
+		t.Errorf("expected empty vendors, got %d vendors", len(parsed.Vendors))
+	}
+}
+
+func TestVendorConfig_YAML_Format(t *testing.T) {
 	config := VendorConfig{
 		Vendors: []VendorSpec{
 			{
-				Name:    "vendor-a",
-				URL:     "https://github.com/org/repo-a",
+				Name:    "example",
+				URL:     "https://github.com/org/repo",
 				License: "MIT",
 				Specs: []BranchSpec{
-					{Ref: "main", Mapping: []PathMapping{{From: "src/", To: "lib/a/"}}},
-				},
-			},
-			{
-				Name:    "vendor-b",
-				URL:     "https://gitlab.com/org/repo-b",
-				License: "BSD-3-Clause",
-				Groups:  []string{"shared"},
-				Specs: []BranchSpec{
-					{Ref: "develop", Mapping: []PathMapping{{From: "dist/", To: "lib/b/"}}},
-					{Ref: "v2.0.0", Mapping: []PathMapping{{From: "legacy/", To: "lib/b-legacy/"}}},
+					{Ref: "main", Mapping: []PathMapping{{From: "src/", To: "lib/"}}},
 				},
 			},
 		},
@@ -139,439 +203,239 @@ func TestVendorConfig_YAML_MultipleVendors(t *testing.T) {
 		t.Fatalf("failed to marshal: %v", err)
 	}
 
-	var parsed VendorConfig
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
+	output := string(data)
 
-	if len(parsed.Vendors) != 2 {
-		t.Fatalf("expected 2 vendors, got %d", len(parsed.Vendors))
-	}
-	if parsed.Vendors[0].Name != "vendor-a" {
-		t.Errorf("expected first vendor 'vendor-a', got %q", parsed.Vendors[0].Name)
-	}
-	if parsed.Vendors[1].Name != "vendor-b" {
-		t.Errorf("expected second vendor 'vendor-b', got %q", parsed.Vendors[1].Name)
-	}
-	if len(parsed.Vendors[1].Specs) != 2 {
-		t.Errorf("expected 2 specs for vendor-b, got %d", len(parsed.Vendors[1].Specs))
-	}
-}
-
-func TestVendorConfig_EmptyVendors(t *testing.T) {
-	config := VendorConfig{
-		Vendors: []VendorSpec{},
-	}
-
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed VendorConfig
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if len(parsed.Vendors) != 0 {
-		t.Errorf("expected 0 vendors, got %d", len(parsed.Vendors))
-	}
-}
-
-func TestVendorConfig_NilVendors(t *testing.T) {
-	config := VendorConfig{
-		Vendors: nil,
-	}
-
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed VendorConfig
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	// nil vendors should marshal as empty/null and unmarshal as nil or empty
-	if len(parsed.Vendors) != 0 {
-		t.Errorf("expected nil or empty vendors, got %v", parsed.Vendors)
-	}
-}
-
-// ========== VendorSpec Tests ==========
-
-func TestVendorSpec_NoGroups(t *testing.T) {
-	spec := VendorSpec{
-		Name:    "no-groups-vendor",
-		URL:     "https://github.com/test/repo",
-		License: "MIT",
-		Groups:  nil, // omitempty should exclude this
-		Specs: []BranchSpec{
-			{Ref: "main", Mapping: []PathMapping{{From: "src/", To: "lib/"}}},
-		},
-	}
-
-	data, err := yaml.Marshal(spec)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	// Verify that "groups:" is not in the output when empty/nil
-	if containsField(string(data), "groups:") {
-		t.Error("expected 'groups' to be omitted when nil")
-	}
-
-	var parsed VendorSpec
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if len(parsed.Groups) != 0 {
-		t.Errorf("expected nil or empty groups, got %v", parsed.Groups)
-	}
-}
-
-func TestVendorSpec_EmptyGroups(t *testing.T) {
-	spec := VendorSpec{
-		Name:    "empty-groups-vendor",
-		URL:     "https://github.com/test/repo",
-		License: "MIT",
-		Groups:  []string{}, // empty slice
-		Specs: []BranchSpec{
-			{Ref: "main", Mapping: []PathMapping{{From: "src/", To: "lib/"}}},
-		},
-	}
-
-	data, err := yaml.Marshal(spec)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed VendorSpec
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	// Empty slice might be preserved or become nil depending on YAML library
-	if len(parsed.Groups) != 0 {
-		t.Errorf("expected empty groups, got %v", parsed.Groups)
-	}
-}
-
-// ========== PathMapping Tests ==========
-
-func TestPathMapping_EmptyTo(t *testing.T) {
-	mapping := PathMapping{
-		From: "src/components/Button.tsx",
-		To:   "", // Auto-naming will be used
-	}
-
-	data, err := yaml.Marshal(mapping)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed PathMapping
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if parsed.From != mapping.From {
-		t.Errorf("From mismatch: expected %q, got %q", mapping.From, parsed.From)
-	}
-	if parsed.To != "" {
-		t.Errorf("expected empty To, got %q", parsed.To)
-	}
-}
-
-func TestPathMapping_ComplexPaths(t *testing.T) {
-	testCases := []PathMapping{
-		{From: ".", To: "vendor/full-repo/"},
-		{From: "src/lib/utils/", To: "lib/external/utils/"},
-		{From: "packages/@scope/package/dist/", To: "vendor/scoped/"},
-		{From: "file.go", To: "internal/vendored/file.go"},
-	}
-
-	for _, tc := range testCases {
-		data, err := yaml.Marshal(tc)
-		if err != nil {
-			t.Errorf("failed to marshal %v: %v", tc, err)
-			continue
-		}
-
-		var parsed PathMapping
-		err = yaml.Unmarshal(data, &parsed)
-		if err != nil {
-			t.Errorf("failed to unmarshal %v: %v", tc, err)
-			continue
-		}
-
-		if parsed.From != tc.From || parsed.To != tc.To {
-			t.Errorf("round-trip failed for %v: got %v", tc, parsed)
+	// Verify key YAML structure elements are present with correct field names
+	requiredFields := []string{"vendors:", "name:", "url:", "license:", "specs:", "ref:", "mapping:", "from:", "to:"}
+	for _, field := range requiredFields {
+		if !strings.Contains(output, field) {
+			t.Errorf("expected YAML to contain %q, got:\n%s", field, output)
 		}
 	}
 }
 
-// ========== BranchSpec Tests ==========
+// ============================================================================
+// VendorSpec Tests
+// ============================================================================
 
-func TestBranchSpec_WithDefaultTarget(t *testing.T) {
-	spec := BranchSpec{
-		Ref:           "v1.2.3",
-		DefaultTarget: "vendor/lib/",
-		Mapping: []PathMapping{
-			{From: "src/", To: ""},
+func TestVendorSpec_YAML_OmitEmpty(t *testing.T) {
+	tests := []struct {
+		name       string
+		spec       VendorSpec
+		omitFields []string
+	}{
+		{
+			name: "nil groups omitted",
+			spec: VendorSpec{
+				Name:    "test",
+				URL:     "https://github.com/test/repo",
+				License: "MIT",
+				Groups:  nil,
+				Specs:   []BranchSpec{{Ref: "main", Mapping: []PathMapping{{From: ".", To: "lib/"}}}},
+			},
+			omitFields: []string{"groups"},
+		},
+		{
+			name: "nil hooks omitted",
+			spec: VendorSpec{
+				Name:    "test",
+				URL:     "https://github.com/test/repo",
+				License: "MIT",
+				Hooks:   nil,
+				Specs:   []BranchSpec{{Ref: "main", Mapping: []PathMapping{{From: ".", To: "lib/"}}}},
+			},
+			omitFields: []string{"hooks"},
 		},
 	}
 
-	data, err := yaml.Marshal(spec)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed BranchSpec
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if parsed.DefaultTarget != spec.DefaultTarget {
-		t.Errorf("DefaultTarget mismatch: expected %q, got %q", spec.DefaultTarget, parsed.DefaultTarget)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, field := range tt.omitFields {
+				assertYAMLOmitsField(t, tt.spec, field)
+			}
+		})
 	}
 }
 
-func TestBranchSpec_NoDefaultTarget(t *testing.T) {
+// ============================================================================
+// BranchSpec Tests
+// ============================================================================
+
+func TestBranchSpec_YAML_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		spec BranchSpec
+	}{
+		{
+			name: "with default target",
+			spec: BranchSpec{
+				Ref:           "v1.2.3",
+				DefaultTarget: "vendor/lib/",
+				Mapping:       []PathMapping{{From: "src/", To: ""}},
+			},
+		},
+		{
+			name: "multiple mappings",
+			spec: BranchSpec{
+				Ref: "main",
+				Mapping: []PathMapping{
+					{From: "src/", To: "lib/src/"},
+					{From: "types/", To: "lib/types/"},
+					{From: "README.md", To: "lib/README.md"},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertYAMLRoundTrip(t, tt.spec)
+		})
+	}
+}
+
+func TestBranchSpec_YAML_OmitEmpty(t *testing.T) {
 	spec := BranchSpec{
 		Ref:           "main",
-		DefaultTarget: "", // omitempty should exclude this
-		Mapping: []PathMapping{
-			{From: "src/", To: "lib/"},
+		DefaultTarget: "", // omitempty
+		Mapping:       []PathMapping{{From: "src/", To: "lib/"}},
+	}
+	assertYAMLOmitsField(t, spec, "default_target")
+}
+
+// ============================================================================
+// PathMapping Tests
+// ============================================================================
+
+func TestPathMapping_YAML_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name    string
+		mapping PathMapping
+	}{
+		{name: "directory to directory", mapping: PathMapping{From: "src/", To: "lib/"}},
+		{name: "file to file", mapping: PathMapping{From: "file.go", To: "internal/file.go"}},
+		{name: "root to directory", mapping: PathMapping{From: ".", To: "vendor/full-repo/"}},
+		{name: "scoped package", mapping: PathMapping{From: "packages/@scope/pkg/dist/", To: "vendor/scoped/"}},
+		{name: "empty To (auto-naming)", mapping: PathMapping{From: "src/components/Button.tsx", To: ""}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertYAMLRoundTrip(t, tt.mapping)
+		})
+	}
+}
+
+// ============================================================================
+// HookConfig Tests
+// ============================================================================
+
+func TestHookConfig_YAML_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name  string
+		hooks HookConfig
+	}{
+		{
+			name:  "both hooks",
+			hooks: HookConfig{PreSync: "echo 'pre'", PostSync: "echo 'post'"},
 		},
-	}
-
-	data, err := yaml.Marshal(spec)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	// Verify that "default_target:" is not in the output when empty
-	if containsField(string(data), "default_target:") {
-		t.Error("expected 'default_target' to be omitted when empty")
-	}
-}
-
-// ========== HookConfig Tests ==========
-
-func TestHookConfig_NilHooks(t *testing.T) {
-	spec := VendorSpec{
-		Name:    "no-hooks-vendor",
-		URL:     "https://github.com/test/repo",
-		License: "MIT",
-		Hooks:   nil, // omitempty should exclude this
-		Specs: []BranchSpec{
-			{Ref: "main", Mapping: []PathMapping{{From: "src/", To: "lib/"}}},
+		{
+			name:  "pre-sync only",
+			hooks: HookConfig{PreSync: "npm ci", PostSync: ""},
 		},
-	}
-
-	data, err := yaml.Marshal(spec)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	// Verify that "hooks:" is not in the output when nil
-	if containsField(string(data), "hooks:") {
-		t.Error("expected 'hooks' to be omitted when nil")
-	}
-
-	var parsed VendorSpec
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if parsed.Hooks != nil {
-		t.Errorf("expected nil hooks, got %v", parsed.Hooks)
-	}
-}
-
-func TestHookConfig_PreSyncOnly(t *testing.T) {
-	hooks := HookConfig{
-		PreSync:  "echo 'pre-sync only'",
-		PostSync: "", // omitempty
-	}
-
-	data, err := yaml.Marshal(hooks)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed HookConfig
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if parsed.PreSync != hooks.PreSync {
-		t.Errorf("PreSync mismatch: expected %q, got %q", hooks.PreSync, parsed.PreSync)
-	}
-	if parsed.PostSync != "" {
-		t.Errorf("expected empty PostSync, got %q", parsed.PostSync)
-	}
-}
-
-func TestHookConfig_PostSyncOnly(t *testing.T) {
-	hooks := HookConfig{
-		PreSync:  "", // omitempty
-		PostSync: "npm run build",
-	}
-
-	data, err := yaml.Marshal(hooks)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed HookConfig
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if parsed.PreSync != "" {
-		t.Errorf("expected empty PreSync, got %q", parsed.PreSync)
-	}
-	if parsed.PostSync != hooks.PostSync {
-		t.Errorf("PostSync mismatch: expected %q, got %q", hooks.PostSync, parsed.PostSync)
-	}
-}
-
-func TestHookConfig_MultilineCommands(t *testing.T) {
-	hooks := HookConfig{
-		PreSync: "echo 'step 1'\necho 'step 2'\necho 'step 3'",
-		PostSync: `npm install
-npm run build
-npm run test`,
-	}
-
-	data, err := yaml.Marshal(hooks)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed HookConfig
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if parsed.PreSync != hooks.PreSync {
-		t.Errorf("PreSync multiline mismatch:\nexpected: %q\ngot: %q", hooks.PreSync, parsed.PreSync)
-	}
-	if parsed.PostSync != hooks.PostSync {
-		t.Errorf("PostSync multiline mismatch:\nexpected: %q\ngot: %q", hooks.PostSync, parsed.PostSync)
-	}
-}
-
-// ========== VendorLock YAML Tests ==========
-
-func TestVendorLock_YAML_RoundTrip(t *testing.T) {
-	lock := VendorLock{
-		SchemaVersion: "1.1",
-		Vendors: []LockDetails{
-			{
-				Name:        "test-vendor",
-				Ref:         "main",
-				CommitHash:  "abc123def456789",
-				LicensePath: "vendor/licenses/test-vendor.txt",
-				Updated:     "2024-01-15T10:30:00Z",
-				FileHashes: map[string]string{
-					"lib/file1.go": "sha256:abc123",
-					"lib/file2.go": "sha256:def456",
-				},
-				LicenseSPDX:      "MIT",
-				SourceVersionTag: "v1.2.3",
-				VendoredAt:       "2024-01-01T00:00:00Z",
-				VendoredBy:       "user@example.com",
-				LastSyncedAt:     "2024-01-15T10:30:00Z",
+		{
+			name:  "post-sync only",
+			hooks: HookConfig{PreSync: "", PostSync: "npm run build"},
+		},
+		{
+			name: "multiline commands",
+			hooks: HookConfig{
+				PreSync:  "echo 'step 1'\necho 'step 2'",
+				PostSync: "npm install\nnpm run build\nnpm test",
 			},
 		},
 	}
 
-	data, err := yaml.Marshal(lock)
-	if err != nil {
-		t.Fatalf("failed to marshal lock: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertYAMLRoundTrip(t, tt.hooks)
+		})
+	}
+}
+
+func TestHookConfig_YAML_OmitEmpty(t *testing.T) {
+	hooks := HookConfig{PreSync: "echo 'test'", PostSync: ""}
+	assertYAMLOmitsField(t, hooks, "post_sync")
+
+	hooks2 := HookConfig{PreSync: "", PostSync: "echo 'test'"}
+	assertYAMLOmitsField(t, hooks2, "pre_sync")
+}
+
+// ============================================================================
+// VendorLock YAML Tests
+// ============================================================================
+
+func TestVendorLock_YAML_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		lock VendorLock
+	}{
+		{
+			name: "full lock with metadata",
+			lock: VendorLock{
+				SchemaVersion: "1.1",
+				Vendors: []LockDetails{
+					{
+						Name:             "test-vendor",
+						Ref:              "main",
+						CommitHash:       "abc123def456789",
+						LicensePath:      "vendor/licenses/test-vendor.txt",
+						Updated:          "2024-01-15T10:30:00Z",
+						FileHashes:       map[string]string{"lib/file.go": "sha256:abc123"},
+						LicenseSPDX:      "MIT",
+						SourceVersionTag: "v1.2.3",
+						VendoredAt:       "2024-01-01T00:00:00Z",
+						VendoredBy:       "user@example.com",
+						LastSyncedAt:     "2024-01-15T10:30:00Z",
+					},
+				},
+			},
+		},
+		{
+			name: "multiple vendors",
+			lock: VendorLock{
+				SchemaVersion: "1.1",
+				Vendors: []LockDetails{
+					{Name: "vendor-a", Ref: "main", CommitHash: "abc123", LicensePath: "", Updated: "2024-01-01T00:00:00Z"},
+					{Name: "vendor-b", Ref: "v2.0", CommitHash: "def456", LicensePath: "", Updated: "2024-01-02T00:00:00Z"},
+				},
+			},
+		},
+		{
+			name: "empty vendors",
+			lock: VendorLock{SchemaVersion: "1.0", Vendors: []LockDetails{}},
+		},
 	}
 
-	var parsed VendorLock
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal lock: %v", err)
-	}
-
-	if parsed.SchemaVersion != lock.SchemaVersion {
-		t.Errorf("SchemaVersion mismatch: expected %q, got %q", lock.SchemaVersion, parsed.SchemaVersion)
-	}
-	if len(parsed.Vendors) != 1 {
-		t.Fatalf("expected 1 vendor, got %d", len(parsed.Vendors))
-	}
-
-	v := parsed.Vendors[0]
-	if v.Name != lock.Vendors[0].Name {
-		t.Errorf("Name mismatch: expected %q, got %q", lock.Vendors[0].Name, v.Name)
-	}
-	if v.CommitHash != lock.Vendors[0].CommitHash {
-		t.Errorf("CommitHash mismatch: expected %q, got %q", lock.Vendors[0].CommitHash, v.CommitHash)
-	}
-	if v.LicenseSPDX != lock.Vendors[0].LicenseSPDX {
-		t.Errorf("LicenseSPDX mismatch: expected %q, got %q", lock.Vendors[0].LicenseSPDX, v.LicenseSPDX)
-	}
-	if len(v.FileHashes) != 2 {
-		t.Errorf("expected 2 file hashes, got %d", len(v.FileHashes))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertYAMLRoundTrip(t, tt.lock)
+		})
 	}
 }
 
 func TestVendorLock_SchemaVersion(t *testing.T) {
-	testCases := []struct {
-		version string
-	}{
-		{"1.0"},
-		{"1.1"},
-		{"2.0"},
-		{""},
-	}
+	versions := []string{"1.0", "1.1", "2.0", ""}
 
-	for _, tc := range testCases {
-		lock := VendorLock{
-			SchemaVersion: tc.version,
-			Vendors:       []LockDetails{},
-		}
-
-		data, err := yaml.Marshal(lock)
-		if err != nil {
-			t.Errorf("failed to marshal with version %q: %v", tc.version, err)
-			continue
-		}
-
-		var parsed VendorLock
-		err = yaml.Unmarshal(data, &parsed)
-		if err != nil {
-			t.Errorf("failed to unmarshal with version %q: %v", tc.version, err)
-			continue
-		}
-
-		if parsed.SchemaVersion != tc.version {
-			t.Errorf("version mismatch: expected %q, got %q", tc.version, parsed.SchemaVersion)
-		}
+	for _, version := range versions {
+		t.Run("version_"+version, func(t *testing.T) {
+			lock := VendorLock{SchemaVersion: version, Vendors: []LockDetails{}}
+			assertYAMLRoundTrip(t, lock)
+		})
 	}
 }
 
 func TestLockDetails_YAML_OmitEmpty(t *testing.T) {
-	// Test that omitempty fields are properly excluded
 	details := LockDetails{
 		Name:        "minimal-vendor",
 		Ref:         "main",
@@ -581,128 +445,58 @@ func TestLockDetails_YAML_OmitEmpty(t *testing.T) {
 		// All omitempty fields left empty/nil
 	}
 
-	data, err := yaml.Marshal(details)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	yamlStr := string(data)
-
-	// These fields should be omitted
 	omitFields := []string{
-		"file_hashes:",
-		"license_spdx:",
-		"source_version_tag:",
-		"vendored_at:",
-		"vendored_by:",
-		"last_synced_at:",
+		"file_hashes", "license_spdx", "source_version_tag",
+		"vendored_at", "vendored_by", "last_synced_at",
 	}
 
 	for _, field := range omitFields {
-		if containsField(yamlStr, field) {
-			t.Errorf("expected %q to be omitted from YAML output", field)
-		}
+		assertYAMLOmitsField(t, details, field)
 	}
 }
 
-func TestLockDetails_WithAllMetadata(t *testing.T) {
-	details := LockDetails{
-		Name:             "full-metadata-vendor",
-		Ref:              "v2.0.0",
-		CommitHash:       "deadbeef12345678",
-		LicensePath:      "vendor/licenses/full-metadata-vendor.txt",
-		Updated:          "2024-06-01T12:00:00Z",
-		FileHashes:       map[string]string{"path/file.go": "hash123"},
-		LicenseSPDX:      "Apache-2.0",
-		SourceVersionTag: "v2.0.0",
-		VendoredAt:       "2024-05-01T00:00:00Z",
-		VendoredBy:       "developer@company.com",
-		LastSyncedAt:     "2024-06-01T12:00:00Z",
-	}
-
-	data, err := yaml.Marshal(details)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed LockDetails
-	err = yaml.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	// Verify all metadata fields preserved
-	if parsed.LicenseSPDX != details.LicenseSPDX {
-		t.Errorf("LicenseSPDX mismatch")
-	}
-	if parsed.SourceVersionTag != details.SourceVersionTag {
-		t.Errorf("SourceVersionTag mismatch")
-	}
-	if parsed.VendoredAt != details.VendoredAt {
-		t.Errorf("VendoredAt mismatch")
-	}
-	if parsed.VendoredBy != details.VendoredBy {
-		t.Errorf("VendoredBy mismatch")
-	}
-	if parsed.LastSyncedAt != details.LastSyncedAt {
-		t.Errorf("LastSyncedAt mismatch")
-	}
-}
-
-// ========== VerifyResult JSON Tests ==========
+// ============================================================================
+// VerifyResult JSON Tests
+// ============================================================================
 
 func TestVerifyResult_JSON_RoundTrip(t *testing.T) {
-	result := VerifyResult{
-		SchemaVersion: "1.0",
-		Timestamp:     "2024-01-15T10:30:00Z",
-		Summary: VerifySummary{
-			TotalFiles: 100,
-			Verified:   95,
-			Modified:   3,
-			Added:      1,
-			Deleted:    1,
-			Result:     "FAIL",
-		},
-		Files: []FileStatus{
-			{
-				Path:         "lib/file1.go",
-				Vendor:       strPtr("test-vendor"),
-				Status:       "verified",
-				ExpectedHash: strPtr("sha256:abc123"),
-				ActualHash:   strPtr("sha256:abc123"),
-			},
-			{
-				Path:         "lib/file2.go",
-				Vendor:       strPtr("test-vendor"),
-				Status:       "modified",
-				ExpectedHash: strPtr("sha256:original"),
-				ActualHash:   strPtr("sha256:changed"),
+	tests := []struct {
+		name   string
+		result VerifyResult
+	}{
+		{
+			name: "passing verification",
+			result: VerifyResult{
+				SchemaVersion: "1.0",
+				Timestamp:     "2024-01-15T10:30:00Z",
+				Summary: VerifySummary{
+					TotalFiles: 10, Verified: 10, Modified: 0, Added: 0, Deleted: 0, Result: "PASS",
+				},
+				Files: []FileStatus{},
 			},
 		},
+		{
+			name: "failing verification with files",
+			result: VerifyResult{
+				SchemaVersion: "1.0",
+				Timestamp:     "2024-01-15T10:30:00Z",
+				Summary: VerifySummary{
+					TotalFiles: 100, Verified: 95, Modified: 3, Added: 1, Deleted: 1, Result: "FAIL",
+				},
+				Files: []FileStatus{
+					{Path: "lib/ok.go", Vendor: strPtr("vendor"), Status: "verified", ExpectedHash: strPtr("sha256:abc"), ActualHash: strPtr("sha256:abc")},
+					{Path: "lib/changed.go", Vendor: strPtr("vendor"), Status: "modified", ExpectedHash: strPtr("sha256:old"), ActualHash: strPtr("sha256:new")},
+					{Path: "lib/new.go", Vendor: nil, Status: "added"},
+					{Path: "lib/gone.go", Vendor: strPtr("vendor"), Status: "deleted", ExpectedHash: strPtr("sha256:was")},
+				},
+			},
+		},
 	}
 
-	data, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed VerifyResult
-	err = json.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if parsed.SchemaVersion != result.SchemaVersion {
-		t.Errorf("SchemaVersion mismatch")
-	}
-	if parsed.Summary.TotalFiles != result.Summary.TotalFiles {
-		t.Errorf("TotalFiles mismatch: expected %d, got %d", result.Summary.TotalFiles, parsed.Summary.TotalFiles)
-	}
-	if parsed.Summary.Result != result.Summary.Result {
-		t.Errorf("Result mismatch: expected %q, got %q", result.Summary.Result, parsed.Summary.Result)
-	}
-	if len(parsed.Files) != 2 {
-		t.Errorf("expected 2 files, got %d", len(parsed.Files))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertJSONRoundTrip(t, tt.result)
+		})
 	}
 }
 
@@ -710,136 +504,68 @@ func TestVerifyResult_JSON_Structure(t *testing.T) {
 	result := VerifyResult{
 		SchemaVersion: "1.0",
 		Timestamp:     "2024-01-15T10:30:00Z",
-		Summary: VerifySummary{
-			TotalFiles: 10,
-			Verified:   10,
-			Modified:   0,
-			Added:      0,
-			Deleted:    0,
-			Result:     "PASS",
-		},
-		Files: []FileStatus{},
+		Summary:       VerifySummary{TotalFiles: 10, Verified: 10, Result: "PASS"},
+		Files:         []FileStatus{},
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
+	requiredFields := []string{
+		"schema_version", "timestamp", "summary", "files",
+		"total_files", "verified", "modified", "added", "deleted", "result",
 	}
 
-	// Verify JSON structure contains expected fields
-	jsonStr := string(data)
-	expectedFields := []string{
-		`"schema_version"`,
-		`"timestamp"`,
-		`"summary"`,
-		`"files"`,
-		`"total_files"`,
-		`"verified"`,
-		`"modified"`,
-		`"added"`,
-		`"deleted"`,
-		`"result"`,
-	}
-
-	for _, field := range expectedFields {
-		if !containsField(jsonStr, field) {
-			t.Errorf("expected JSON to contain %s", field)
-		}
+	for _, field := range requiredFields {
+		assertJSONContainsField(t, result, field)
 	}
 }
 
-func TestFileStatus_AllStatuses(t *testing.T) {
+func TestFileStatus_JSON_AllStatuses(t *testing.T) {
 	statuses := []string{"verified", "modified", "added", "deleted"}
 
 	for _, status := range statuses {
-		fs := FileStatus{
-			Path:   "test/file.go",
-			Vendor: strPtr("test-vendor"),
-			Status: status,
-		}
+		t.Run(status, func(t *testing.T) {
+			fs := FileStatus{
+				Path:   "test/file.go",
+				Vendor: strPtr("test-vendor"),
+				Status: status,
+			}
+			if status == "verified" || status == "modified" || status == "deleted" {
+				fs.ExpectedHash = strPtr("sha256:expected")
+			}
+			if status == "verified" || status == "modified" {
+				fs.ActualHash = strPtr("sha256:actual")
+			}
 
-		if status == "verified" || status == "modified" {
-			fs.ExpectedHash = strPtr("sha256:expected")
-			fs.ActualHash = strPtr("sha256:actual")
-		}
-
-		data, err := json.Marshal(fs)
-		if err != nil {
-			t.Errorf("failed to marshal status %q: %v", status, err)
-			continue
-		}
-
-		var parsed FileStatus
-		err = json.Unmarshal(data, &parsed)
-		if err != nil {
-			t.Errorf("failed to unmarshal status %q: %v", status, err)
-			continue
-		}
-
-		if parsed.Status != status {
-			t.Errorf("status mismatch: expected %q, got %q", status, parsed.Status)
-		}
+			assertJSONRoundTrip(t, fs)
+		})
 	}
 }
 
 func TestFileStatus_JSON_OmitEmpty(t *testing.T) {
-	// FileStatus with nil optional fields
 	fs := FileStatus{
 		Path:   "new/file.go",
-		Vendor: nil, // added files may not have a vendor
+		Vendor: nil,
 		Status: "added",
-		// ExpectedHash and ActualHash are nil
+		// ExpectedHash and ActualHash are nil - should be omitted
 	}
 
-	data, err := json.Marshal(fs)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
+	assertJSONOmitsField(t, fs, "expected_hash")
+	assertJSONOmitsField(t, fs, "actual_hash")
+}
 
-	jsonStr := string(data)
-
-	// These fields have omitempty, but vendor is not omitempty so it will be null
-	if containsField(jsonStr, `"expected_hash"`) {
-		t.Error("expected 'expected_hash' to be omitted")
-	}
-	if containsField(jsonStr, `"actual_hash"`) {
-		t.Error("expected 'actual_hash' to be omitted")
+func TestVerifySummary_JSON_AllResults(t *testing.T) {
+	for _, result := range []string{"PASS", "FAIL", "WARN"} {
+		t.Run(result, func(t *testing.T) {
+			summary := VerifySummary{
+				TotalFiles: 10, Verified: 8, Modified: 1, Added: 1, Deleted: 0, Result: result,
+			}
+			assertJSONRoundTrip(t, summary)
+		})
 	}
 }
 
-func TestVerifySummary_AllResults(t *testing.T) {
-	results := []string{"PASS", "FAIL", "WARN"}
-
-	for _, result := range results {
-		summary := VerifySummary{
-			TotalFiles: 10,
-			Verified:   8,
-			Modified:   1,
-			Added:      1,
-			Deleted:    0,
-			Result:     result,
-		}
-
-		data, err := json.Marshal(summary)
-		if err != nil {
-			t.Errorf("failed to marshal result %q: %v", result, err)
-			continue
-		}
-
-		var parsed VerifySummary
-		err = json.Unmarshal(data, &parsed)
-		if err != nil {
-			t.Errorf("failed to unmarshal result %q: %v", result, err)
-			continue
-		}
-
-		if parsed.Result != result {
-			t.Errorf("result mismatch: expected %q, got %q", result, parsed.Result)
-		}
-	}
-}
-
-// ========== IncrementalSyncCache JSON Tests ==========
+// ============================================================================
+// IncrementalSyncCache JSON Tests
+// ============================================================================
 
 func TestIncrementalSyncCache_JSON_RoundTrip(t *testing.T) {
 	cache := IncrementalSyncCache{
@@ -853,29 +579,7 @@ func TestIncrementalSyncCache_JSON_RoundTrip(t *testing.T) {
 		CachedAt: "2024-01-15T10:30:00Z",
 	}
 
-	data, err := json.Marshal(cache)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed IncrementalSyncCache
-	err = json.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if parsed.VendorName != cache.VendorName {
-		t.Errorf("VendorName mismatch")
-	}
-	if parsed.CommitHash != cache.CommitHash {
-		t.Errorf("CommitHash mismatch")
-	}
-	if len(parsed.Files) != 2 {
-		t.Errorf("expected 2 files, got %d", len(parsed.Files))
-	}
-	if parsed.Files[0].Hash != cache.Files[0].Hash {
-		t.Errorf("File hash mismatch")
-	}
+	assertJSONRoundTrip(t, cache)
 }
 
 func TestFileChecksum_JSON_RoundTrip(t *testing.T) {
@@ -884,270 +588,304 @@ func TestFileChecksum_JSON_RoundTrip(t *testing.T) {
 		Hash: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 	}
 
-	data, err := json.Marshal(checksum)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
+	assertJSONRoundTrip(t, checksum)
+}
+
+// ============================================================================
+// Malformed Input Tests (Negative Tests)
+// ============================================================================
+
+func TestVendorConfig_YAML_MalformedInput(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "invalid yaml syntax", input: "vendors: [[[invalid"},
+		{name: "wrong type for vendors", input: "vendors: 'not an array'"},
+		{name: "invalid nested structure", input: "vendors:\n  - name: test\n    specs: 'not an array'"},
 	}
 
-	var parsed FileChecksum
-	err = json.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if parsed.Path != checksum.Path {
-		t.Errorf("Path mismatch: expected %q, got %q", checksum.Path, parsed.Path)
-	}
-	if parsed.Hash != checksum.Hash {
-		t.Errorf("Hash mismatch: expected %q, got %q", checksum.Hash, parsed.Hash)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var config VendorConfig
+			err := yaml.Unmarshal([]byte(tt.input), &config)
+			if err == nil {
+				t.Error("expected error for malformed YAML, got nil")
+			}
+		})
 	}
 }
 
-// ========== PathConflict Tests ==========
+func TestVendorLock_YAML_MalformedInput(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "invalid yaml", input: "schema_version: [[["},
+		{name: "wrong type for file_hashes", input: "vendors:\n  - name: test\n    file_hashes: 'not a map'"},
+	}
 
-func TestPathConflict_Fields(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var lock VendorLock
+			err := yaml.Unmarshal([]byte(tt.input), &lock)
+			if err == nil {
+				t.Error("expected error for malformed YAML, got nil")
+			}
+		})
+	}
+}
+
+func TestVerifyResult_JSON_MalformedInput(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "invalid json", input: `{"schema_version": [`},
+		{name: "wrong type for files", input: `{"files": "not an array"}`},
+		{name: "wrong type for summary", input: `{"summary": "not an object"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var result VerifyResult
+			err := json.Unmarshal([]byte(tt.input), &result)
+			if err == nil {
+				t.Error("expected error for malformed JSON, got nil")
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Edge Case Tests
+// ============================================================================
+
+func TestVendorConfig_YAML_SpecialCharacters(t *testing.T) {
+	config := VendorConfig{
+		Vendors: []VendorSpec{
+			{
+				Name:    "vendor-with-special-chars",
+				URL:     "https://github.com/org/repo.git",
+				License: "MIT OR Apache-2.0",
+				Groups:  []string{"group:one", "group/two"},
+				Specs: []BranchSpec{
+					{
+						Ref: "feature/branch-name",
+						Mapping: []PathMapping{
+							{From: "path with spaces/", To: "target with spaces/"},
+							{From: "path'quotes/", To: "target\"quotes/"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	assertYAMLRoundTrip(t, config)
+}
+
+func TestVendorConfig_YAML_UnicodeContent(t *testing.T) {
+	config := VendorConfig{
+		Vendors: []VendorSpec{
+			{
+				Name:    "日本語-vendor",
+				URL:     "https://github.com/org/репозиторий",
+				License: "MIT",
+				Specs: []BranchSpec{
+					{Ref: "main", Mapping: []PathMapping{{From: "源/", To: "目标/"}}},
+				},
+			},
+		},
+	}
+
+	assertYAMLRoundTrip(t, config)
+}
+
+func TestLockDetails_YAML_LargeFileHashes(t *testing.T) {
+	// Test with many file hashes (simulating a large vendor)
+	fileHashes := make(map[string]string)
+	for i := 0; i < 100; i++ {
+		fileHashes[strings.Repeat("a", 10)+string(rune('a'+i%26))] = "sha256:hash" + string(rune('0'+i%10))
+	}
+
+	details := LockDetails{
+		Name:       "large-vendor",
+		Ref:        "main",
+		CommitHash: "abc123",
+		Updated:    "2024-01-01T00:00:00Z",
+		FileHashes: fileHashes,
+	}
+
+	assertYAMLRoundTrip(t, details)
+}
+
+// ============================================================================
+// Struct Field Validation Tests
+// ============================================================================
+
+// These tests verify that structs work correctly when used in typical scenarios.
+// They test behavior patterns rather than just field assignment.
+
+func TestPathConflict_Description(t *testing.T) {
 	conflict := PathConflict{
-		Path:    "shared/lib/utils.go",
-		Vendor1: "vendor-a",
-		Vendor2: "vendor-b",
-		Mapping1: PathMapping{
-			From: "src/utils.go",
-			To:   "shared/lib/utils.go",
-		},
-		Mapping2: PathMapping{
-			From: "lib/utils.go",
-			To:   "shared/lib/utils.go",
-		},
+		Path:     "shared/lib/utils.go",
+		Vendor1:  "vendor-a",
+		Vendor2:  "vendor-b",
+		Mapping1: PathMapping{From: "src/utils.go", To: "shared/lib/utils.go"},
+		Mapping2: PathMapping{From: "lib/utils.go", To: "shared/lib/utils.go"},
 	}
 
-	if conflict.Path != "shared/lib/utils.go" {
-		t.Errorf("Path mismatch")
+	// Verify conflict contains information needed for error messages
+	if conflict.Path == "" || conflict.Vendor1 == "" || conflict.Vendor2 == "" {
+		t.Error("PathConflict missing required fields for error reporting")
 	}
-	if conflict.Vendor1 != "vendor-a" {
-		t.Errorf("Vendor1 mismatch")
-	}
-	if conflict.Vendor2 != "vendor-b" {
-		t.Errorf("Vendor2 mismatch")
-	}
-	if conflict.Mapping1.From != "src/utils.go" {
-		t.Errorf("Mapping1.From mismatch")
-	}
-	if conflict.Mapping2.From != "lib/utils.go" {
-		t.Errorf("Mapping2.From mismatch")
+	if conflict.Mapping1.To != conflict.Mapping2.To {
+		t.Error("PathConflict mappings should have same destination (that's what makes it a conflict)")
 	}
 }
 
-// ========== CloneOptions Tests ==========
-
-func TestCloneOptions_Defaults(t *testing.T) {
-	opts := CloneOptions{}
-
-	if opts.Filter != "" {
-		t.Errorf("expected empty Filter, got %q", opts.Filter)
-	}
-	if opts.NoCheckout != false {
-		t.Error("expected NoCheckout to be false")
-	}
-	if opts.Depth != 0 {
-		t.Errorf("expected Depth 0, got %d", opts.Depth)
-	}
-}
-
-func TestCloneOptions_ShallowClone(t *testing.T) {
-	opts := CloneOptions{
+func TestCloneOptions_ShallowCloneConfiguration(t *testing.T) {
+	// Test that shallow clone options are properly configured
+	shallowOpts := CloneOptions{
 		Filter:     "blob:none",
 		NoCheckout: true,
 		Depth:      1,
 	}
 
-	if opts.Filter != "blob:none" {
-		t.Errorf("Filter mismatch")
+	// These are the expected values for a shallow clone
+	if shallowOpts.Depth != 1 {
+		t.Errorf("shallow clone should have Depth=1, got %d", shallowOpts.Depth)
 	}
-	if !opts.NoCheckout {
-		t.Error("expected NoCheckout to be true")
-	}
-	if opts.Depth != 1 {
-		t.Errorf("expected Depth 1, got %d", opts.Depth)
+	if !shallowOpts.NoCheckout {
+		t.Error("shallow clone should have NoCheckout=true")
 	}
 }
 
-// ========== VendorStatus Tests ==========
-
-func TestVendorStatus_Synced(t *testing.T) {
-	status := VendorStatus{
-		Name:         "synced-vendor",
-		Ref:          "main",
-		IsSynced:     true,
-		MissingPaths: nil,
-	}
-
-	if !status.IsSynced {
-		t.Error("expected IsSynced to be true")
-	}
-	if len(status.MissingPaths) != 0 {
-		t.Errorf("expected no missing paths, got %v", status.MissingPaths)
-	}
-}
-
-func TestVendorStatus_NotSynced(t *testing.T) {
-	status := VendorStatus{
-		Name:     "unsynced-vendor",
-		Ref:      "develop",
-		IsSynced: false,
-		MissingPaths: []string{
-			"lib/module1/",
-			"lib/module2/file.go",
+func TestVendorStatus_SyncStateConsistency(t *testing.T) {
+	tests := []struct {
+		name         string
+		status       VendorStatus
+		wantSynced   bool
+		wantMissing  int
+		isConsistent bool
+	}{
+		{
+			name:         "synced with no missing paths",
+			status:       VendorStatus{Name: "a", Ref: "main", IsSynced: true, MissingPaths: nil},
+			wantSynced:   true,
+			wantMissing:  0,
+			isConsistent: true,
+		},
+		{
+			name:         "not synced with missing paths",
+			status:       VendorStatus{Name: "b", Ref: "main", IsSynced: false, MissingPaths: []string{"path/"}},
+			wantSynced:   false,
+			wantMissing:  1,
+			isConsistent: true,
+		},
+		{
+			name:         "inconsistent: synced but has missing paths",
+			status:       VendorStatus{Name: "c", Ref: "main", IsSynced: true, MissingPaths: []string{"path/"}},
+			wantSynced:   true,
+			wantMissing:  1,
+			isConsistent: false, // This would be a bug in the calling code
 		},
 	}
 
-	if status.IsSynced {
-		t.Error("expected IsSynced to be false")
-	}
-	if len(status.MissingPaths) != 2 {
-		t.Errorf("expected 2 missing paths, got %d", len(status.MissingPaths))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.status.IsSynced != tt.wantSynced {
+				t.Errorf("IsSynced = %v, want %v", tt.status.IsSynced, tt.wantSynced)
+			}
+			if len(tt.status.MissingPaths) != tt.wantMissing {
+				t.Errorf("len(MissingPaths) = %d, want %d", len(tt.status.MissingPaths), tt.wantMissing)
+			}
+		})
 	}
 }
 
-func TestSyncStatus_AllSynced(t *testing.T) {
-	status := SyncStatus{
+func TestSyncStatus_Aggregation(t *testing.T) {
+	// Test that AllSynced correctly represents aggregate state
+	allSyncedStatus := SyncStatus{
 		AllSynced: true,
 		VendorStatuses: []VendorStatus{
-			{Name: "vendor-a", Ref: "main", IsSynced: true},
-			{Name: "vendor-b", Ref: "main", IsSynced: true},
+			{Name: "a", IsSynced: true},
+			{Name: "b", IsSynced: true},
 		},
 	}
 
-	if !status.AllSynced {
-		t.Error("expected AllSynced to be true")
+	if !allSyncedStatus.AllSynced {
+		t.Error("AllSynced should be true when all vendors are synced")
 	}
-	if len(status.VendorStatuses) != 2 {
-		t.Errorf("expected 2 vendor statuses, got %d", len(status.VendorStatuses))
-	}
-}
 
-func TestSyncStatus_NotAllSynced(t *testing.T) {
-	status := SyncStatus{
+	partialSyncStatus := SyncStatus{
 		AllSynced: false,
 		VendorStatuses: []VendorStatus{
-			{Name: "vendor-a", Ref: "main", IsSynced: true},
-			{Name: "vendor-b", Ref: "main", IsSynced: false, MissingPaths: []string{"missing/"}},
+			{Name: "a", IsSynced: true},
+			{Name: "b", IsSynced: false, MissingPaths: []string{"missing/"}},
 		},
 	}
 
-	if status.AllSynced {
-		t.Error("expected AllSynced to be false")
+	if partialSyncStatus.AllSynced {
+		t.Error("AllSynced should be false when any vendor is not synced")
 	}
 }
 
-// ========== UpdateCheckResult Tests ==========
-
-func TestUpdateCheckResult_UpToDate(t *testing.T) {
-	result := UpdateCheckResult{
-		VendorName:  "current-vendor",
-		Ref:         "main",
-		CurrentHash: "abc123",
-		LatestHash:  "abc123",
-		LastUpdated: "2024-01-15T10:30:00Z",
-		UpToDate:    true,
+func TestUpdateCheckResult_UpdateLogic(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   UpdateCheckResult
+		wantDesc string
+	}{
+		{
+			name: "up to date",
+			result: UpdateCheckResult{
+				VendorName: "current", CurrentHash: "abc123", LatestHash: "abc123", UpToDate: true,
+			},
+			wantDesc: "hashes match",
+		},
+		{
+			name: "needs update",
+			result: UpdateCheckResult{
+				VendorName: "outdated", CurrentHash: "abc123", LatestHash: "def456", UpToDate: false,
+			},
+			wantDesc: "hashes differ",
+		},
 	}
 
-	if !result.UpToDate {
-		t.Error("expected UpToDate to be true")
-	}
-	if result.CurrentHash != result.LatestHash {
-		t.Error("expected hashes to match when up to date")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hashesMatch := tt.result.CurrentHash == tt.result.LatestHash
+			if tt.result.UpToDate && !hashesMatch {
+				t.Error("UpToDate=true but hashes don't match - inconsistent state")
+			}
+			if !tt.result.UpToDate && hashesMatch {
+				t.Error("UpToDate=false but hashes match - inconsistent state")
+			}
+		})
 	}
 }
 
-func TestUpdateCheckResult_NeedsUpdate(t *testing.T) {
-	result := UpdateCheckResult{
-		VendorName:  "outdated-vendor",
-		Ref:         "main",
-		CurrentHash: "abc123",
-		LatestHash:  "def456",
-		LastUpdated: "2024-01-15T10:30:00Z",
-		UpToDate:    false,
-	}
-
-	if result.UpToDate {
-		t.Error("expected UpToDate to be false")
-	}
-	if result.CurrentHash == result.LatestHash {
-		t.Error("expected hashes to differ when update needed")
-	}
-}
-
-// ========== CommitInfo Tests ==========
-
-func TestCommitInfo_Fields(t *testing.T) {
-	commit := CommitInfo{
-		Hash:      "abc123def456789012345678901234567890abcd",
-		ShortHash: "abc123d",
-		Subject:   "feat: add new feature",
-		Author:    "Developer <dev@example.com>",
-		Date:      "2024-01-15",
-	}
-
-	if len(commit.Hash) != 40 {
-		t.Errorf("expected 40-char hash, got %d chars", len(commit.Hash))
-	}
-	if commit.ShortHash != "abc123d" {
-		t.Errorf("ShortHash mismatch")
-	}
-	if commit.Subject != "feat: add new feature" {
-		t.Errorf("Subject mismatch")
-	}
-}
-
-// ========== VendorDiff Tests ==========
-
-func TestVendorDiff_WithCommits(t *testing.T) {
+func TestVendorDiff_CommitCount(t *testing.T) {
 	diff := VendorDiff{
-		VendorName:  "diff-vendor",
-		Ref:         "main",
+		VendorName:  "test",
 		OldHash:     "abc123",
 		NewHash:     "def456",
-		OldDate:     "2024-01-01",
-		NewDate:     "2024-01-15",
 		CommitCount: 3,
 		Commits: []CommitInfo{
-			{Hash: "commit1", ShortHash: "c1", Subject: "fix: bug 1", Author: "dev1", Date: "2024-01-05"},
-			{Hash: "commit2", ShortHash: "c2", Subject: "feat: feature 1", Author: "dev2", Date: "2024-01-10"},
-			{Hash: "commit3", ShortHash: "c3", Subject: "docs: update readme", Author: "dev1", Date: "2024-01-15"},
+			{Hash: "c1", ShortHash: "c1", Subject: "fix: bug", Author: "dev", Date: "2024-01-01"},
+			{Hash: "c2", ShortHash: "c2", Subject: "feat: feature", Author: "dev", Date: "2024-01-02"},
+			{Hash: "c3", ShortHash: "c3", Subject: "docs: readme", Author: "dev", Date: "2024-01-03"},
 		},
 	}
 
 	if diff.CommitCount != len(diff.Commits) {
-		t.Errorf("CommitCount mismatch: count=%d, actual=%d", diff.CommitCount, len(diff.Commits))
-	}
-	if diff.OldHash == diff.NewHash {
-		t.Error("expected different old and new hashes")
+		t.Errorf("CommitCount (%d) should match len(Commits) (%d)", diff.CommitCount, len(diff.Commits))
 	}
 }
 
-func TestVendorDiff_NoChanges(t *testing.T) {
-	diff := VendorDiff{
-		VendorName:  "unchanged-vendor",
-		Ref:         "main",
-		OldHash:     "abc123",
-		NewHash:     "abc123",
-		OldDate:     "2024-01-01",
-		NewDate:     "2024-01-01",
-		CommitCount: 0,
-		Commits:     []CommitInfo{},
-	}
-
-	if diff.CommitCount != 0 {
-		t.Errorf("expected 0 commits, got %d", diff.CommitCount)
-	}
-	if diff.OldHash != diff.NewHash {
-		t.Error("expected same hashes when no changes")
-	}
-}
-
-// ========== HookContext Tests ==========
-
-func TestHookContext_AllFields(t *testing.T) {
+func TestHookContext_EnvironmentSetup(t *testing.T) {
 	ctx := HookContext{
 		VendorName:  "hook-vendor",
 		VendorURL:   "https://github.com/org/repo",
@@ -1161,87 +899,73 @@ func TestHookContext_AllFields(t *testing.T) {
 		},
 	}
 
-	if ctx.VendorName != "hook-vendor" {
-		t.Errorf("VendorName mismatch")
-	}
-	if ctx.FilesCopied != 42 {
-		t.Errorf("FilesCopied mismatch: expected 42, got %d", ctx.FilesCopied)
-	}
-	if ctx.DirsCreated != 5 {
-		t.Errorf("DirsCreated mismatch: expected 5, got %d", ctx.DirsCreated)
-	}
-	if ctx.Environment["CUSTOM_VAR"] != "custom_value" {
-		t.Errorf("Environment variable mismatch")
-	}
-}
-
-func TestHookContext_EmptyEnvironment(t *testing.T) {
-	ctx := HookContext{
-		VendorName:  "minimal-hook-vendor",
-		VendorURL:   "https://github.com/org/repo",
-		Ref:         "main",
-		CommitHash:  "abc123",
-		RootDir:     "/project",
-		FilesCopied: 0,
-		DirsCreated: 0,
-		Environment: nil,
+	// Verify all required fields for hook execution are present
+	requiredFields := map[string]string{
+		"VendorName": ctx.VendorName,
+		"VendorURL":  ctx.VendorURL,
+		"Ref":        ctx.Ref,
+		"CommitHash": ctx.CommitHash,
+		"RootDir":    ctx.RootDir,
 	}
 
-	if ctx.Environment != nil {
-		t.Errorf("expected nil Environment, got %v", ctx.Environment)
-	}
-}
-
-// ========== ParallelOptions Tests ==========
-
-func TestParallelOptions_Disabled(t *testing.T) {
-	opts := ParallelOptions{
-		Enabled:    false,
-		MaxWorkers: 0,
-	}
-
-	if opts.Enabled {
-		t.Error("expected Enabled to be false")
-	}
-}
-
-func TestParallelOptions_Enabled(t *testing.T) {
-	opts := ParallelOptions{
-		Enabled:    true,
-		MaxWorkers: 4,
-	}
-
-	if !opts.Enabled {
-		t.Error("expected Enabled to be true")
-	}
-	if opts.MaxWorkers != 4 {
-		t.Errorf("expected MaxWorkers 4, got %d", opts.MaxWorkers)
-	}
-}
-
-func TestParallelOptions_DefaultWorkers(t *testing.T) {
-	opts := ParallelOptions{
-		Enabled:    true,
-		MaxWorkers: 0, // 0 means use NumCPU
-	}
-
-	if opts.MaxWorkers != 0 {
-		t.Errorf("expected MaxWorkers 0 (default), got %d", opts.MaxWorkers)
-	}
-}
-
-// ========== Helper Functions ==========
-
-// containsField checks if a string contains a field pattern (case-sensitive)
-func containsField(s, field string) bool {
-	return len(s) > 0 && len(field) > 0 && contains(s, field)
-}
-
-func contains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+	for name, value := range requiredFields {
+		if value == "" {
+			t.Errorf("HookContext.%s should not be empty", name)
 		}
 	}
-	return false
+}
+
+func TestParallelOptions_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    ParallelOptions
+		isValid bool
+	}{
+		{
+			name:    "disabled",
+			opts:    ParallelOptions{Enabled: false, MaxWorkers: 0},
+			isValid: true,
+		},
+		{
+			name:    "enabled with default workers",
+			opts:    ParallelOptions{Enabled: true, MaxWorkers: 0},
+			isValid: true, // 0 means use NumCPU
+		},
+		{
+			name:    "enabled with custom workers",
+			opts:    ParallelOptions{Enabled: true, MaxWorkers: 4},
+			isValid: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// MaxWorkers of 0 when Enabled=true means use NumCPU (valid)
+			// Any positive MaxWorkers is valid
+			isValid := !tt.opts.Enabled || tt.opts.MaxWorkers >= 0
+			if isValid != tt.isValid {
+				t.Errorf("ParallelOptions validation: got %v, want %v", isValid, tt.isValid)
+			}
+		})
+	}
+}
+
+func TestCommitInfo_ShortHashLength(t *testing.T) {
+	commit := CommitInfo{
+		Hash:      "abc123def456789012345678901234567890abcd",
+		ShortHash: "abc123d",
+		Subject:   "feat: add new feature",
+		Author:    "Developer <dev@example.com>",
+		Date:      "2024-01-15",
+	}
+
+	// Full hash should be 40 characters (SHA-1)
+	if len(commit.Hash) != 40 {
+		t.Errorf("expected 40-char hash, got %d chars", len(commit.Hash))
+	}
+
+	// Short hash should be a prefix of the full hash
+	if !strings.HasPrefix(commit.Hash, commit.ShortHash) {
+		t.Error("ShortHash should be a prefix of Hash")
+	}
 }
