@@ -2,93 +2,12 @@ package types
 
 import (
 	"encoding/json"
-	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/EmundoT/git-vendor/internal/testutil"
 	"gopkg.in/yaml.v3"
 )
-
-// ============================================================================
-// Test Helpers
-// ============================================================================
-
-// strPtr creates a pointer to a string - useful for optional fields in tests.
-func strPtr(s string) *string {
-	return &s
-}
-
-// assertYAMLRoundTrip marshals v to YAML and unmarshals back, failing if not equal.
-func assertYAMLRoundTrip[T any](t *testing.T, original T) {
-	t.Helper()
-	data, err := yaml.Marshal(original)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed T
-	if err := yaml.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if !reflect.DeepEqual(original, parsed) {
-		t.Errorf("round-trip mismatch:\noriginal: %+v\nparsed:   %+v", original, parsed)
-	}
-}
-
-// assertJSONRoundTrip marshals v to JSON and unmarshals back, failing if not equal.
-func assertJSONRoundTrip[T any](t *testing.T, original T) {
-	t.Helper()
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var parsed T
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if !reflect.DeepEqual(original, parsed) {
-		t.Errorf("round-trip mismatch:\noriginal: %+v\nparsed:   %+v", original, parsed)
-	}
-}
-
-// assertYAMLOmitsField verifies a field is not present in marshalled YAML output.
-func assertYAMLOmitsField(t *testing.T, v any, fieldName string) {
-	t.Helper()
-	data, err := yaml.Marshal(v)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-	if strings.Contains(string(data), fieldName+":") {
-		t.Errorf("expected field %q to be omitted from YAML output, got:\n%s", fieldName, string(data))
-	}
-}
-
-// assertJSONOmitsField verifies a field is not present in marshalled JSON output.
-func assertJSONOmitsField(t *testing.T, v any, fieldName string) {
-	t.Helper()
-	data, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-	if strings.Contains(string(data), `"`+fieldName+`"`) {
-		t.Errorf("expected field %q to be omitted from JSON output, got:\n%s", fieldName, string(data))
-	}
-}
-
-// assertJSONContainsField verifies a field is present in marshalled JSON output.
-func assertJSONContainsField(t *testing.T, v any, fieldName string) {
-	t.Helper()
-	data, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-	if !strings.Contains(string(data), `"`+fieldName+`"`) {
-		t.Errorf("expected field %q to be present in JSON output, got:\n%s", fieldName, string(data))
-	}
-}
 
 // ============================================================================
 // VendorConfig YAML Tests
@@ -158,7 +77,7 @@ func TestVendorConfig_YAML_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertYAMLRoundTrip(t, tt.config)
+			testutil.AssertYAMLRoundTrip(t, tt.config)
 		})
 	}
 }
@@ -251,7 +170,7 @@ func TestVendorSpec_YAML_OmitEmpty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, field := range tt.omitFields {
-				assertYAMLOmitsField(t, tt.spec, field)
+				testutil.AssertYAMLOmitsField(t, tt.spec, field)
 			}
 		})
 	}
@@ -289,7 +208,7 @@ func TestBranchSpec_YAML_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertYAMLRoundTrip(t, tt.spec)
+			testutil.AssertYAMLRoundTrip(t, tt.spec)
 		})
 	}
 }
@@ -300,7 +219,7 @@ func TestBranchSpec_YAML_OmitEmpty(t *testing.T) {
 		DefaultTarget: "", // omitempty
 		Mapping:       []PathMapping{{From: "src/", To: "lib/"}},
 	}
-	assertYAMLOmitsField(t, spec, "default_target")
+	testutil.AssertYAMLOmitsField(t, spec, "default_target")
 }
 
 // ============================================================================
@@ -321,7 +240,7 @@ func TestPathMapping_YAML_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertYAMLRoundTrip(t, tt.mapping)
+			testutil.AssertYAMLRoundTrip(t, tt.mapping)
 		})
 	}
 }
@@ -358,17 +277,17 @@ func TestHookConfig_YAML_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertYAMLRoundTrip(t, tt.hooks)
+			testutil.AssertYAMLRoundTrip(t, tt.hooks)
 		})
 	}
 }
 
 func TestHookConfig_YAML_OmitEmpty(t *testing.T) {
 	hooks := HookConfig{PreSync: "echo 'test'", PostSync: ""}
-	assertYAMLOmitsField(t, hooks, "post_sync")
+	testutil.AssertYAMLOmitsField(t, hooks, "post_sync")
 
 	hooks2 := HookConfig{PreSync: "", PostSync: "echo 'test'"}
-	assertYAMLOmitsField(t, hooks2, "pre_sync")
+	testutil.AssertYAMLOmitsField(t, hooks2, "pre_sync")
 }
 
 // ============================================================================
@@ -419,7 +338,7 @@ func TestVendorLock_YAML_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertYAMLRoundTrip(t, tt.lock)
+			testutil.AssertYAMLRoundTrip(t, tt.lock)
 		})
 	}
 }
@@ -430,7 +349,7 @@ func TestVendorLock_SchemaVersion(t *testing.T) {
 	for _, version := range versions {
 		t.Run("version_"+version, func(t *testing.T) {
 			lock := VendorLock{SchemaVersion: version, Vendors: []LockDetails{}}
-			assertYAMLRoundTrip(t, lock)
+			testutil.AssertYAMLRoundTrip(t, lock)
 		})
 	}
 }
@@ -451,7 +370,7 @@ func TestLockDetails_YAML_OmitEmpty(t *testing.T) {
 	}
 
 	for _, field := range omitFields {
-		assertYAMLOmitsField(t, details, field)
+		testutil.AssertYAMLOmitsField(t, details, field)
 	}
 }
 
@@ -484,10 +403,10 @@ func TestVerifyResult_JSON_RoundTrip(t *testing.T) {
 					TotalFiles: 100, Verified: 95, Modified: 3, Added: 1, Deleted: 1, Result: "FAIL",
 				},
 				Files: []FileStatus{
-					{Path: "lib/ok.go", Vendor: strPtr("vendor"), Status: "verified", ExpectedHash: strPtr("sha256:abc"), ActualHash: strPtr("sha256:abc")},
-					{Path: "lib/changed.go", Vendor: strPtr("vendor"), Status: "modified", ExpectedHash: strPtr("sha256:old"), ActualHash: strPtr("sha256:new")},
+					{Path: "lib/ok.go", Vendor: testutil.StrPtr("vendor"), Status: "verified", ExpectedHash: testutil.StrPtr("sha256:abc"), ActualHash: testutil.StrPtr("sha256:abc")},
+					{Path: "lib/changed.go", Vendor: testutil.StrPtr("vendor"), Status: "modified", ExpectedHash: testutil.StrPtr("sha256:old"), ActualHash: testutil.StrPtr("sha256:new")},
 					{Path: "lib/new.go", Vendor: nil, Status: "added"},
-					{Path: "lib/gone.go", Vendor: strPtr("vendor"), Status: "deleted", ExpectedHash: strPtr("sha256:was")},
+					{Path: "lib/gone.go", Vendor: testutil.StrPtr("vendor"), Status: "deleted", ExpectedHash: testutil.StrPtr("sha256:was")},
 				},
 			},
 		},
@@ -495,7 +414,7 @@ func TestVerifyResult_JSON_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertJSONRoundTrip(t, tt.result)
+			testutil.AssertJSONRoundTrip(t, tt.result)
 		})
 	}
 }
@@ -514,7 +433,7 @@ func TestVerifyResult_JSON_Structure(t *testing.T) {
 	}
 
 	for _, field := range requiredFields {
-		assertJSONContainsField(t, result, field)
+		testutil.AssertJSONContainsField(t, result, field)
 	}
 }
 
@@ -525,17 +444,17 @@ func TestFileStatus_JSON_AllStatuses(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			fs := FileStatus{
 				Path:   "test/file.go",
-				Vendor: strPtr("test-vendor"),
+				Vendor: testutil.StrPtr("test-vendor"),
 				Status: status,
 			}
 			if status == "verified" || status == "modified" || status == "deleted" {
-				fs.ExpectedHash = strPtr("sha256:expected")
+				fs.ExpectedHash = testutil.StrPtr("sha256:expected")
 			}
 			if status == "verified" || status == "modified" {
-				fs.ActualHash = strPtr("sha256:actual")
+				fs.ActualHash = testutil.StrPtr("sha256:actual")
 			}
 
-			assertJSONRoundTrip(t, fs)
+			testutil.AssertJSONRoundTrip(t, fs)
 		})
 	}
 }
@@ -548,8 +467,8 @@ func TestFileStatus_JSON_OmitEmpty(t *testing.T) {
 		// ExpectedHash and ActualHash are nil - should be omitted
 	}
 
-	assertJSONOmitsField(t, fs, "expected_hash")
-	assertJSONOmitsField(t, fs, "actual_hash")
+	testutil.AssertJSONOmitsField(t, fs, "expected_hash")
+	testutil.AssertJSONOmitsField(t, fs, "actual_hash")
 }
 
 func TestVerifySummary_JSON_AllResults(t *testing.T) {
@@ -558,7 +477,7 @@ func TestVerifySummary_JSON_AllResults(t *testing.T) {
 			summary := VerifySummary{
 				TotalFiles: 10, Verified: 8, Modified: 1, Added: 1, Deleted: 0, Result: result,
 			}
-			assertJSONRoundTrip(t, summary)
+			testutil.AssertJSONRoundTrip(t, summary)
 		})
 	}
 }
@@ -579,7 +498,7 @@ func TestIncrementalSyncCache_JSON_RoundTrip(t *testing.T) {
 		CachedAt: "2024-01-15T10:30:00Z",
 	}
 
-	assertJSONRoundTrip(t, cache)
+	testutil.AssertJSONRoundTrip(t, cache)
 }
 
 func TestFileChecksum_JSON_RoundTrip(t *testing.T) {
@@ -588,7 +507,7 @@ func TestFileChecksum_JSON_RoundTrip(t *testing.T) {
 		Hash: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 	}
 
-	assertJSONRoundTrip(t, checksum)
+	testutil.AssertJSONRoundTrip(t, checksum)
 }
 
 // ============================================================================
@@ -682,7 +601,7 @@ func TestVendorConfig_YAML_SpecialCharacters(t *testing.T) {
 		},
 	}
 
-	assertYAMLRoundTrip(t, config)
+	testutil.AssertYAMLRoundTrip(t, config)
 }
 
 func TestVendorConfig_YAML_UnicodeContent(t *testing.T) {
@@ -699,7 +618,7 @@ func TestVendorConfig_YAML_UnicodeContent(t *testing.T) {
 		},
 	}
 
-	assertYAMLRoundTrip(t, config)
+	testutil.AssertYAMLRoundTrip(t, config)
 }
 
 func TestLockDetails_YAML_LargeFileHashes(t *testing.T) {
@@ -717,7 +636,7 @@ func TestLockDetails_YAML_LargeFileHashes(t *testing.T) {
 		FileHashes: fileHashes,
 	}
 
-	assertYAMLRoundTrip(t, details)
+	testutil.AssertYAMLRoundTrip(t, details)
 }
 
 // ============================================================================
@@ -834,23 +753,20 @@ func TestSyncStatus_Aggregation(t *testing.T) {
 
 func TestUpdateCheckResult_UpdateLogic(t *testing.T) {
 	tests := []struct {
-		name     string
-		result   UpdateCheckResult
-		wantDesc string
+		name   string
+		result UpdateCheckResult
 	}{
 		{
-			name: "up to date",
+			name: "up to date - hashes match",
 			result: UpdateCheckResult{
 				VendorName: "current", CurrentHash: "abc123", LatestHash: "abc123", UpToDate: true,
 			},
-			wantDesc: "hashes match",
 		},
 		{
-			name: "needs update",
+			name: "needs update - hashes differ",
 			result: UpdateCheckResult{
 				VendorName: "outdated", CurrentHash: "abc123", LatestHash: "def456", UpToDate: false,
 			},
-			wantDesc: "hashes differ",
 		},
 	}
 
