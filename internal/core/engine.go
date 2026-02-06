@@ -8,39 +8,6 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
-// Constants for the new "Clean Root" structure
-const (
-	VendorDir  = "vendor"
-	ConfigName = "vendor.yml"
-	LockName   = "vendor.lock"
-	LicenseDir = "licenses"
-)
-
-// AllowedLicenses defines the list of open-source licenses permitted by default.
-var AllowedLicenses = []string{
-	"MIT",
-	"Apache-2.0",
-	"BSD-3-Clause",
-	"BSD-2-Clause",
-	"ISC",
-	"Unlicense",
-	"CC0-1.0",
-}
-
-// Error messages
-const (
-	ErrStaleCommitMsg    = "locked commit %s no longer exists in the repository.\n\nThis usually happens when the remote repository has been force-pushed or the commit was deleted.\nRun 'git-vendor update' to fetch the latest commit and update the lockfile, then try syncing again"
-	ErrCheckoutFailed    = "checkout locked hash %s failed: %w"
-	ErrRefCheckoutFailed = "checkout ref %s failed: %w"
-	ErrPathNotFound      = "path '%s' not found"
-	ErrInvalidURL        = "invalid url"
-	ErrVendorNotFound    = "vendor '%s' not found"
-	ErrComplianceFailed  = "compliance check failed"
-)
-
-// LicenseFileNames lists standard filenames checked when searching for repository licenses.
-var LicenseFileNames = []string{"LICENSE", "LICENSE.txt", "COPYING"}
-
 // Verbose controls whether git commands are logged
 var Verbose = false
 
@@ -109,7 +76,7 @@ func (m *Manager) LockPath() string {
 
 // LicensePath returns the path for a vendor's license file
 func (m *Manager) LicensePath(name string) string {
-	return m.syncer.rootDir + "/" + LicenseDir + "/" + name + ".txt"
+	return m.syncer.rootDir + "/" + LicensesDir + "/" + name + ".txt"
 }
 
 // IsGitInstalled checks if git is available on the system
@@ -126,9 +93,6 @@ func IsVendorInitialized() bool {
 	}
 	return info.IsDir()
 }
-
-// ErrNotInitialized is returned when vendor directory doesn't exist
-const ErrNotInitialized = "vendor directory not found. Run 'git-vendor init' first"
 
 // Init initializes the vendor directory structure
 func (m *Manager) Init() error {

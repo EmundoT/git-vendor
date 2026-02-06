@@ -59,6 +59,8 @@ The codebase follows clean architecture principles with proper separation of con
    - **diff_service.go**: Diff service - Commit comparison between locked and latest versions
    - **watch_service.go**: Watch service - File monitoring for auto-sync on config changes
    - **update_checker.go**: Update checker - Check for available updates without modifying files
+   - **constants.go**: Path constants (`ConfigPath`, `LockPath`), git refs, license lists
+   - **errors.go**: Sentinel errors and structured error types (see Error Handling)
    - **mocks_test.go**: Mock implementations for testing
 
 3. **internal/tui/wizard.go** - Interactive user interface
@@ -290,9 +292,16 @@ vendors:
 
 ### Error Handling
 
+Error handling follows Go conventions (see ROADMAP.md section 9.5 for details):
+
+- **`fmt.Errorf`**: Default for most errors (informational, wrapping with `%w`)
+- **Sentinel errors**: `ErrNotInitialized`, `ErrComplianceFailed` — use with `errors.Is()`
+- **Custom types**: `VendorNotFoundError`, `StaleCommitError`, etc. — use with `errors.As()` or `Is*()` helpers
+
+Display patterns:
 - TUI functions use `check(err)` helper that prints "Aborted." and exits
 - Core functions return errors for caller handling
-- CLI prints styled errors via `tui.PrintError(title, message)`
+- CLI prints styled errors via `tui.PrintError(title, message)` — note: pass `err.Error()` not `err`
 
 ### Wizard Flow
 
@@ -426,6 +435,7 @@ go test -v ./...
 13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts
 14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
 15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
+16. **Sentinel errors with tui.PrintError**: Sentinel errors like `ErrNotInitialized` are `error` types, not strings. Call `.Error()` when passing to `tui.PrintError(title, err.Error())`
 
 ## Quick Reference
 

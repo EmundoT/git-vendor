@@ -236,7 +236,7 @@ func (s *SyncService) validateVendorExists(config types.VendorConfig, vendorName
 		}
 	}
 	if !found {
-		return fmt.Errorf(ErrVendorNotFound, vendorName)
+		return NewVendorNotFoundError(vendorName)
 	}
 	return nil
 }
@@ -256,7 +256,7 @@ func (s *SyncService) validateGroupExists(config types.VendorConfig, groupName s
 		}
 	}
 	if !found {
-		return fmt.Errorf("group '%s' not found in any vendor", groupName)
+		return NewGroupNotFoundError(groupName)
 	}
 	return nil
 }
@@ -475,18 +475,18 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 			// Detect stale lock hash error and provide helpful message
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "reference is not a tree") || strings.Contains(errMsg, "not a valid object") {
-				return RefMetadata{}, CopyStats{}, fmt.Errorf(ErrStaleCommitMsg, targetCommit[:7])
+				return RefMetadata{}, CopyStats{}, NewStaleCommitError(targetCommit, v.Name, spec.Ref)
 			}
-			return RefMetadata{}, CopyStats{}, fmt.Errorf(ErrCheckoutFailed, targetCommit, err)
+			return RefMetadata{}, CopyStats{}, NewCheckoutError(targetCommit, v.Name, err)
 		}
 	} else {
 		// Unlocked sync - checkout latest
 		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
 			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 		}
-		if err := s.gitClient.Checkout(tempDir, "FETCH_HEAD"); err != nil {
+		if err := s.gitClient.Checkout(tempDir, FetchHead); err != nil {
 			if err := s.gitClient.Checkout(tempDir, spec.Ref); err != nil {
-				return RefMetadata{}, CopyStats{}, fmt.Errorf(ErrRefCheckoutFailed, spec.Ref, err)
+				return RefMetadata{}, CopyStats{}, NewCheckoutError(spec.Ref, v.Name, err)
 			}
 		}
 	}
