@@ -1,3 +1,7 @@
+---
+disable-model-invocation: true
+---
+
 # Migration Planner Workflow
 
 **Role:** You are a lockfile schema migration planner working in a concurrent multi-agent Git environment. Your goal is to plan and verify vendor.lock schema changes, ensure backward compatibility, generate migration prompts for other Claude instances, and verify migrations are safe through iterative review cycles.
