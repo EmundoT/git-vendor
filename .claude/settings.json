@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-hooks.mjs\" init",
-            "timeout": 30
+            "command": "echo '## Git Context' && echo \"**Branch:** $(git branch --show-current)\" && echo '**Recent commits:**' && echo '```text' && git log --oneline -5 --decorate && echo '```' && echo '**Working tree:**' && echo '```text' && git status --short && echo '```'",
+            "timeout": 10
           }
         ]
       },
@@ -16,32 +16,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-hooks.mjs\" init --compact-recovery",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-hooks.mjs\" pre-compact",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-hooks.mjs\" end",
-            "timeout": 30
+            "command": "echo '## Git Context (post-compaction)' && echo \"**Branch:** $(git branch --show-current)\" && echo '**Recent commits:**' && echo '```text' && git log --oneline -5 --decorate && echo '```' && echo '**Working tree:**' && echo '```text' && git status --short && echo '```' && echo '**Diff from main:**' && echo '```text' && git diff --stat origin/main...HEAD 2>/dev/null && echo '```'",
+            "timeout": 10
           }
         ]
       }
