@@ -2,22 +2,34 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup",
+        "matcher": "startup|resume",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/chat-init-hooks.mjs\" --phase pre",
-            "timeout": 120
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-hooks.mjs\" init",
+            "timeout": 30
           }
         ]
       },
       {
-        "matcher": "resume",
+        "matcher": "compact",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/chat-init-hooks.mjs\" --phase pre",
-            "timeout": 120
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-hooks.mjs\" init --compact-recovery",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-hooks.mjs\" pre-compact",
+            "timeout": 30
           }
         ]
       }
@@ -28,19 +40,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/chat-init-hooks.mjs\" --phase post",
-            "timeout": 120
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/stop-hook-git-check.sh"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-hooks.mjs\" end",
+            "timeout": 30
           }
         ]
       }

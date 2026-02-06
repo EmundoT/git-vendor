@@ -42,5 +42,4 @@ internal/core/*_mock_test.go
 .claude/settings.local.json
 
 # Claude Code generated hook logs
-.claude/agent_init.md
-.claude/agent_end.md
+.claude/logs/
