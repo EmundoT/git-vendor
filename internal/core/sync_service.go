@@ -28,7 +28,15 @@ type RefMetadata struct {
 // SyncServiceInterface defines the contract for vendor synchronization.
 // This interface enables mocking in tests and potential alternative sync strategies.
 type SyncServiceInterface interface {
+	// Sync synchronizes vendors based on the provided options, loading config and lock internally.
 	Sync(opts SyncOptions) error
+
+	// SyncVendor syncs a single vendor's refs and returns per-ref metadata and copy stats.
+	//
+	// lockedRefs controls the sync mode:
+	//   - nil: update mode — fetches the latest commit on each ref (FETCH_HEAD).
+	//   - non-nil map: sync mode — checks out the exact commit hash for each ref.
+	//     Missing or empty entries within the map are treated as unlocked for that ref.
 	SyncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error)
 }
 
@@ -41,8 +49,8 @@ type SyncService struct {
 	lockStore   LockStore
 	gitClient   GitClient
 	fs          FileSystem
-	fileCopy    *FileCopyService
-	license     *LicenseService
+	fileCopy    FileCopyServiceInterface
+	license     LicenseServiceInterface
 	cache       CacheStore
 	hooks       HookExecutor
 	ui          UICallback
@@ -55,8 +63,8 @@ func NewSyncService(
 	lockStore LockStore,
 	gitClient GitClient,
 	fs FileSystem,
-	fileCopy *FileCopyService,
-	license *LicenseService,
+	fileCopy FileCopyServiceInterface,
+	license LicenseServiceInterface,
 	cache CacheStore,
 	hooks HookExecutor,
 	ui UICallback,

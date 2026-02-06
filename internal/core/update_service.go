@@ -22,7 +22,7 @@ var _ UpdateServiceInterface = (*UpdateService)(nil)
 type UpdateService struct {
 	configStore ConfigStore
 	lockStore   LockStore
-	syncService *SyncService
+	syncService SyncServiceInterface
 	cache       CacheStore
 	ui          UICallback
 	rootDir     string
@@ -32,7 +32,7 @@ type UpdateService struct {
 func NewUpdateService(
 	configStore ConfigStore,
 	lockStore LockStore,
-	syncService *SyncService,
+	syncService SyncServiceInterface,
 	cache CacheStore,
 	ui UICallback,
 	rootDir string,
