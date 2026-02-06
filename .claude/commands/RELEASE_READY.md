@@ -1,4 +1,5 @@
 ---
+disable-model-invocation: true
 hooks:
   SessionStart:
     - hooks:
