@@ -8,6 +8,13 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// ValidationServiceInterface defines the contract for config validation and conflict detection.
+// This interface enables mocking in tests and potential alternative validation strategies.
+type ValidationServiceInterface interface {
+	ValidateConfig() error
+	DetectConflicts() ([]types.PathConflict, error)
+}
+
 // ValidationService handles config validation and conflict detection
 type ValidationService struct {
 	configStore ConfigStore

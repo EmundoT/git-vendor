@@ -606,7 +606,7 @@ func TestSync_AllVendors(t *testing.T) {
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: sync all vendors
 	err := syncService.Sync(SyncOptions{})
@@ -654,7 +654,7 @@ func TestSync_SingleVendor_ByName(t *testing.T) {
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: sync only vendor-b
 	err := syncService.Sync(SyncOptions{VendorName: "vendor-b"})
@@ -681,7 +681,7 @@ func TestSync_VendorNotFound(t *testing.T) {
 	lock.EXPECT().Load().Return(testLock, nil)
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: sync nonexistent vendor
 	err := syncService.Sync(SyncOptions{VendorName: "nonexistent"})
@@ -725,7 +725,7 @@ func TestSync_DryRun_PreviewMode(t *testing.T) {
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Times(0)
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: dry-run mode
 	err := syncService.Sync(SyncOptions{DryRun: true})
@@ -771,7 +771,7 @@ func TestSync_Force_IgnoresLock(t *testing.T) {
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: force re-download (ignore lock)
 	err := syncService.Sync(SyncOptions{Force: true})
@@ -789,7 +789,7 @@ func TestSync_ConfigLoadFails(t *testing.T) {
 	config.EXPECT().Load().Return(types.VendorConfig{}, fmt.Errorf("config file missing"))
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute
 	err := syncService.Sync(SyncOptions{})
@@ -817,7 +817,7 @@ func TestSync_LockLoadFails(t *testing.T) {
 	lock.EXPECT().Load().Return(types.VendorLock{}, fmt.Errorf("lock file corrupt"))
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute
 	err := syncService.Sync(SyncOptions{})
@@ -852,7 +852,7 @@ func TestBuildLockMap_MultipleVendorsAndRefs(t *testing.T) {
 	}
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute
 	lockMap := syncService.buildLockMap(testLock)
@@ -892,7 +892,7 @@ func TestBuildLockMap_EmptyLock(t *testing.T) {
 	emptyLock := types.VendorLock{Vendors: []types.LockDetails{}}
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute
 	lockMap := syncService.buildLockMap(emptyLock)
@@ -919,7 +919,7 @@ func TestBuildLockMap_DuplicateRefs(t *testing.T) {
 	}
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute
 	lockMap := syncService.buildLockMap(testLock)
@@ -947,7 +947,7 @@ func TestValidateVendorExists_Found(t *testing.T) {
 	}
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: validate vendor-b exists
 	err := syncService.validateVendorExists(testConfig, "vendor-b")
@@ -970,7 +970,7 @@ func TestValidateVendorExists_NotFound(t *testing.T) {
 	}
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: validate nonexistent vendor
 	err := syncService.validateVendorExists(testConfig, "vendor-z")
@@ -991,7 +991,7 @@ func TestValidateVendorExists_EmptyConfig(t *testing.T) {
 	emptyConfig := types.VendorConfig{Vendors: []types.VendorSpec{}}
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: validate vendor in empty config
 	err := syncService.validateVendorExists(emptyConfig, "any-vendor")
@@ -1039,7 +1039,7 @@ func TestPreviewSyncVendor_LockedRefs(t *testing.T) {
 	}
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: preview with locked refs
 	// Note: This function prints to stdout, so we're just verifying no panic
@@ -1069,7 +1069,7 @@ func TestPreviewSyncVendor_UnlockedRefs(t *testing.T) {
 	}
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: preview with nil lockedRefs (unlocked mode)
 	syncService.previewSyncVendor(&vendor, nil)
@@ -1094,7 +1094,7 @@ func TestPreviewSyncVendor_NoMappings(t *testing.T) {
 	}
 
 	syncer := createMockSyncer(git, fs, config, lock, license, nil)
-	syncService := syncer.sync
+	syncService := syncer.sync.(*SyncService)
 
 	// Execute: preview with no mappings
 	syncService.previewSyncVendor(&vendor, nil)

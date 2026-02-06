@@ -77,26 +77,42 @@ func (t *NoOpProgressTracker) Fail(_ error) {}
 
 // VendorSyncer orchestrates vendor operations using domain services
 type VendorSyncer struct {
-	repository     *VendorRepository
-	sync           *SyncService
-	update         *UpdateService
-	license        *LicenseService
-	validation     *ValidationService
-	explorer       *RemoteExplorer
-	updateChecker  *UpdateChecker
-	verifyService  *VerifyService
-	vulnScanner    VulnScannerInterface // Interface for testability
-	configStore    ConfigStore
-	lockStore      LockStore
-	gitClient      GitClient
+	repository    VendorRepositoryInterface
+	sync          SyncServiceInterface
+	update        UpdateServiceInterface
+	license       LicenseServiceInterface
+	validation    ValidationServiceInterface
+	explorer      RemoteExplorerInterface
+	updateChecker UpdateCheckerInterface
+	verifyService VerifyServiceInterface
+	vulnScanner   VulnScannerInterface
+	configStore   ConfigStore
+	lockStore     LockStore
+	gitClient     GitClient
 	licenseChecker LicenseChecker
 	fs             FileSystem
 	rootDir        string
 	ui             UICallback
 }
 
+// ServiceOverrides allows injecting custom service implementations into VendorSyncer.
+// All fields are optional — nil values cause the default implementation to be created.
+// This enables targeted mocking in tests without affecting other services.
+type ServiceOverrides struct {
+	Repository    VendorRepositoryInterface
+	Sync          SyncServiceInterface
+	Update        UpdateServiceInterface
+	License       LicenseServiceInterface
+	Validation    ValidationServiceInterface
+	Explorer      RemoteExplorerInterface
+	UpdateChecker UpdateCheckerInterface
+	VerifyService VerifyServiceInterface
+	VulnScanner   VulnScannerInterface
+}
+
 // NewVendorSyncer creates a new VendorSyncer with injected dependencies.
-// vulnScanner is optional - if nil, a default VulnScanner will be created.
+// overrides is optional — pass nil to use all default service implementations.
+// Individual service fields within overrides that are nil also use defaults.
 func NewVendorSyncer(
 	configStore ConfigStore,
 	lockStore LockStore,
@@ -105,34 +121,34 @@ func NewVendorSyncer(
 	licenseChecker LicenseChecker,
 	rootDir string,
 	ui UICallback,
-	vulnScanner VulnScannerInterface,
+	overrides *ServiceOverrides,
 ) *VendorSyncer {
 	if ui == nil {
 		ui = &SilentUICallback{}
 	}
+	if overrides == nil {
+		overrides = &ServiceOverrides{}
+	}
 
-	// Create domain services
+	// Build all default concrete services first (preserving internal wiring)
 	repository := NewVendorRepository(configStore)
 	fileCopy := NewFileCopyService(fs)
 	license := NewLicenseService(licenseChecker, fs, rootDir, ui)
 	cache := NewFileCacheStore(fs, rootDir)
 	hooks := NewHookService(ui)
-	sync := NewSyncService(configStore, lockStore, gitClient, fs, fileCopy, license, cache, hooks, ui, rootDir)
-	update := NewUpdateService(configStore, lockStore, sync, cache, ui, rootDir)
+	syncSvc := NewSyncService(configStore, lockStore, gitClient, fs, fileCopy, license, cache, hooks, ui, rootDir)
+	updateSvc := NewUpdateService(configStore, lockStore, syncSvc, cache, ui, rootDir)
 	validation := NewValidationService(configStore)
 	explorer := NewRemoteExplorer(gitClient, fs)
 	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
 	verifyService := NewVerifyService(configStore, lockStore, cache, fs, rootDir)
+	vulnScanner := VulnScannerInterface(NewVulnScanner(lockStore, configStore))
 
-	// Use provided scanner or create default
-	if vulnScanner == nil {
-		vulnScanner = NewVulnScanner(lockStore, configStore)
-	}
-
-	return &VendorSyncer{
+	// Apply overrides where provided
+	syncer := &VendorSyncer{
 		repository:     repository,
-		sync:           sync,
-		update:         update,
+		sync:           syncSvc,
+		update:         updateSvc,
 		license:        license,
 		validation:     validation,
 		explorer:       explorer,
@@ -147,6 +163,36 @@ func NewVendorSyncer(
 		rootDir:        rootDir,
 		ui:             ui,
 	}
+
+	if overrides.Repository != nil {
+		syncer.repository = overrides.Repository
+	}
+	if overrides.Sync != nil {
+		syncer.sync = overrides.Sync
+	}
+	if overrides.Update != nil {
+		syncer.update = overrides.Update
+	}
+	if overrides.License != nil {
+		syncer.license = overrides.License
+	}
+	if overrides.Validation != nil {
+		syncer.validation = overrides.Validation
+	}
+	if overrides.Explorer != nil {
+		syncer.explorer = overrides.Explorer
+	}
+	if overrides.UpdateChecker != nil {
+		syncer.updateChecker = overrides.UpdateChecker
+	}
+	if overrides.VerifyService != nil {
+		syncer.verifyService = overrides.VerifyService
+	}
+	if overrides.VulnScanner != nil {
+		syncer.vulnScanner = overrides.VulnScanner
+	}
+
+	return syncer
 }
 
 // Init initializes vendor directory structure
@@ -437,7 +483,7 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 //
 //nolint:gocritic // test wrapper maintains value signature for compatibility
 func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
-	return s.sync.syncVendor(&v, lockedRefs, SyncOptions{})
+	return s.sync.SyncVendor(&v, lockedRefs, SyncOptions{})
 }
 
 // CheckUpdates checks for available updates for all vendors

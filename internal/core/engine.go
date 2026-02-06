@@ -41,8 +41,7 @@ func NewManager() *Manager {
 
 	ui := &SilentUICallback{} // Default to silent
 
-	// Create syncer with injected dependencies
-	// Pass nil for vulnScanner to use the default implementation
+	// Create syncer with injected dependencies (nil overrides = all defaults)
 	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, rootDir, ui, nil)
 
 	return &Manager{
