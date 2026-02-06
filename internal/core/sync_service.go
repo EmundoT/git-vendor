@@ -25,6 +25,13 @@ type RefMetadata struct {
 	VersionTag string // Git tag pointing to commit, if any
 }
 
+// SyncServiceInterface defines the contract for vendor synchronization.
+// This interface enables mocking in tests and potential alternative sync strategies.
+type SyncServiceInterface interface {
+	Sync(opts SyncOptions) error
+	SyncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error)
+}
+
 // SyncService handles vendor synchronization operations
 type SyncService struct {
 	configStore ConfigStore
@@ -154,7 +161,7 @@ func (s *SyncService) syncSequential(vendors []types.VendorSpec, lockMap map[str
 		if opts.Force {
 			refs = nil
 		}
-		_, stats, err := s.syncVendor(&v, refs, opts)
+		_, stats, err := s.SyncVendor(&v, refs, opts)
 		if err != nil {
 			progress.Fail(err)
 			return err
@@ -183,7 +190,7 @@ func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[strin
 
 	// Define sync function for a single vendor
 	syncFunc := func(v types.VendorSpec, lockedRefs map[string]string, syncOpts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
-		updatedRefs, stats, err := s.syncVendor(&v, lockedRefs, syncOpts)
+		updatedRefs, stats, err := s.SyncVendor(&v, lockedRefs, syncOpts)
 		if err != nil {
 			progress.Fail(err)
 			return nil, CopyStats{}, err
@@ -327,9 +334,9 @@ func (s *SyncService) previewSyncVendor(v *types.VendorSpec, lockedRefs map[stri
 	fmt.Println()
 }
 
-// syncVendor syncs a single vendor
-// Returns a map of ref to RefMetadata and total stats for all synced refs
-func (s *SyncService) syncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+// SyncVendor syncs a single vendor.
+// Returns a map of ref to RefMetadata and total stats for all synced refs.
+func (s *SyncService) SyncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 	// Check cache for all refs first (if cache enabled)
 	canSkipClone := false
 	if !opts.NoCache && !opts.Force && lockedRefs != nil {

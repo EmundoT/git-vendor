@@ -8,6 +8,13 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// UpdateServiceInterface defines the contract for update operations and lockfile regeneration.
+// This interface enables mocking in tests and potential alternative update strategies.
+type UpdateServiceInterface interface {
+	UpdateAll() error
+	UpdateAllWithOptions(parallelOpts types.ParallelOptions) error
+}
+
 // UpdateService handles update operations and lockfile regeneration
 type UpdateService struct {
 	configStore ConfigStore
@@ -80,7 +87,7 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 	for _, v := range config.Vendors {
 		// Sync vendor without lock (force latest)
 		// During update, we always force and skip cache (we want fresh data)
-		updatedRefs, _, err := s.syncService.syncVendor(&v, nil, SyncOptions{Force: true, NoCache: true})
+		updatedRefs, _, err := s.syncService.SyncVendor(&v, nil, SyncOptions{Force: true, NoCache: true})
 		if err != nil {
 			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 			// Continue on error - don't fail the whole update
@@ -156,7 +163,7 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 
 	// Define update function for a single vendor
 	updateFunc := func(v types.VendorSpec, opts SyncOptions) (map[string]RefMetadata, error) {
-		updatedRefs, _, err := s.syncService.syncVendor(&v, nil, opts)
+		updatedRefs, _, err := s.syncService.SyncVendor(&v, nil, opts)
 		if err != nil {
 			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 			progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))

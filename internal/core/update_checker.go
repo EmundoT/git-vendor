@@ -6,6 +6,12 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// UpdateCheckerInterface defines the contract for checking vendor updates.
+// This interface enables mocking in tests and potential alternative update check strategies.
+type UpdateCheckerInterface interface {
+	CheckUpdates() ([]types.UpdateCheckResult, error)
+}
+
 // UpdateChecker handles checking for vendor updates
 type UpdateChecker struct {
 	configStore ConfigStore
