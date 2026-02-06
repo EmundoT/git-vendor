@@ -1,3 +1,13 @@
+---
+hooks:
+  SessionStart:
+    - hooks:
+        - type: command
+          command: "echo '## Coverage Pre-Scan' && echo \"**Branch:** $(git branch --show-current)\" && echo \"**Test files:** $(find . -name '*_test.go' -not -path './vendor/*' 2>/dev/null | wc -l)\" && echo \"**Test functions:** $(grep -rn '^func Test' internal/ 2>/dev/null | wc -l)\" && echo \"**Exported functions:** $(grep -rn '^func [A-Z]' internal/core/*.go 2>/dev/null | grep -v _test.go | wc -l)\""
+          once: true
+          timeout: 15
+---
+
 # Test Coverage Workflow
 
 **Role:** You are a test coverage analyst working in a concurrent multi-agent Git environment. Your goal is to identify coverage gaps, generate test creation prompts for other Claude instances, and verify new tests actually exercise the code through iterative review cycles.
