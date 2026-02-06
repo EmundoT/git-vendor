@@ -177,7 +177,6 @@ func TestManager_ParseSmartURL(t *testing.T) {
 		NewMockConfigStore(ctrl),
 		NewMockLockStore(ctrl),
 		NewMockLicenseChecker(ctrl),
-		&SilentUICallback{},
 	)
 	manager := NewManagerWithSyncer(syncer)
 
@@ -204,7 +203,6 @@ func TestManager_UpdateVerboseMode(t *testing.T) {
 		NewMockConfigStore(ctrl),
 		NewMockLockStore(ctrl),
 		NewMockLicenseChecker(ctrl),
-		&SilentUICallback{},
 	)
 	manager := NewManagerWithSyncer(syncer)
 
@@ -214,5 +212,96 @@ func TestManager_UpdateVerboseMode(t *testing.T) {
 	// Verify git client was updated (by checking it's not nil)
 	if manager.syncer.gitClient == nil {
 		t.Error("Expected git client to be updated")
+	}
+}
+
+// ============================================================================
+// ServiceOverrides Tests
+// ============================================================================
+
+func TestNewVendorSyncer_ServiceOverrides(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+	mockFS := NewMockFileSystem(ctrl)
+	mockLicense := NewMockLicenseChecker(ctrl)
+	ui := &SilentUICallback{}
+
+	// Create a custom VendorRepository to inject
+	customRepo := NewVendorRepository(mockConfig)
+
+	overrides := &ServiceOverrides{
+		Repository: customRepo,
+	}
+
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, overrides)
+
+	// Verify the override was applied: repository should be our custom instance
+	if syncer.repository != customRepo {
+		t.Error("Expected ServiceOverrides.Repository to be injected into VendorSyncer")
+	}
+
+	// Verify non-overridden services still got defaults (not nil)
+	if syncer.sync == nil {
+		t.Error("Expected default SyncService when not overridden")
+	}
+	if syncer.update == nil {
+		t.Error("Expected default UpdateService when not overridden")
+	}
+	if syncer.validation == nil {
+		t.Error("Expected default ValidationService when not overridden")
+	}
+	if syncer.explorer == nil {
+		t.Error("Expected default RemoteExplorer when not overridden")
+	}
+	if syncer.vulnScanner == nil {
+		t.Error("Expected default VulnScanner when not overridden")
+	}
+}
+
+func TestNewVendorSyncer_NilOverrides(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+	mockFS := NewMockFileSystem(ctrl)
+	mockLicense := NewMockLicenseChecker(ctrl)
+	ui := &SilentUICallback{}
+
+	// Pass nil overrides — all services should be defaults
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
+
+	// Verify all domain services are non-nil
+	if syncer.repository == nil {
+		t.Error("Expected default VendorRepository")
+	}
+	if syncer.sync == nil {
+		t.Error("Expected default SyncService")
+	}
+	if syncer.update == nil {
+		t.Error("Expected default UpdateService")
+	}
+	if syncer.license == nil {
+		t.Error("Expected default LicenseService")
+	}
+	if syncer.validation == nil {
+		t.Error("Expected default ValidationService")
+	}
+	if syncer.explorer == nil {
+		t.Error("Expected default RemoteExplorer")
+	}
+	if syncer.updateChecker == nil {
+		t.Error("Expected default UpdateChecker")
+	}
+	if syncer.verifyService == nil {
+		t.Error("Expected default VerifyService")
+	}
+	if syncer.vulnScanner == nil {
+		t.Error("Expected default VulnScanner")
 	}
 }
