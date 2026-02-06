@@ -20,7 +20,7 @@ type FileConfigStore struct {
 // NewFileConfigStore creates a new FileConfigStore
 func NewFileConfigStore(rootDir string) *FileConfigStore {
 	return &FileConfigStore{
-		store: NewYAMLStore[types.VendorConfig](rootDir, ConfigName, true), // allowMissing=true
+		store: NewYAMLStore[types.VendorConfig](rootDir, ConfigFile, true), // allowMissing=true
 	}
 }
 
