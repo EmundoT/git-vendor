@@ -22,11 +22,11 @@ func TestManager_ConfigPath(t *testing.T) {
 	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
-	mockConfig.EXPECT().Path().Return("vendor/vendor.yml")
+	mockConfig.EXPECT().Path().Return(ConfigPath)
 
 	path := manager.ConfigPath()
-	if path != "vendor/vendor.yml" {
-		t.Errorf("Expected 'vendor/vendor.yml', got '%s'", path)
+	if path != ConfigPath {
+		t.Errorf("Expected '%s', got '%s'", ConfigPath, path)
 	}
 }
 
@@ -44,11 +44,11 @@ func TestManager_LockPath(t *testing.T) {
 	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
-	mockLock.EXPECT().Path().Return("vendor/vendor.lock")
+	mockLock.EXPECT().Path().Return(LockPath)
 
 	path := manager.LockPath()
-	if path != "vendor/vendor.lock" {
-		t.Errorf("Expected 'vendor/vendor.lock', got '%s'", path)
+	if path != LockPath {
+		t.Errorf("Expected '%s', got '%s'", LockPath, path)
 	}
 }
 
@@ -70,9 +70,9 @@ func TestManager_LicensePath(t *testing.T) {
 		name     string
 		expected string
 	}{
-		{"test-vendor", "vendor/licenses/test-vendor.txt"},
-		{"another-lib", "vendor/licenses/another-lib.txt"},
-		{"my-package", "vendor/licenses/my-package.txt"},
+		{"test-vendor", VendorDir + "/" + LicensesDir + "/test-vendor.txt"},
+		{"another-lib", VendorDir + "/" + LicensesDir + "/another-lib.txt"},
+		{"my-package", VendorDir + "/" + LicensesDir + "/my-package.txt"},
 	}
 
 	for _, tt := range tests {
