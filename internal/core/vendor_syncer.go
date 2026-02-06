@@ -77,6 +77,7 @@ func (t *NoOpProgressTracker) Fail(_ error) {}
 
 // VendorSyncer orchestrates vendor operations using domain services
 type VendorSyncer struct {
+	// Domain services (injectable via ServiceOverrides)
 	repository    VendorRepositoryInterface
 	sync          SyncServiceInterface
 	update        UpdateServiceInterface
@@ -86,9 +87,11 @@ type VendorSyncer struct {
 	updateChecker UpdateCheckerInterface
 	verifyService VerifyServiceInterface
 	vulnScanner   VulnScannerInterface
-	configStore   ConfigStore
-	lockStore     LockStore
-	gitClient     GitClient
+
+	// Infrastructure dependencies
+	configStore    ConfigStore
+	lockStore      LockStore
+	gitClient      GitClient
 	licenseChecker LicenseChecker
 	fs             FileSystem
 	rootDir        string
@@ -98,6 +101,12 @@ type VendorSyncer struct {
 // ServiceOverrides allows injecting custom service implementations into VendorSyncer.
 // All fields are optional — nil values cause the default implementation to be created.
 // This enables targeted mocking in tests without affecting other services.
+//
+// Note: Overrides apply to VendorSyncer's direct fields only. Internal wiring between
+// services (e.g., UpdateService holds a concrete *SyncService) is not affected.
+// If you override Sync without overriding Update, the UpdateService will still use
+// the default SyncService internally. Override both when testing sync behavior
+// that flows through update operations.
 type ServiceOverrides struct {
 	Repository    VendorRepositoryInterface
 	Sync          SyncServiceInterface
@@ -479,7 +488,8 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 	}, nil
 }
 
-// syncVendor is exposed for testing - delegates to sync service with default options
+// syncVendor is a test convenience wrapper that accepts VendorSpec by value
+// and delegates to the SyncServiceInterface with default options.
 //
 //nolint:gocritic // test wrapper maintains value signature for compatibility
 func (s *VendorSyncer) syncVendor(v types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {

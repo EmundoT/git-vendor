@@ -12,6 +12,9 @@ type UpdateCheckerInterface interface {
 	CheckUpdates() ([]types.UpdateCheckResult, error)
 }
 
+// Compile-time interface satisfaction check.
+var _ UpdateCheckerInterface = (*UpdateChecker)(nil)
+
 // UpdateChecker handles checking for vendor updates
 type UpdateChecker struct {
 	configStore ConfigStore

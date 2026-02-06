@@ -32,6 +32,9 @@ type SyncServiceInterface interface {
 	SyncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error)
 }
 
+// Compile-time interface satisfaction check.
+var _ SyncServiceInterface = (*SyncService)(nil)
+
 // SyncService handles vendor synchronization operations
 type SyncService struct {
 	configStore ConfigStore

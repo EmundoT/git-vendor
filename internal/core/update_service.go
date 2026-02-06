@@ -15,6 +15,9 @@ type UpdateServiceInterface interface {
 	UpdateAllWithOptions(parallelOpts types.ParallelOptions) error
 }
 
+// Compile-time interface satisfaction check.
+var _ UpdateServiceInterface = (*UpdateService)(nil)
+
 // UpdateService handles update operations and lockfile regeneration
 type UpdateService struct {
 	configStore ConfigStore

@@ -15,6 +15,9 @@ type RemoteExplorerInterface interface {
 	ParseSmartURL(rawURL string) (string, string, string)
 }
 
+// Compile-time interface satisfaction check.
+var _ RemoteExplorerInterface = (*RemoteExplorer)(nil)
+
 // RemoteExplorer handles remote repository browsing and URL parsing
 type RemoteExplorer struct {
 	gitClient GitClient

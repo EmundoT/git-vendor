@@ -15,6 +15,9 @@ type VendorRepositoryInterface interface {
 	GetConfig() (types.VendorConfig, error)
 }
 
+// Compile-time interface satisfaction check.
+var _ VendorRepositoryInterface = (*VendorRepository)(nil)
+
 // VendorRepository handles vendor CRUD operations
 type VendorRepository struct {
 	configStore ConfigStore
