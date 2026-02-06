@@ -1,3 +1,13 @@
+---
+hooks:
+  SessionStart:
+    - hooks:
+        - type: command
+          command: "echo '## Security Pre-Scan' && echo \"**Branch:** $(git branch --show-current)\" && echo \"**panic() in library:** $(grep -rn 'panic(' internal/core/ 2>/dev/null | grep -v _test.go | wc -l)\" && echo \"**exec.Command calls:** $(grep -rn 'exec.Command' internal/ 2>/dev/null | wc -l)\" && echo \"**ValidateDestPath usage:** $(grep -rn 'ValidateDestPath' internal/ 2>/dev/null | wc -l)\" && echo \"**Credential keywords:** $(grep -rni 'password\\|secret\\|token' internal/ 2>/dev/null | grep -v _test.go | wc -l)\""
+          once: true
+          timeout: 15
+---
+
 # Security Audit Workflow
 
 **Role:** You are a security auditor working in a concurrent multi-agent Git environment. Your goal is to systematically identify security vulnerabilities, generate remediation prompts for other Claude instances, and verify fixes meet security standards through iterative review cycles.
