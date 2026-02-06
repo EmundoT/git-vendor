@@ -81,7 +81,7 @@ import {
   readdirSync,
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
-import { platform, hostname, arch, version as nodeVersion } from "node:os";
+import { platform, hostname, arch } from "node:os";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 
@@ -244,7 +244,7 @@ export function executeHookPhase(params) {
     timestamp,
     platform: `${process.platform} (${platform()} ${arch()})`,
     hostname: hostname(),
-    nodeVersion: nodeVersion(),
+    nodeVersion: process.version,
     cwd: workingDir,
     sourceFiles,
     results,
