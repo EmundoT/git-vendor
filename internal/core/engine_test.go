@@ -19,7 +19,7 @@ func TestManager_ConfigPath(t *testing.T) {
 	mockLicense := NewMockLicenseChecker(ctrl)
 	ui := &SilentUICallback{}
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
 	mockConfig.EXPECT().Path().Return("vendor/vendor.yml")
@@ -41,7 +41,7 @@ func TestManager_LockPath(t *testing.T) {
 	mockLicense := NewMockLicenseChecker(ctrl)
 	ui := &SilentUICallback{}
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
 	mockLock.EXPECT().Path().Return("vendor/vendor.lock")
@@ -63,7 +63,7 @@ func TestManager_LicensePath(t *testing.T) {
 	mockLicense := NewMockLicenseChecker(ctrl)
 	ui := &SilentUICallback{}
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
 	tests := []struct {
@@ -96,7 +96,7 @@ func TestManager_SetUICallback(t *testing.T) {
 	mockLicense := NewMockLicenseChecker(ctrl)
 	ui := &SilentUICallback{}
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
 	// Initially should be silent UI

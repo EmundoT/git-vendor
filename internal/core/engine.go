@@ -75,7 +75,8 @@ func NewManager() *Manager {
 	ui := &SilentUICallback{} // Default to silent
 
 	// Create syncer with injected dependencies
-	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, rootDir, ui)
+	// Pass nil for vulnScanner to use the default implementation
+	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, licenseChecker, rootDir, ui, nil)
 
 	return &Manager{
 		RootDir: rootDir,
@@ -249,6 +250,11 @@ func (m *Manager) Verify() (*types.VerifyResult, error) {
 	return m.syncer.Verify()
 }
 
+// Scan performs vulnerability scanning against OSV.dev
+func (m *Manager) Scan(failOn string) (*types.ScanResult, error) {
+	return m.syncer.Scan(failOn)
+}
+
 // MigrateLockfile updates an existing lockfile to add missing metadata fields
 func (m *Manager) MigrateLockfile() (int, error) {
 	return m.syncer.MigrateLockfile()
@@ -262,6 +268,12 @@ func (m *Manager) DiffVendor(vendorName string) ([]types.VendorDiff, error) {
 // WatchConfig watches for changes to vendor.yml and triggers a callback
 func (m *Manager) WatchConfig(callback func() error) error {
 	return m.syncer.WatchConfig(callback)
+}
+
+// GenerateSBOM generates a Software Bill of Materials in the specified format
+func (m *Manager) GenerateSBOM(format SBOMFormat, projectName string) ([]byte, error) {
+	generator := NewSBOMGenerator(m.syncer.lockStore, m.syncer.configStore, m.syncer.fs, projectName)
+	return generator.Generate(format)
 }
 
 // UpdateVerboseMode updates the verbose flag for git operations

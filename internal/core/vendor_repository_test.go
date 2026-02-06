@@ -199,7 +199,7 @@ func TestAudit(t *testing.T) {
 
 			// Create syncer with capturing UI
 			captureUI := &capturingUICallback{}
-			syncer := NewVendorSyncer(config, lock, git, fs, license, "/mock/vendor", captureUI)
+			syncer := NewVendorSyncer(config, lock, git, fs, license, "/mock/vendor", captureUI, nil)
 
 			// Execute
 			syncer.Audit()
