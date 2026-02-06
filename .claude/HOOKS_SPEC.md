@@ -1,356 +1,452 @@
-# Chat Init Hooks -- System Spec
+# Chat Init Hooks -- System Spec v2
 
 ## Problem
 
 When a Claude Code session starts, Claude has no idea what state the project is
-in. It doesn't know the current branch, whether there are uncommitted changes,
-what toolchain versions are installed, or what happened in the last session. When
-a session ends, there's no record of what state things were left in. When context
-compaction fires mid-session, Claude forgets everything.
+in. When context compaction fires, Claude forgets everything. When a slash
+command is invoked, there's no way to run setup commands specific to that
+command's workflow. When a session ends, there's no record of final state.
 
-This system solves that by running shell commands at session boundaries and
-feeding the results back into Claude's context automatically.
+## What Claude Code Gives Us Natively
 
-## How Claude Code Hooks Work (the platform)
+Claude Code has a built-in hook system. Every hook receives JSON on stdin with
+context about what just happened. What matters is **which fields each event
+provides**, because that determines what we can actually detect and act on.
 
-Claude Code has a built-in hook system. You configure it in
-`.claude/settings.json`. It works like this:
+### The events and their data
 
-1. A **lifecycle event** fires (session starts, a tool runs, Claude stops, etc.)
-2. Claude Code looks in settings.json for hooks registered to that event
-3. For each matching hook, Claude Code **pipes JSON to the hook's stdin** and
-   runs the command
-4. The hook runs, does whatever it wants, and exits
-5. **If the hook exits 0**, Claude Code takes its **stdout** and injects it into
-   Claude's conversation context (Claude can see it)
-6. **If the hook exits 2**, the action is **blocked** (e.g., prevent a tool from
-   running)
-7. **Any other exit code**, the action proceeds but stdout is discarded -- only
-   stderr is logged (Claude never sees it)
-
-The JSON piped to stdin looks like this (for a SessionStart event):
+**SessionStart** -- fires when a session begins, resumes, or recovers from
+compaction.
 
 ```json
 {
-  "session_id": "0a8aec4b-bdfb-471d-885b-6aff3739d5fe",
-  "cwd": "/home/user/git-vendor-private",
+  "session_id": "abc123",
+  "transcript_path": "/path/to/transcript.jsonl",
+  "cwd": "/home/user/project",
+  "permission_mode": "default",
   "hook_event_name": "SessionStart",
-  "source": "startup"
+  "source": "startup",
+  "model": "claude-sonnet-4-5-20250929"
 }
 ```
 
-The `source` field for SessionStart can be:
-- `startup` -- brand new session
-- `resume` -- continuing a previous session
-- `compact` -- context window was full, conversation was summarized to free space
-- `clear` -- user ran /clear
+`source` is one of: `startup`, `resume`, `compact`, `clear`. This tells us
+HOW the session started but NOT what the user intends to do.
 
-### Available events
+**UserPromptSubmit** -- fires when the user presses enter, before Claude
+processes the prompt.
 
-| Event             | When it fires                              | Matcher filters on |
-|-------------------|--------------------------------------------|--------------------|
-| SessionStart      | Session begins, resumes, or compacts       | source (startup, resume, compact, clear) |
-| SessionEnd        | Session terminates                         | reason (clear, logout, prompt_input_exit, other) |
-| Stop              | Claude finishes a response (every time)    | no matcher         |
-| PreToolUse        | Before a tool runs (can block it)          | tool name          |
-| PostToolUse       | After a tool runs successfully             | tool name          |
-| UserPromptSubmit  | User submits a prompt, before processing   | no matcher         |
-| PreCompact        | Before context compaction                  | trigger (manual, auto) |
-| Notification      | Claude needs attention                     | notification type  |
-| SubagentStart     | A subagent is spawned                      | agent type         |
-| SubagentStop      | A subagent finishes                        | agent type         |
+```json
+{
+  "session_id": "abc123",
+  "cwd": "/home/user/project",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "the full text of what the user submitted"
+}
+```
+
+The `prompt` field contains the user's text. If they invoked a slash command,
+this contains the **expanded content** of that command file (Claude Code expands
+slash commands before the hook fires). No matcher support -- fires on every
+prompt.
+
+**PreCompact** -- fires before context compaction destroys the conversation.
+
+```json
+{
+  "session_id": "abc123",
+  "hook_event_name": "PreCompact",
+  "trigger": "auto",
+  "custom_instructions": ""
+}
+```
+
+This is the last chance to snapshot state before Claude forgets everything.
+
+**Stop** -- fires every time Claude finishes a response.
+
+```json
+{
+  "session_id": "abc123",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "transcript_path": "/path/to/transcript.jsonl"
+}
+```
+
+`stop_hook_active` is `true` if Claude is already continuing from a previous
+Stop hook. Check this to prevent infinite loops.
+
+**SessionEnd** -- fires when the session terminates.
+
+```json
+{
+  "session_id": "abc123",
+  "hook_event_name": "SessionEnd",
+  "reason": "prompt_input_exit"
+}
+```
+
+`reason` is one of: `clear`, `logout`, `prompt_input_exit`,
+`bypass_permissions_disabled`, `other`.
+
+### What hooks can return
+
+| Exit code | Effect |
+|-----------|--------|
+| 0 | Action proceeds. **stdout is injected into Claude's context** (for SessionStart, UserPromptSubmit). |
+| 2 | Action is **blocked**. stderr is fed back to Claude as an error. |
+| Other | Action proceeds. stdout is **discarded**. stderr logged in verbose mode only. |
+
+For richer control, exit 0 and print JSON to stdout:
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "This text goes into Claude's context"
+  }
+}
+```
 
 ### Hook types
 
-| Type      | What it does |
-|-----------|-------------|
-| `command` | Runs a shell command. This is what our system uses. |
-| `prompt`  | Sends a prompt to a Claude model (Haiku default). Returns `{"ok": true/false}`. For judgment calls. |
-| `agent`   | Spawns a subagent with tool access (can read files, run commands). For verification that needs investigation. |
+| Type | What it does |
+|------|-------------|
+| `command` | Runs a shell command. Stdin JSON in, stdout/exit code out. |
+| `prompt` | Sends a prompt to a fast Claude model. Returns `{"ok": true/false, "reason": "..."}`. |
+| `agent` | Spawns a subagent with tool access (Read, Grep, Glob, Bash). Multi-turn verification. |
 
-## What Our System Adds
+### Skill/agent frontmatter hooks (the key insight)
 
-Our system is a **single Node.js script** that Claude Code invokes via the hook
-system. It does three things:
+**Slash command files can define their own hooks in YAML frontmatter.** These
+hooks are scoped to that command's lifecycle -- they only run while the command
+is active.
 
-1. **Reads shell commands** from a markdown file (`.claude/hooks.md`)
-2. **Runs them** one by one, capturing output
-3. **Writes a structured log** to a file and a summary to stdout
+```yaml
+---
+name: idea-workflow
+description: Implement features from queues
+hooks:
+  SessionStart:
+    - matcher: ""
+      hooks:
+        - type: command
+          command: "git fetch origin main && git log --oneline -5"
+          once: true
+---
+# IDEA_WORKFLOW
 
-That's it. The rest is just Claude Code's built-in hook system doing its job.
+Rest of the command file...
+```
 
-### Why a script instead of inline commands?
+This means: **Claude Code already knows which slash command is active.** We don't
+need to detect it ourselves. The frontmatter hooks fire automatically when the
+command is invoked.
 
-Claude Code hooks support one command per hook entry. If you want to run 8
-commands and log all their results in a structured way, you either need 8
-separate hook entries or one script that orchestrates them. The script is the
-orchestrator.
+## Architecture
 
-### Why embed commands in markdown instead of the script itself?
+There are three layers, each solving a different problem:
 
-So you can put project-specific commands in a file that's easy to read and edit
-without touching JavaScript. The markdown file is the configuration; the script
-is the engine.
+### Layer 1: Session-level hooks (settings.json)
+
+These run on every session, regardless of what command is used. They handle
+environment/state awareness.
+
+```
+.claude/settings.json
+    │
+    ├── SessionStart (matcher: "startup|resume")
+    │     → Runs the init script
+    │     → Writes .claude/agent_init.md
+    │     → Injects summary into Claude's context
+    │
+    ├── SessionStart (matcher: "compact")
+    │     → Runs the init script with richer output
+    │     → Re-injects project conventions, current branch, task context
+    │     → This is the "amnesia recovery" path
+    │
+    ├── PreCompact
+    │     → Snapshots current state BEFORE context is destroyed
+    │     → Writes .claude/pre_compact_state.md
+    │     → The compact SessionStart hook reads this file back
+    │
+    └── SessionEnd
+          → Runs the post script
+          → Writes .claude/agent_end.md
+```
+
+### Layer 2: Command-specific hooks (YAML frontmatter)
+
+These run only when a specific slash command is invoked. They handle
+command-specific setup.
+
+```
+.claude/commands/IDEA_WORKFLOW.md
+    │
+    └── YAML frontmatter:
+          hooks:
+            SessionStart:
+              - hooks:
+                  - type: command
+                    command: "git fetch origin main && git stash list"
+                    once: true
+```
+
+The `once: true` field means this runs once when the command is first invoked,
+then removes itself. Claude Code manages this natively.
+
+### Layer 3: The orchestrator script (chat-init-hooks.mjs)
+
+This exists because Claude Code hooks support **one command per hook entry**. If
+you want to run 8 commands, capture all their output, and render a structured
+log, you need an orchestrator. The script:
+
+1. Reads the stdin JSON from Claude Code (session_id, source, model, etc.)
+2. Reads shell commands from a configuration source (hooks.md or inline)
+3. Runs each command, capturing stdout, stderr, exit code, and duration
+4. Renders a structured markdown log to a file (agent_init.md / agent_end.md)
+5. Writes a summary to stdout (injected into Claude's context)
+6. **Always exits 0** so the output reaches Claude even when commands fail
+
+The script also exports all functions for import as a Node.js module.
+
+## Data Flow
+
+### Normal session start (startup/resume)
+
+```
+Session starts
+    │
+    ▼
+Claude Code fires SessionStart {source: "startup"}
+    │
+    ▼
+settings.json: matcher "startup|resume" matches
+    │
+    ▼
+Runs: node chat-init-hooks.mjs --phase pre
+    │
+    ├── Reads stdin JSON (session_id, source, model)
+    ├── Reads .claude/hooks.md for <!-- @hook:pre --> commands
+    ├── Runs each command, captures output
+    ├── Writes full log to .claude/agent_init.md
+    ├── Writes summary to stdout
+    └── Exits 0
+    │
+    ▼
+Claude Code injects stdout into context:
+  "SessionStart:startup hook success:
+   [chat-init-hooks] pre phase: SUCCESS (8/8)"
+    │
+    ▼
+Claude sees the summary. Full log is in agent_init.md
+if Claude or the user needs details.
+```
+
+### Compaction recovery
+
+```
+Context window fills up
+    │
+    ▼
+Claude Code fires PreCompact {trigger: "auto"}
+    │
+    ▼
+PreCompact hook snapshots current state:
+  - Current branch + dirty files
+  - What Claude was working on (from transcript)
+  - Writes to .claude/pre_compact_state.md
+    │
+    ▼
+Claude Code compacts conversation (context is lost)
+    │
+    ▼
+Claude Code fires SessionStart {source: "compact"}
+    │
+    ▼
+settings.json: matcher "compact" matches
+    │
+    ▼
+Runs: node chat-init-hooks.mjs --phase pre --compact
+    │
+    ├── Normal env/git state collection
+    ├── ALSO reads .claude/pre_compact_state.md
+    ├── Outputs richer context: project conventions, branch state,
+    │   what was being worked on, recent changes
+    └── Exits 0
+    │
+    ▼
+Claude Code injects the richer context into Claude's
+now-empty conversation. Claude recovers awareness.
+```
+
+### Slash command invocation
+
+```
+User types /IDEA_WORKFLOW
+    │
+    ▼
+Claude Code expands the command file
+    │
+    ▼
+If the file has YAML frontmatter hooks, they activate:
+
+    ---
+    hooks:
+      SessionStart:
+        - hooks:
+            - type: command
+              command: "git log --oneline -10 origin/main..HEAD"
+              once: true
+    ---
+
+    │
+    ▼
+The frontmatter hook runs automatically (managed by Claude Code)
+Its stdout is added to context alongside the command content
+    │
+    ▼
+Claude processes the expanded command with the hook's
+output as additional context
+```
+
+### Session end
+
+```
+User exits or session terminates
+    │
+    ▼
+Claude Code fires SessionEnd {reason: "prompt_input_exit"}
+    │
+    ▼
+settings.json: SessionEnd hook matches
+    │
+    ▼
+Runs: node chat-init-hooks.mjs --phase post
+    │
+    ├── Reads .claude/hooks.md for <!-- @hook:post --> commands
+    ├── Runs each (git status, git log, timestamp)
+    ├── Writes full log to .claude/agent_end.md
+    └── Exits 0
+    │
+    ▼
+Log persists on disk for next session or external systems.
+SessionEnd stdout is NOT injected into context (session is over).
+```
 
 ## File Map
 
 ```
 .claude/
-├── settings.json                  # Layer 1: Tells Claude Code WHEN to run our script
-├── hooks.md                       # Layer 2: Contains the shell commands TO run
+├── settings.json                  # Hook registration (SessionStart, PreCompact, SessionEnd)
+├── hooks.md                       # Default shell commands for session-level hooks
 ├── scripts/
-│   └── chat-init-hooks.mjs        # Layer 2: The engine that parses hooks.md and runs commands
-├── agent_init.md                  # Output: Log from the last SessionStart run (gitignored)
-└── agent_end.md                   # Output: Log from the last SessionEnd run (gitignored)
+│   └── chat-init-hooks.mjs        # Orchestrator: parses, runs, logs, always exits 0
+├── agent_init.md                  # Generated: log from last SessionStart (gitignored)
+├── agent_end.md                   # Generated: log from last SessionEnd (gitignored)
+├── pre_compact_state.md           # Generated: state snapshot before compaction (gitignored)
+└── commands/
+    ├── IDEA_WORKFLOW.md            # Has YAML frontmatter hooks (command-specific)
+    ├── CODE_REVIEW.md              # Can also have frontmatter hooks
+    └── ...
 ```
 
-### settings.json (the trigger)
+## The Markdown Syntax (hooks.md)
 
-This file tells Claude Code: "when a session starts, run this script."
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/chat-init-hooks.mjs\" --phase pre"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/scripts/chat-init-hooks.mjs\" --phase post"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Empty matcher `""` = fires on every SessionStart source (startup, resume,
-compact, clear) and every SessionEnd reason.
-
-### hooks.md (the commands)
-
-Shell commands are embedded in HTML comment blocks. HTML comments are invisible
-when the markdown renders, so the file can also contain documentation.
+Shell commands are embedded in HTML comment blocks. The markdown between them is
+documentation that the script ignores.
 
 ```markdown
 <!-- @hook:pre
 git branch --show-current
-git log --oneline -5
+git log --oneline -5 --decorate
 git status --short
+echo "Go: $(go version 2>/dev/null | cut -d' ' -f3 || echo 'not found')"
 -->
 
-# This part is documentation, ignored by the script
+# Documentation
 
-Any markdown content here. Explain what the hooks do, etc.
+This file's pre-hooks run on every session start.
+This file's post-hooks run on every session end.
 
 <!-- @hook:post
 git status --short
-git log --oneline -1
+git log --oneline -1 --decorate
 -->
 ```
 
-**Syntax rules:**
-- `<!-- @hook:pre ... -->` must be the very first thing in the file
-- `<!-- @hook:post ... -->` must be the very last thing in the file
+**Parsing rules:**
+- `<!-- @hook:pre ... -->` must be the first thing in the file (anchored to `^`)
+- `<!-- @hook:post ... -->` must be the last thing in the file (anchored to `$`)
 - One shell command per line
-- Empty lines and lines starting with `#` are skipped
-- Both blocks are optional
+- Empty lines and `#`-prefixed lines are skipped
+- Commands run via `sh -c` (Unix) or `cmd /c` (Windows)
 
-The position anchoring (first/last) is enforced by regex so that example syntax
-in the documentation section of the file doesn't accidentally get parsed as real
-hooks.
+## The Node Server Action Pattern
 
-### chat-init-hooks.mjs (the engine)
-
-Invoked with `--phase pre` or `--phase post`. Does this:
-
-```
-1. Read stdin (JSON from Claude Code -- session_id, source, cwd)
-2. Read .claude/hooks.md
-3. Find the <!-- @hook:pre --> or <!-- @hook:post --> block
-4. Parse out the shell commands
-5. For each command:
-   a. Run it via sh -c (Unix) or cmd /c (Windows)
-   b. Capture stdout, stderr, exit code, duration
-   c. If it fails, record the error and continue (unless --fail-fast)
-6. Render all results as a markdown table
-7. Write that markdown to .claude/agent_init.md (pre) or .claude/agent_end.md (post)
-8. Write a one-line summary to stdout
-9. Exit 0 if all commands succeeded, 1 if any failed
-```
-
-### agent_init.md / agent_end.md (the output)
-
-Generated files. Overwritten each run. Gitignored. Contain a structured log:
-
-```markdown
-# Agent Init Log
-
-| Field | Value |
-|-------|-------|
-| Timestamp | 2026-02-06T15:58:26.164Z |
-| Phase | pre |
-| Platform | linux (linux x64) |
-| Session ID | 0a8aec4b-... |
-| Session Source | resume |
-
-## Command Execution
-
-### 1. `git log --oneline -5`
-Status: SUCCESS (exit 0) | Duration: 24ms
-(output)
-
-### 2. `git status --short`
-Status: SUCCESS (exit 0) | Duration: 18ms
-(output)
-
-## Summary
-| # | Command | Status | Duration |
-| 1 | git log | SUCCESS | 24ms |
-| 2 | git status | SUCCESS | 18ms |
-
-Result: SUCCESS (2/2)
-```
-
-## Complete Data Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ User opens Claude Code or session resumes                          │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ Claude Code fires SessionStart event                               │
-│                                                                     │
-│ Reads .claude/settings.json                                         │
-│ Finds: SessionStart → matcher "" → run chat-init-hooks.mjs         │
-│                                                                     │
-│ Pipes to stdin:                                                     │
-│   {"session_id":"0a8a...","source":"resume","cwd":"/home/user/..."} │
-│                                                                     │
-│ Executes: node .claude/scripts/chat-init-hooks.mjs --phase pre     │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ chat-init-hooks.mjs runs                                           │
-│                                                                     │
-│ 1. Reads stdin → gets session_id, source                           │
-│ 2. Reads .claude/hooks.md                                           │
-│ 3. Regex finds <!-- @hook:pre ... --> at top of file               │
-│ 4. Parses 8 shell commands                                         │
-│ 5. Runs each via sh -c, captures everything                       │
-│ 6. Writes full log → .claude/agent_init.md                         │
-│ 7. Writes to stdout: "[chat-init-hooks] pre phase: SUCCESS (8/8)" │
-│ 8. Exits 0                                                         │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ Claude Code receives exit 0 + stdout                               │
-│                                                                     │
-│ Injects stdout into Claude's context as a system-reminder:         │
-│   "SessionStart:resume hook success:                                │
-│    [chat-init-hooks] pre phase: SUCCESS (8/8)"                     │
-│                                                                     │
-│ Claude can now see the summary. The full log is in agent_init.md   │
-│ if Claude (or the user) needs to read it.                          │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-The same flow happens for SessionEnd → `--phase post` → `<!-- @hook:post -->` →
-`agent_end.md`.
-
-## The --file and --scan Flags
-
-The script can also parse hook blocks from other markdown files:
-
-```bash
-# Parse hooks from a specific slash command file (in addition to hooks.md)
-node chat-init-hooks.mjs --phase pre --file .claude/commands/IDEA_WORKFLOW.md
-
-# Parse hooks from ALL files in .claude/commands/
-node chat-init-hooks.mjs --phase pre --scan
-```
-
-This means any slash command file can have its own `<!-- @hook:pre -->` and
-`<!-- @hook:post -->` blocks. But currently nothing in settings.json triggers
-these -- they'd need to be invoked manually or via additional hook configuration.
-
-## The Module Export Angle
-
-The script guards its CLI entry point behind a check:
+The script exports all core functions so a node server can call them directly
+without spawning a child process:
 
 ```javascript
-if (process.argv[1] === __filename) {
-  main();  // only runs when executed directly
-}
-```
+import {
+  parseHookBlock,
+  executeHookPhase,
+  renderMarkdownLog,
+  collectHooks,
+} from './.claude/scripts/chat-init-hooks.mjs';
 
-All core functions are exported:
-
-```javascript
-import { parseHookBlock, executeHookPhase, renderMarkdownLog, collectHooks } from './chat-init-hooks.mjs';
-```
-
-This means a Node.js server can import the functions directly and call them
-programmatically without spawning a child process:
-
-```javascript
-// Example: an event listener on a server that manages Claude Code sessions
+// As an event listener
 server.on('session:start', (session) => {
   const { commands, sourceFiles } = collectHooks('pre', projectDir);
-  const result = executeHookPhase({ phase: 'pre', commands, workingDir: projectDir });
+  const result = executeHookPhase({
+    phase: 'pre',
+    commands,
+    workingDir: projectDir,
+    sessionInput: { session_id: session.id, source: 'startup' },
+  });
   const log = renderMarkdownLog(result);
-  // store log, send to dashboard, etc.
+  fs.writeFileSync('.claude/agent_init.md', log);
+  dashboard.push({ sessionId: session.id, hookResult: result });
 });
 ```
 
-## Known Issues in Current Implementation
+## Key Design Decisions
 
-### 1. Exit code 1 silences error output
+### Why the script always exits 0
 
-Per Claude Code docs: only exit 0 stdout gets injected into context. The script
-exits 1 when any command fails, which means the failure summary it writes to
-stdout never reaches Claude. Claude only sees errors when everything succeeds.
+Claude Code only injects stdout into context on exit 0. If we exit 1 when a
+command fails, Claude never sees the failure details. So the script always exits
+0 and puts error information in the stdout summary. Errors are information, not
+crashes.
 
-**Fix:** Always exit 0. Put error information in the stdout summary. Use the
-structured JSON output format if needed.
+### Why hooks.md exists alongside settings.json
 
-### 2. Compaction is not handled distinctly
+settings.json tells Claude Code WHEN to run the script. hooks.md tells the
+script WHAT commands to run. Separating these means you can change the commands
+(hooks.md) without touching the hook registration (settings.json), and
+non-developers can edit a markdown file instead of JSON.
 
-`compact` is a SessionStart source. When it fires, Claude just lost all context.
-This is the most important moment to re-inject state, but the current system
-treats it identically to startup/resume. Ideally the script should detect
-`source: "compact"` from the stdin JSON and output richer context (project
-conventions, current task, branch state).
+### Why YAML frontmatter for command-specific hooks
 
-### 3. The Stop hook references a nonexistent script
+Claude Code natively supports hooks in skill/agent frontmatter. These hooks are
+scoped to the command's lifecycle and managed entirely by Claude Code. We use
+this instead of our `<!-- @hook:pre -->` syntax for command-specific hooks
+because:
 
-settings.json has a Stop hook pointing to `~/.claude/stop-hook-git-check.sh`
-which doesn't exist. It fails silently on every Claude response.
+1. Claude Code knows which command is active (we don't have to detect it)
+2. The hooks activate/deactivate automatically with the command
+3. The `once: true` field handles one-shot setup without custom logic
+4. It's a supported, documented feature of the platform
 
-### 4. Default hook commands are bash-only
+The `<!-- @hook:pre -->` syntax remains useful for session-level hooks in
+hooks.md, where there's no YAML frontmatter and we want a clean way to embed
+commands in a documentation file.
 
-The hooks.md commands use `$(uname -s)`, `$(pwd)`, etc. These fail on Windows
-with `cmd /c`. The script itself is cross-platform, but the default commands
-are not.
+### Why compaction gets special treatment
 
-### 5. Two redundant SessionStart entries
-
-Separate entries for `startup` and `resume` that run the same command. One entry
-with `"matcher": ""` does the same thing.
+When compaction fires, Claude loses ALL context -- it doesn't know what it was
+doing, what branch it's on, or what the project conventions are. The PreCompact
+hook snapshots this state before it's lost. The compact-triggered SessionStart
+hook reads the snapshot and re-injects it. This is the most important hook path
+in the system.
