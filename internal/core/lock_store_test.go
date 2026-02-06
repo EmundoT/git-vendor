@@ -440,10 +440,10 @@ func TestValidateSchemaVersion(t *testing.T) {
 
 func TestFileLockStore_Load_VersionCompatibility(t *testing.T) {
 	tests := []struct {
-		name           string
-		schemaVersion  string
-		wantErr        bool
-		errContains    string
+		name          string
+		schemaVersion string
+		wantErr       bool
+		errContains   string
 	}{
 		{
 			name:          "missing version loads successfully",

@@ -37,7 +37,7 @@ func TestSyncVendor_HappyPath_LockedRef(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	hashes, _, err := syncer.sync.SyncVendor(&vendor,lockedRefs, SyncOptions{})
+	hashes, _, err := syncer.sync.SyncVendor(&vendor, lockedRefs, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -74,7 +74,7 @@ func TestSyncVendor_HappyPath_UnlockedRef(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute with nil lockedRefs (unlocked mode)
-	hashes, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	hashes, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -108,7 +108,7 @@ func TestSyncVendor_ShallowFetchSucceeds(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -143,7 +143,7 @@ func TestSyncVendor_ShallowFetchFails_FullFetchSucceeds(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -170,7 +170,7 @@ func TestSyncVendor_BothFetchesFail(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -201,7 +201,7 @@ func TestSyncVendor_StaleCommitHashDetection(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,lockedRefs, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, lockedRefs, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -242,7 +242,7 @@ func TestSyncVendor_CheckoutFETCH_HEADFails_RefFallbackSucceeds(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -269,7 +269,7 @@ func TestSyncVendor_AllCheckoutsFail(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -292,7 +292,7 @@ func TestSyncVendor_TempDirectoryCreationFails(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -341,7 +341,7 @@ func TestSyncVendor_PathTraversalBlocked(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -408,7 +408,7 @@ func TestSyncVendor_MultipleSpecsPerVendor(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	hashes, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	hashes, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -469,7 +469,7 @@ func TestSyncVendor_MultipleMappingsPerSpec(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -508,7 +508,7 @@ func TestSyncVendor_FileCopyFailsInMapping(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -550,7 +550,7 @@ func TestSyncVendor_LicenseCopyFails(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor,nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
