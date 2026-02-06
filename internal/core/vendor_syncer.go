@@ -85,6 +85,7 @@ type VendorSyncer struct {
 	explorer       *RemoteExplorer
 	updateChecker  *UpdateChecker
 	verifyService  *VerifyService
+	vulnScanner    VulnScannerInterface // Interface for testability
 	configStore    ConfigStore
 	lockStore      LockStore
 	gitClient      GitClient
@@ -94,7 +95,8 @@ type VendorSyncer struct {
 	ui             UICallback
 }
 
-// NewVendorSyncer creates a new VendorSyncer with injected dependencies
+// NewVendorSyncer creates a new VendorSyncer with injected dependencies.
+// vulnScanner is optional - if nil, a default VulnScanner will be created.
 func NewVendorSyncer(
 	configStore ConfigStore,
 	lockStore LockStore,
@@ -103,6 +105,7 @@ func NewVendorSyncer(
 	licenseChecker LicenseChecker,
 	rootDir string,
 	ui UICallback,
+	vulnScanner VulnScannerInterface,
 ) *VendorSyncer {
 	if ui == nil {
 		ui = &SilentUICallback{}
@@ -121,6 +124,11 @@ func NewVendorSyncer(
 	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
 	verifyService := NewVerifyService(configStore, lockStore, cache, fs, rootDir)
 
+	// Use provided scanner or create default
+	if vulnScanner == nil {
+		vulnScanner = NewVulnScanner(lockStore, configStore)
+	}
+
 	return &VendorSyncer{
 		repository:     repository,
 		sync:           sync,
@@ -130,6 +138,7 @@ func NewVendorSyncer(
 		explorer:       explorer,
 		updateChecker:  updateChecker,
 		verifyService:  verifyService,
+		vulnScanner:    vulnScanner,
 		configStore:    configStore,
 		lockStore:      lockStore,
 		gitClient:      gitClient,
@@ -363,7 +372,8 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 	var vendorStatuses []types.VendorStatus
 	allSynced := true
 
-	for _, lockEntry := range lock.Vendors {
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
 		vendorConfig, exists := configMap[lockEntry.Name]
 		if !exists {
 			// Vendor in lockfile but not in config (shouldn't happen normally)
@@ -438,6 +448,11 @@ func (s *VendorSyncer) CheckUpdates() ([]types.UpdateCheckResult, error) {
 // Verify checks all vendored files against the lockfile
 func (s *VendorSyncer) Verify() (*types.VerifyResult, error) {
 	return s.verifyService.Verify()
+}
+
+// Scan performs vulnerability scanning against OSV.dev
+func (s *VendorSyncer) Scan(failOn string) (*types.ScanResult, error) {
+	return s.vulnScanner.Scan(failOn)
 }
 
 // MigrateLockfile updates an existing lockfile to add missing metadata fields.

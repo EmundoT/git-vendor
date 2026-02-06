@@ -216,7 +216,8 @@ func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[strin
 // buildLockMap builds a map of vendor name to ref to commit hash
 func (s *SyncService) buildLockMap(lock types.VendorLock) map[string]map[string]string {
 	lockMap := make(map[string]map[string]string)
-	for _, l := range lock.Vendors {
+	for i := range lock.Vendors {
+		l := &lock.Vendors[i]
 		if lockMap[l.Name] == nil {
 			lockMap[l.Name] = make(map[string]string)
 		}
@@ -497,6 +498,7 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 	}
 
 	// Get version tag for this commit (if any)
+	//nolint:errcheck // Version tag is optional, empty string is acceptable fallback
 	versionTag, _ := s.gitClient.GetTagForCommit(tempDir, hash)
 
 	// Copy license file (don't count in stats)

@@ -270,9 +270,10 @@ func main() {
 		// Load lockfile to get metadata (best effort)
 		lock, _ := manager.GetLock() //nolint:errcheck
 		lockMap := make(map[string]types.LockDetails)
-		for _, entry := range lock.Vendors {
+		for i := range lock.Vendors {
+			entry := &lock.Vendors[i]
 			key := entry.Name + "@" + entry.Ref
-			lockMap[key] = entry
+			lockMap[key] = *entry
 		}
 
 		// Check for conflicts (best-effort, don't fail list command if detection fails)
@@ -762,6 +763,144 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "scan":
+		// Parse command-specific flags
+		format := "table" // default format
+		failOn := ""
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			case strings.HasPrefix(arg, "--fail-on="):
+				failOn = strings.TrimPrefix(arg, "--fail-on=")
+			case arg == "--fail-on":
+				if i+1 < len(os.Args) {
+					failOn = os.Args[i+1]
+					i++
+				}
+			}
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Run vulnerability scan
+		result, err := manager.Scan(failOn)
+		if err != nil {
+			tui.PrintError("Scan Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			// Table format
+			fmt.Println("Scanning vendored dependencies for vulnerabilities...")
+			fmt.Println()
+
+			for _, dep := range result.Dependencies {
+				// Show dependency header
+				version := dep.Commit
+				if len(version) > 7 {
+					version = version[:7]
+				}
+				if dep.Version != nil {
+					version = *dep.Version
+				}
+				fmt.Printf("  %s (%s)\n", dep.Name, version)
+
+				if dep.ScanStatus == "not_scanned" || dep.ScanStatus == "error" {
+					fmt.Printf("    ⚠ Unable to scan: %s\n", dep.ScanReason)
+					fmt.Println()
+					continue
+				}
+
+				if len(dep.Vulnerabilities) == 0 {
+					fmt.Println("    ✓ No vulnerabilities found")
+					fmt.Println()
+					continue
+				}
+
+				// Show vulnerabilities
+				for _, vuln := range dep.Vulnerabilities {
+					// Determine symbol based on severity
+					symbol := "✗"
+					fmt.Printf("    %s %s [%s] %s\n", symbol, vuln.ID, vuln.Severity, vuln.Summary)
+					if vuln.FixedVersion != "" {
+						fmt.Printf("      Fixed in: %s\n", vuln.FixedVersion)
+					}
+					// Show first reference URL
+					if len(vuln.References) > 0 {
+						fmt.Printf("      %s\n", vuln.References[0])
+					}
+					fmt.Println()
+				}
+			}
+
+			// Print summary
+			fmt.Printf("Summary: %d dependencies scanned\n", result.Summary.TotalDependencies)
+			if result.Summary.Vulnerabilities.Total > 0 {
+				fmt.Printf("  ✗ %d vulnerabilities found", result.Summary.Vulnerabilities.Total)
+				parts := []string{}
+				if result.Summary.Vulnerabilities.Critical > 0 {
+					parts = append(parts, fmt.Sprintf("%d critical", result.Summary.Vulnerabilities.Critical))
+				}
+				if result.Summary.Vulnerabilities.High > 0 {
+					parts = append(parts, fmt.Sprintf("%d high", result.Summary.Vulnerabilities.High))
+				}
+				if result.Summary.Vulnerabilities.Medium > 0 {
+					parts = append(parts, fmt.Sprintf("%d medium", result.Summary.Vulnerabilities.Medium))
+				}
+				if result.Summary.Vulnerabilities.Low > 0 {
+					parts = append(parts, fmt.Sprintf("%d low", result.Summary.Vulnerabilities.Low))
+				}
+				if len(parts) > 0 {
+					fmt.Printf(" (%s)", strings.Join(parts, ", "))
+				}
+				fmt.Println()
+			} else {
+				fmt.Println("  ✓ No vulnerabilities found")
+			}
+			if result.Summary.NotScanned > 0 {
+				fmt.Printf("  ⚠ %d dependencies could not be scanned\n", result.Summary.NotScanned)
+			}
+			fmt.Println()
+			fmt.Printf("Result: %s", result.Summary.Result)
+			if result.Summary.ThresholdExceeded {
+				fmt.Printf(" (%s vulnerabilities found)", strings.ToLower(failOn))
+			}
+			fmt.Println()
+		}
+
+		// Exit code logic:
+		// - Exit 1 if vulnerabilities found AND (no threshold OR threshold exceeded)
+		// - Exit 2 if some dependencies couldn't be scanned (WARN)
+		// - Exit 0 otherwise (PASS, or vulns below threshold)
+		hasVulns := result.Summary.Vulnerabilities.Total > 0
+		shouldFailOnVulns := failOn == "" || result.Summary.ThresholdExceeded
+
+		if hasVulns && shouldFailOnVulns {
+			os.Exit(1)
+		}
+		if result.Summary.NotScanned > 0 && !hasVulns {
+			os.Exit(2) // WARN only if no vulns (vulns take precedence)
+		}
+		os.Exit(0)
+
 	case "status":
 		// Parse common flags
 		flags, _ := parseCommonFlags(os.Args[2:])
@@ -1061,7 +1200,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		if flags.Mode == core.OutputJSON {
+		switch {
+		case flags.Mode == core.OutputJSON:
 			_ = callback.FormatJSON(core.JSONOutput{
 				Status:  "success",
 				Message: fmt.Sprintf("Migrated %d entries", migrated),
@@ -1069,7 +1209,7 @@ func main() {
 					"migrated_entries": migrated,
 				},
 			})
-		} else if migrated > 0 {
+		case migrated > 0:
 			callback.ShowSuccess(fmt.Sprintf("Migrated %s to schema v1.1", core.Pluralize(migrated, "entry", "entries")))
 			fmt.Println()
 			fmt.Println("The following metadata was added:")
@@ -1079,8 +1219,117 @@ func main() {
 			fmt.Println("  • last_synced_at: from updated timestamp")
 			fmt.Println()
 			fmt.Println("Run 'git-vendor update' to fetch source_version_tag for tagged releases.")
-		} else {
+		default:
 			callback.ShowSuccess("Lockfile already up to date - no migration needed")
+		}
+
+	case "sbom":
+		// Parse command-specific flags
+		format := "cyclonedx" // default format
+		outputFile := ""
+		validate := false
+		showHelp := false
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--help" || arg == "-h":
+				showHelp = true
+			case arg == "--validate":
+				validate = true
+			case arg == "--format" && i+1 < len(os.Args):
+				format = os.Args[i+1]
+				i++
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			case arg == "--output" && i+1 < len(os.Args):
+				outputFile = os.Args[i+1]
+				i++
+			case strings.HasPrefix(arg, "--output="):
+				outputFile = strings.TrimPrefix(arg, "--output=")
+			case arg == "-o" && i+1 < len(os.Args):
+				outputFile = os.Args[i+1]
+				i++
+			}
+		}
+
+		// Show help if requested
+		if showHelp {
+			fmt.Println("Generate Software Bill of Materials (SBOM) from vendored dependencies")
+			fmt.Println()
+			fmt.Println("Usage: git-vendor sbom [options]")
+			fmt.Println()
+			fmt.Println("Options:")
+			fmt.Println("  --format <fmt>   Output format: cyclonedx (default) or spdx")
+			fmt.Println("  --output <file>  Write to file instead of stdout")
+			fmt.Println("  -o <file>        Shorthand for --output")
+			fmt.Println("  --validate       Validate generated SBOM against schema")
+			fmt.Println("  --help, -h       Show this help message")
+			fmt.Println()
+			fmt.Println("Formats:")
+			fmt.Println("  cyclonedx   CycloneDX 1.5 JSON - security-focused, widely supported by scanners")
+			fmt.Println("  spdx        SPDX 2.3 JSON - compliance-focused for license analysis")
+			fmt.Println()
+			fmt.Println("Examples:")
+			fmt.Println("  git-vendor sbom                          # Output CycloneDX to stdout")
+			fmt.Println("  git-vendor sbom --format spdx            # Output SPDX to stdout")
+			fmt.Println("  git-vendor sbom -o sbom.json             # Write CycloneDX to file")
+			fmt.Println("  git-vendor sbom --format spdx --validate # Generate and validate SPDX")
+			os.Exit(0)
+		}
+
+		// Validate format
+		var sbomFormat core.SBOMFormat
+		switch format {
+		case "cyclonedx":
+			sbomFormat = core.SBOMFormatCycloneDX
+		case "spdx":
+			sbomFormat = core.SBOMFormatSPDX
+		default:
+			tui.PrintError("Invalid Format", fmt.Sprintf("'%s' is not a valid SBOM format. Use 'cyclonedx' or 'spdx'", format))
+			os.Exit(1)
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized)
+			os.Exit(1)
+		}
+
+		// Determine project name from current directory
+		projectName := "unknown-project"
+		if cwd, err := os.Getwd(); err == nil {
+			parts := strings.Split(cwd, string(os.PathSeparator))
+			if len(parts) > 0 {
+				projectName = parts[len(parts)-1]
+			}
+		}
+
+		// Generate SBOM with options
+		opts := core.SBOMOptions{
+			ProjectName: projectName,
+			Validate:    validate,
+		}
+		generator := core.NewSBOMGeneratorWithOptions(
+			core.NewFileLockStore(core.VendorDir),
+			core.NewFileConfigStore(core.VendorDir),
+			opts,
+		)
+		output, err := generator.Generate(sbomFormat)
+		if err != nil {
+			tui.PrintError("SBOM Generation Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Write output
+		if outputFile != "" {
+			if err := os.WriteFile(outputFile, output, 0644); err != nil {
+				tui.PrintError("Write Failed", err.Error())
+				os.Exit(1)
+			}
+			tui.PrintSuccess(fmt.Sprintf("SBOM written to %s", outputFile))
+		} else {
+			// Write to stdout
+			fmt.Print(string(output))
 		}
 
 	default:

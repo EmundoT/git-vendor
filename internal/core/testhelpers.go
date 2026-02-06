@@ -111,6 +111,6 @@ func newTestManager(vendorDir string) *Manager {
 	license := NewGitHubLicenseChecker(nil, AllowedLicenses)
 	ui := &SilentUICallback{}
 
-	syncer := NewVendorSyncer(config, lock, git, fs, license, vendorDir, ui)
+	syncer := NewVendorSyncer(config, lock, git, fs, license, vendorDir, ui, nil)
 	return NewManagerWithSyncer(syncer)
 }
