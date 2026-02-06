@@ -38,7 +38,8 @@ func (s *VendorSyncer) DiffVendor(vendorName string) ([]types.VendorDiff, error)
 		// Find locked commit
 		var lockedHash string
 		var lockedDate string
-		for _, entry := range lock.Vendors {
+		for i := range lock.Vendors {
+			entry := &lock.Vendors[i]
 			if entry.Name == vendor.Name && entry.Ref == spec.Ref {
 				lockedHash = entry.CommitHash
 				lockedDate = entry.Updated

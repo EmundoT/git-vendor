@@ -1,3 +1,14 @@
+---
+disable-model-invocation: true
+hooks:
+  SessionStart:
+    - hooks:
+        - type: command
+          command: "echo '## Release Pre-Flight' && echo \"**Branch:** $(git branch --show-current)\" && echo \"**Last tag:** $(git describe --tags --abbrev=0 2>/dev/null || echo 'no tags')\" && echo \"**Commits since tag:** $(git log $(git describe --tags --abbrev=0 2>/dev/null)..HEAD --oneline 2>/dev/null | wc -l)\" && echo '**Quick build check:**' && go build -o /dev/null ./... 2>&1 | tail -3 && echo 'Build: OK' || echo 'Build: FAILED'"
+          once: true
+          timeout: 30
+---
+
 # Release Ready Workflow
 
 **Role:** You are a release manager working in a concurrent multi-agent Git environment. Your goal is to validate that the codebase is ready for release by orchestrating multiple validation workflows, generating fix prompts for blocking issues, and achieving sign-off through iterative verification cycles.

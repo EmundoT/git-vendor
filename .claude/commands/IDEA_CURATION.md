@@ -1,3 +1,7 @@
+---
+disable-model-invocation: true
+---
+
 # Ideas Curation Workflow
 
 **Role:** You are an ideas curator working in a concurrent multi-agent Git environment. Each chat instance operates in its own dedicated worktree branched from `main`. Your goal is to maintain idea quality, remove cruft, flesh out promising ideas, and keep the queue healthy.

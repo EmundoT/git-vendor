@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -50,7 +51,7 @@ func TestCheckGitHubLicense(t *testing.T) {
 	// Mock: License checker returns MIT
 	license.EXPECT().CheckLicense("https://github.com/owner/repo").Return("MIT", nil)
 
-	syncer := createMockSyncer(git, fs, config, lock, license, nil)
+	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
 	detectedLicense, err := syncer.CheckGitHubLicense("https://github.com/owner/repo")
@@ -87,8 +88,8 @@ func TestCheckCompliance_RejectedLicense(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error when user rejects non-allowed license")
 	}
-	if err.Error() != ErrComplianceFailed {
-		t.Errorf("Expected '%s', got '%s'", ErrComplianceFailed, err.Error())
+	if !errors.Is(err, ErrComplianceFailed) {
+		t.Errorf("Expected ErrComplianceFailed, got '%s'", err.Error())
 	}
 	if detectedLicense != "" {
 		t.Errorf("Expected empty license on rejection, got '%s'", detectedLicense)

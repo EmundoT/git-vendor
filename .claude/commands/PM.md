@@ -1,3 +1,7 @@
+---
+disable-model-invocation: true
+---
+
 # Project Manager Workflow
 
 **Role:** You are a project manager coordinating work across idea queues in a concurrent multi-agent Git environment. Your goal is to assess queue health, prioritize work, generate execution prompts for other Claude instances, and verify completed work meets standards through iterative review cycles.
@@ -93,9 +97,15 @@ MANDATORY TRACKING UPDATES:
 4. Update any documentation that references this feature
 5. Update tests/COVERAGE_MATRIX.md if tests were added
 
+VERIFICATION:
+- Run `go test ./...` to ensure all tests pass
+- Run `golangci-lint run ./...` to check for lint errors
+- Fix any lint errors before committing
+
 ACCEPTANCE CRITERIA:
 - [ ] Feature works as specified
-- [ ] Tests pass
+- [ ] All tests pass (`go test ./...`)
+- [ ] No lint errors (`golangci-lint run ./...`)
 - [ ] Documentation updated
 - [ ] No regressions in existing tests
 
@@ -120,10 +130,16 @@ MANDATORY TRACKING UPDATES:
 2. Add completion notes under "## Completed Issue Details"
 3. [Any other relevant tracking]
 
+VERIFICATION:
+- Run `go test ./...` to ensure all tests pass
+- Run `golangci-lint run ./...` to check for lint errors
+- Fix any lint errors before committing
+
 ACCEPTANCE CRITERIA:
 - [ ] Zero instances of [anti-pattern] in [scope]
 - [ ] All affected files updated
-- [ ] Tests still pass
+- [ ] All tests pass (`go test ./...`)
+- [ ] No lint errors (`golangci-lint run ./...`)
 - [ ] [Specific verification command]
 
 Commit, pull main and merge it into your branch, then push to your branch when complete.
@@ -196,7 +212,8 @@ After prompts have been executed:
   | Check | Method |
   |-------|--------|
   | Code changes made | Read the files, grep for expected patterns |
-  | Tests pass | Run quick_validation.sql or relevant tests |
+  | Tests pass | Run `go test ./...` |
+  | Lint passes | Run `golangci-lint run ./...` |
   | Tracking updated | Read queue files, verify status changes |
   | Spec moved | Check spec locations |
   | Docs updated | Read affected documentation |

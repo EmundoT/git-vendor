@@ -6,6 +6,15 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// UpdateCheckerInterface defines the contract for checking vendor updates.
+// This interface enables mocking in tests and potential alternative update check strategies.
+type UpdateCheckerInterface interface {
+	CheckUpdates() ([]types.UpdateCheckResult, error)
+}
+
+// Compile-time interface satisfaction check.
+var _ UpdateCheckerInterface = (*UpdateChecker)(nil)
+
 // UpdateChecker handles checking for vendor updates
 type UpdateChecker struct {
 	configStore ConfigStore
@@ -46,11 +55,12 @@ func (c *UpdateChecker) CheckUpdates() ([]types.UpdateCheckResult, error) {
 
 	// Build lock map for quick lookups
 	lockMap := make(map[string]map[string]types.LockDetails)
-	for _, entry := range lock.Vendors {
+	for i := range lock.Vendors {
+		entry := &lock.Vendors[i]
 		if lockMap[entry.Name] == nil {
 			lockMap[entry.Name] = make(map[string]types.LockDetails)
 		}
-		lockMap[entry.Name][entry.Ref] = entry
+		lockMap[entry.Name][entry.Ref] = *entry
 	}
 
 	var results []types.UpdateCheckResult

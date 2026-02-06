@@ -9,6 +9,8 @@
 | 001 | P0 | 2026-02-04 | Lockfile Schema Versioning | Added `schema_version` field with backward compatibility | [spec](specs/complete/001-lockfile-schema-versioning.md) |
 | 002 | P0 | 2026-02-04 | Verify Command Hardening | Bulletproof integrity check: detect modified, added, deleted files with JSON output | [spec](specs/complete/002-verify-command-hardening.md) |
 | 003 | P0 | 2026-02-05 | Lockfile Metadata Enrichment | Added license_spdx, source_version_tag, vendored_at, vendored_by, last_synced_at to lock entries | [spec](specs/complete/003-lockfile-metadata-enrichment.md) |
+| 010 | P0 | 2026-02-05 | SBOM Generation | `git vendor sbom` - Generate CycloneDX 1.5 and SPDX 2.3 format SBOMs from lockfile | [spec](specs/complete/010-sbom-generation.md) |
+| 011 | P0 | 2026-02-05 | CVE/Vulnerability Scanning | `git vendor scan` - Query OSV.dev for known CVEs with caching, JSON output, --fail-on threshold | [spec](specs/complete/011-cve-vulnerability-scanning.md) |
 
 ---
 

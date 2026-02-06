@@ -8,6 +8,14 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// FileCopyServiceInterface defines the contract for copying files according to path mappings.
+type FileCopyServiceInterface interface {
+	CopyMappings(tempDir string, vendor *types.VendorSpec, spec types.BranchSpec) (CopyStats, error)
+}
+
+// Compile-time interface satisfaction check.
+var _ FileCopyServiceInterface = (*FileCopyService)(nil)
+
 // FileCopyService handles copying files according to path mappings
 type FileCopyService struct {
 	fs FileSystem
@@ -52,7 +60,7 @@ func (s *FileCopyService) copyMapping(tempDir string, vendor *types.VendorSpec, 
 	// Check if source exists
 	info, err := s.fs.Stat(srcPath)
 	if err != nil {
-		return CopyStats{}, fmt.Errorf(ErrPathNotFound, srcClean)
+		return CopyStats{}, NewPathNotFoundError(srcClean, vendor.Name, spec.Ref)
 	}
 
 	// Copy directory or file

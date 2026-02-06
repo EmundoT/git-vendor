@@ -68,6 +68,7 @@ func validateSchemaVersion(version string, warnWriter io.Writer) error {
 
 	if major == MaxSupportedMajor && minor > MaxSupportedMinor {
 		if warnWriter != nil {
+			//nolint:errcheck // Warning output - error is non-actionable
 			fmt.Fprintf(warnWriter,
 				"Warning: Lockfile schema version %q is newer than expected (%d.%d)\n"+
 					"  Some metadata fields may be ignored. Consider updating git-vendor.\n",
@@ -94,7 +95,7 @@ type FileLockStore struct {
 // NewFileLockStore creates a new FileLockStore
 func NewFileLockStore(rootDir string) *FileLockStore {
 	return &FileLockStore{
-		store: NewYAMLStore[types.VendorLock](rootDir, LockName, false), // allowMissing=false
+		store: NewYAMLStore[types.VendorLock](rootDir, LockFile, false), // allowMissing=false
 	}
 }
 
@@ -133,7 +134,8 @@ func (s *FileLockStore) GetHash(vendorName, ref string) string {
 		return ""
 	}
 
-	for _, l := range lock.Vendors {
+	for i := range lock.Vendors {
+		l := &lock.Vendors[i]
 		if l.Name == vendorName && l.Ref == ref {
 			return l.CommitHash
 		}
