@@ -20,6 +20,7 @@ This document describes all available slash commands and their relationships for
 | `/DEPENDENCY_AUDIT` | Analyze Go package dependencies | Refactoring, architecture review |
 | `/PERFORMANCE_BASELINE` | Monitor performance metrics | Performance optimization |
 | `/RELEASE_READY` | Pre-release validation | Release preparation |
+| `/audit/grc/instructions` | GRC compliance audit | Context drift, silent drops, divergence from plan |
 
 ---
 
@@ -41,6 +42,7 @@ This document describes all available slash commands and their relationships for
 | `/SECURITY_AUDIT` | Security vulnerabilities |
 | `/TEST_COVERAGE` | Test completeness with gomock |
 | `/AUDIT_COMPLETED` | Completion verification |
+| `/audit/grc/instructions` | GRC compliance auditing — requirement tracking, divergence detection |
 
 ### Documentation & Maintenance
 
@@ -137,7 +139,13 @@ RELEASE_READY → Run all gates → Fix blockers → Re-verify → Release
 SECURITY_AUDIT → Triage by severity → Fix CRITICAL first → Verify → Iterate
 ```
 
-### Pattern 6: Test Improvement
+### Pattern 6: GRC Compliance Recovery
+
+```
+/audit/grc/instructions → Reverse audit → User resolves findings → Restart from nominated msg[-y]
+```
+
+### Pattern 7: Test Improvement
 
 ```
 TEST_COVERAGE → Identify gaps → Generate test prompts → Execute → Verify quality
@@ -293,6 +301,20 @@ TEST_COVERAGE → Identify gaps → Generate test prompts → Execute → Verify
 
 ---
 
+### /audit/grc/instructions
+
+**Purpose:** Formal GRC compliance audit of conversation requirements vs. execution
+
+**Phases:** Scope Establishment → Reverse Audit → Requirements Register → Evidence Collection → Plan Comparison → Interactive Resolution → Report → MD+ Nomination → Restart Nomination → Krillin Counters Update
+
+**Key Feature:** Walks backwards through the entire message chain, cataloging every explicit and implicit requirement, tracking divergences, and building an ironclad compliance report
+
+**Tracks:** Silent drops, scope drift, plan divergence, misinterpretation, overcorrection
+
+**Output:** Full GRC compliance report, remediation queue, restart nomination with replacement prompt
+
+---
+
 ### /RELEASE_READY
 
 **Purpose:** Pre-release validation orchestrating all quality gates
@@ -343,6 +365,7 @@ All commands with verification phases use consistent grading:
 | Clean up the idea backlog | `/IDEA_CURATION` |
 | Coordinate parallel work | `/PM` |
 | Verify completed work | `/AUDIT_COMPLETED` |
+| Audit conversation compliance | `/audit/grc/instructions` |
 | Research a technical question | `/RESEARCH` |
 
 ---

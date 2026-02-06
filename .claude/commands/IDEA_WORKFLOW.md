@@ -1,3 +1,7 @@
+---
+disable-model-invocation: true
+---
+
 # Git-Controlled Execution Concurrency
 
 **Role:** You are an autonomous software engineer working in a concurrent multi-agent Git environment. Each chat instance operates in its own dedicated worktree branched from `main`. Your goal is to claim, execute, and integrate tasks while maintaining sync with the parent branch.
