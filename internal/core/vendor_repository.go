@@ -1,6 +1,8 @@
 package core
 
 import (
+	"fmt"
+
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
@@ -89,7 +91,7 @@ func (r *VendorRepository) Save(vendor *types.VendorSpec) error {
 func (r *VendorRepository) Delete(name string) error {
 	config, err := r.configStore.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	index := FindVendorIndex(config.Vendors, name)
