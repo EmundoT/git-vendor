@@ -89,12 +89,12 @@ func NewSyncService(
 func (s *SyncService) Sync(opts SyncOptions) error {
 	config, err := s.configStore.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	lock, err := s.lockStore.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("load lockfile: %w", err)
 	}
 
 	// Build lock map for quick lookups
@@ -103,14 +103,14 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 	// Validate vendor exists if filtering by name
 	if opts.VendorName != "" {
 		if err := s.validateVendorExists(config, opts.VendorName); err != nil {
-			return err
+			return err // Already a structured error type
 		}
 	}
 
 	// Validate group exists if filtering by group
 	if opts.GroupName != "" {
 		if err := s.validateGroupExists(config, opts.GroupName); err != nil {
-			return err
+			return err // Already a structured error type
 		}
 	}
 
@@ -175,7 +175,7 @@ func (s *SyncService) syncSequential(vendors []types.VendorSpec, lockMap map[str
 		_, stats, err := s.SyncVendor(&v, refs, opts)
 		if err != nil {
 			progress.Fail(err)
-			return err
+			return fmt.Errorf("sync vendor %s: %w", v.Name, err)
 		}
 		totalStats.Add(stats)
 		progress.Increment(fmt.Sprintf("✓ %s", v.Name))
@@ -213,7 +213,7 @@ func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[strin
 	// Execute parallel sync
 	results, err := executor.ExecuteParallelSync(vendors, lockMap, opts, syncFunc)
 	if err != nil {
-		return err
+		return fmt.Errorf("parallel sync: %w", err)
 	}
 
 	// Calculate total stats
@@ -550,7 +550,7 @@ func (s *SyncService) fetchWithFallback(tempDir, ref string) error {
 	if err := s.gitClient.Fetch(tempDir, 1, ref); err != nil {
 		// Shallow fetch failed, try full fetch
 		if err := s.gitClient.FetchAll(tempDir); err != nil {
-			return err
+			return fmt.Errorf("fetch ref %s: %w", ref, err)
 		}
 	}
 	return nil
@@ -627,9 +627,12 @@ func (s *SyncService) updateCache(vendorName string, spec types.BranchSpec, comm
 	// Build cache with checksums
 	cache, err := s.cache.BuildCache(vendorName, spec.Ref, commitHash, destPaths)
 	if err != nil {
-		return err
+		return fmt.Errorf("build cache for %s@%s: %w", vendorName, spec.Ref, err)
 	}
 
 	// Save cache
-	return s.cache.Save(&cache)
+	if err := s.cache.Save(&cache); err != nil {
+		return fmt.Errorf("save cache for %s@%s: %w", vendorName, spec.Ref, err)
+	}
+	return nil
 }

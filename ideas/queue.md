@@ -64,6 +64,8 @@
 | 056 | pending | Golden File Tests | Output format tests comparing against known-good JSON/Mermaid/HTML | - |
 | 057 | pending | E2E Test Script | Install from scratch, vendor real dep, run all commands, verify output | - |
 | 058 | pending | Compatibility Test Matrix | Test against Go 1.21+, Git 2.30+, Linux/macOS/Windows | - |
+| 059 | pending | Supplier Extraction Enhancement | Improve ExtractSupplier heuristics to better match organizational structure from URLs | - |
+| 060 | pending | Configurable OSV Batch Size | Make maxBatchSize configurable or dynamically detected for OSV.dev API changes | - |
 
 ---
 

@@ -1507,25 +1507,23 @@ func TestGenerateSPDX_IncludesPURLExternalRef(t *testing.T) {
 }
 
 // ============================================================================
-// Backwards Compatibility: Test old constructor still works
+// Constructor Tests
 // ============================================================================
 
-func TestNewSBOMGenerator_BackwardsCompatible(t *testing.T) {
+func TestNewSBOMGenerator_BasicConstructor(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	configStore := NewMockConfigStore(ctrl)
 	lockStore := NewMockLockStore(ctrl)
-	fs := NewMockFileSystem(ctrl)
 
 	configStore.EXPECT().Load().Return(types.VendorConfig{Vendors: []types.VendorSpec{}}, nil)
 	lockStore.EXPECT().Load().Return(types.VendorLock{Vendors: []types.LockDetails{}}, nil)
 
-	// Old constructor signature (with fs parameter that's now unused)
-	generator := NewSBOMGenerator(lockStore, configStore, fs, "test-project")
+	generator := NewSBOMGenerator(lockStore, configStore, "test-project")
 
 	_, err := generator.Generate(SBOMFormatCycloneDX)
 	if err != nil {
-		t.Fatalf("Backwards compatible constructor failed: %v", err)
+		t.Fatalf("Basic constructor failed: %v", err)
 	}
 }

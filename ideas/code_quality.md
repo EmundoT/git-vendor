@@ -7,9 +7,11 @@
 | ID | Status | Title | Brief | Spec |
 |----|--------|-------|-------|------|
 | CQ-001 | pending | Interface Mock Coverage | Ensure all interfaces have mock implementations for testing | - |
-| CQ-002 | pending | Error Wrapping Consistency | Use fmt.Errorf with %w for all error wrapping, enable error chain inspection | - |
-| CQ-003 | pending | Context Propagation | Add context.Context to all long-running operations for cancellation/timeout | - |
+| CQ-002 | completed | Error Wrapping Consistency | Use fmt.Errorf with %w for all error wrapping, enable error chain inspection | - |
+| CQ-003 | in_progress | Context Propagation | Add context.Context to all long-running operations for cancellation/timeout | - |
 | CQ-004 | pending | Godoc Coverage | Add godoc comments to all exported functions and types | - |
+| CQ-005 | in_progress | TUI Test Coverage | Increase internal/tui package test coverage from 9.9% to ≥60% | - |
+| CQ-006 | in_progress | Configurable OSV Endpoint | Make OSV.dev API URL configurable for testing and air-gapped environments | - |
 
 ## MEDIUM Priority
 
