@@ -30,6 +30,7 @@
 | 022 | pending | GitHub Action | git-vendor-action for CI/CD with PR comments, check status, SBOM artifacts | - |
 | 023 | pending | Compliance Evidence Reports | `git vendor compliance` - Generate EO 14028, NIST, DORA, CRA, SOC 2 evidence docs | - |
 | 024 | pending | Migration Metrics | `git vendor metrics` - Track extraction progress for monolith decomposition | - |
+| 070 | pending | Internal Project Compliance | `source: internal` vendors for intra-repo file sync with transforms, CI enforcement | [spec](specs/in-progress/070-internal-compliance.md) |
 
 ## MEDIUM Priority (P1)
 
