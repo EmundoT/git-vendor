@@ -30,6 +30,16 @@
 | 022 | pending | GitHub Action | git-vendor-action for CI/CD with PR comments, check status, SBOM artifacts | - |
 | 023 | pending | Compliance Evidence Reports | `git vendor compliance` - Generate EO 14028, NIST, DORA, CRA, SOC 2 evidence docs | - |
 | 024 | pending | Migration Metrics | `git vendor metrics` - Track extraction progress for monolith decomposition | - |
+| 070 | pending | Internal Project Compliance | `source: internal` vendors for intra-repo file sync with transforms, CI enforcement | [spec](specs/in-progress/070-internal-compliance.md) |
+
+## Phase 4: Developer & LLM Experience (P1)
+
+| ID | Status | Title | Brief | Spec |
+|----|--------|-------|-------|------|
+| 071 | pending | Position Extraction | Line/column range extraction in path mappings (from: file:L5-L20) | [spec](specs/in-progress/071-position-extraction.md) |
+| 072 | pending | LLM-Friendly CLI | CLI commands for vendor management without editing YAML, JSON output | [spec](specs/in-progress/072-llm-friendly-cli.md) |
+| 073 | pending | Vendor Variables + File Watcher | $v{name:L5-L20} inline syntax with auto-expansion on save | [spec](specs/in-progress/073-vendor-variables.md) |
+| 074 | pending | VS Code Extension | IDE integration: variable styling, hover preview, autocomplete, integrated watch | [spec](specs/in-progress/074-vscode-extension.md) |
 
 ## MEDIUM Priority (P1)
 
@@ -64,6 +74,8 @@
 | 056 | pending | Golden File Tests | Output format tests comparing against known-good JSON/Mermaid/HTML | - |
 | 057 | pending | E2E Test Script | Install from scratch, vendor real dep, run all commands, verify output | - |
 | 058 | pending | Compatibility Test Matrix | Test against Go 1.21+, Git 2.30+, Linux/macOS/Windows | - |
+| 059 | pending | Supplier Extraction Enhancement | Improve ExtractSupplier heuristics to better match organizational structure from URLs | - |
+| 060 | pending | Configurable OSV Batch Size | Make maxBatchSize configurable or dynamically detected for OSV.dev API changes | - |
 
 ---
 
@@ -96,6 +108,13 @@ Per ROADMAP.md Section 12:
   └── 020 (Audit Command)
        ├── 022 (GitHub Action)
        └── 023 (Compliance Reports)
+
+071 (Position Extraction)
+  ├── 072 (LLM-Friendly CLI)
+  └── 073 (Vendor Variables + File Watcher)
+       └── 074 (VS Code Extension)
 ```
 
 **Critical Path:** 001 → 003 → 010 → 011 → 020 → 022
+
+**LLM Experience Path:** 071 → 073 → 074

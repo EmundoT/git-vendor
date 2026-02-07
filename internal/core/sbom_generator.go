@@ -56,8 +56,7 @@ type SBOMGenerator struct {
 }
 
 // NewSBOMGenerator creates a new SBOMGenerator with the given dependencies
-// The fs parameter is kept for backwards compatibility but is unused.
-func NewSBOMGenerator(lockStore LockStore, configStore ConfigStore, _ FileSystem, projectName string) *SBOMGenerator {
+func NewSBOMGenerator(lockStore LockStore, configStore ConfigStore, projectName string) *SBOMGenerator {
 	return &SBOMGenerator{
 		lockStore:   lockStore,
 		configStore: configStore,

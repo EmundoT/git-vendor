@@ -201,13 +201,16 @@ func NewVendorSyncer(
 // Init initializes vendor directory structure
 func (s *VendorSyncer) Init() error {
 	if err := s.fs.MkdirAll(s.rootDir, 0755); err != nil {
-		return err
+		return fmt.Errorf("create vendor directory: %w", err)
 	}
 	if err := s.fs.MkdirAll(filepath.Join(s.rootDir, LicensesDir), 0755); err != nil {
-		return err
+		return fmt.Errorf("create licenses directory: %w", err)
 	}
 	// Save empty config with no vendors instead of empty vendor
-	return s.configStore.Save(types.VendorConfig{Vendors: []types.VendorSpec{}})
+	if err := s.configStore.Save(types.VendorConfig{Vendors: []types.VendorSpec{}}); err != nil {
+		return fmt.Errorf("save initial config: %w", err)
+	}
+	return nil
 }
 
 // AddVendor adds a new vendor with license compliance check
@@ -222,7 +225,7 @@ func (s *VendorSyncer) AddVendor(spec *types.VendorSpec) error {
 	if !exists {
 		detectedLicense, err := s.license.CheckCompliance(spec.URL)
 		if err != nil {
-			return err
+			return fmt.Errorf("check license compliance for %s: %w", spec.Name, err)
 		}
 		spec.License = detectedLicense
 	}
@@ -233,7 +236,7 @@ func (s *VendorSyncer) AddVendor(spec *types.VendorSpec) error {
 // SaveVendor saves or updates a vendor spec
 func (s *VendorSyncer) SaveVendor(spec *types.VendorSpec) error {
 	if err := s.repository.Save(spec); err != nil {
-		return err
+		return fmt.Errorf("save vendor %s: %w", spec.Name, err)
 	}
 	return s.update.UpdateAll()
 }
@@ -242,7 +245,7 @@ func (s *VendorSyncer) SaveVendor(spec *types.VendorSpec) error {
 func (s *VendorSyncer) RemoveVendor(name string) error {
 	// Delete vendor from config
 	if err := s.repository.Delete(name); err != nil {
-		return err
+		return err // Already a structured VendorNotFoundError
 	}
 
 	// Remove license file
@@ -260,7 +263,7 @@ func (s *VendorSyncer) Sync() error {
 	if err != nil || len(lock.Vendors) == 0 {
 		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
 		if err := s.update.UpdateAll(); err != nil {
-			return err
+			return fmt.Errorf("generate lockfile: %w", err)
 		}
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")
@@ -287,7 +290,7 @@ func (s *VendorSyncer) SyncWithOptions(vendorName string, force, noCache bool) e
 	if err != nil || len(lock.Vendors) == 0 {
 		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
 		if err := s.update.UpdateAll(); err != nil {
-			return err
+			return fmt.Errorf("generate lockfile: %w", err)
 		}
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")
@@ -306,7 +309,7 @@ func (s *VendorSyncer) SyncWithGroup(groupName string, force, noCache bool) erro
 	if err != nil || len(lock.Vendors) == 0 {
 		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
 		if err := s.update.UpdateAll(); err != nil {
-			return err
+			return fmt.Errorf("generate lockfile: %w", err)
 		}
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")
@@ -325,7 +328,7 @@ func (s *VendorSyncer) SyncWithParallel(vendorName string, force, noCache bool, 
 	if err != nil || len(lock.Vendors) == 0 {
 		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
 		if err := s.update.UpdateAll(); err != nil {
-			return err
+			return fmt.Errorf("generate lockfile: %w", err)
 		}
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")

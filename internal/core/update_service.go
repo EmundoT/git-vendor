@@ -56,7 +56,7 @@ func (s *UpdateService) UpdateAll() error {
 func (s *UpdateService) UpdateAllWithOptions(parallelOpts types.ParallelOptions) error {
 	config, err := s.configStore.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	if parallelOpts.Enabled {
