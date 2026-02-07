@@ -235,7 +235,7 @@ func (m *Manager) WatchConfig(callback func() error) error {
 
 // GenerateSBOM generates a Software Bill of Materials in the specified format
 func (m *Manager) GenerateSBOM(format SBOMFormat, projectName string) ([]byte, error) {
-	generator := NewSBOMGenerator(m.syncer.lockStore, m.syncer.configStore, m.syncer.fs, projectName)
+	generator := NewSBOMGenerator(m.syncer.lockStore, m.syncer.configStore, projectName)
 	return generator.Generate(format)
 }
 
