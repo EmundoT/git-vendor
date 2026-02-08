@@ -453,16 +453,20 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 			destPath := mapping.To
 			if destPath == "" || destPath == "." {
 				srcClean := mapping.From
-				// Clean source path (remove blob/tree prefixes if any)
-				srcClean = filepath.Clean(srcClean)
-				destPath = ComputeAutoPath(srcClean, matchingSpec.DefaultTarget, vendorConfig.Name)
+				// Strip position specifier from source before auto-path computation
+				srcFile, _, _ := types.ParsePathPosition(srcClean)
+				srcFile = filepath.Clean(srcFile)
+				destPath = ComputeAutoPath(srcFile, matchingSpec.DefaultTarget, vendorConfig.Name)
 			}
 
-			// Check if path exists (don't join with rootDir since destPath is relative to CWD)
-			_, err := s.fs.Stat(destPath)
+			// Strip position specifier from destination path for file system access
+			destFile, _, _ := types.ParsePathPosition(destPath)
+
+			// Check if path exists (don't join with rootDir since destFile is relative to CWD)
+			_, err := s.fs.Stat(destFile)
 			if err != nil {
 				// Path doesn't exist or error accessing it
-				missingPaths = append(missingPaths, destPath)
+				missingPaths = append(missingPaths, destFile)
 			}
 		}
 

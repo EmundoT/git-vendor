@@ -211,17 +211,20 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 					destPath = filepath.Join("lib", vendor.Name)
 				}
 
-				// Check if destPath is a directory or file
-				info, err := s.fs.Stat(destPath)
+				// Strip position specifier from destination path for file system access
+				destFile, _, _ := types.ParsePathPosition(destPath)
+
+				// Check if destFile is a directory or file
+				info, err := s.fs.Stat(destFile)
 				if err != nil {
 					continue // Path doesn't exist
 				}
 
 				if info.IsDir() {
-					destDirs[destPath] = true
+					destDirs[destFile] = true
 				} else {
 					// For files, add parent directory
-					destDirs[filepath.Dir(destPath)] = true
+					destDirs[filepath.Dir(destFile)] = true
 				}
 			}
 		}
