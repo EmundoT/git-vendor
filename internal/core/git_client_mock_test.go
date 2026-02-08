@@ -5,6 +5,7 @@
 package core
 
 import (
+	context "context"
 	reflect "reflect"
 
 	types "github.com/EmundoT/git-vendor/internal/types"
@@ -35,145 +36,145 @@ func (m *MockGitClient) EXPECT() *MockGitClientMockRecorder {
 }
 
 // AddRemote mocks base method.
-func (m *MockGitClient) AddRemote(dir, name, url string) error {
+func (m *MockGitClient) AddRemote(ctx context.Context, dir, name, url string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddRemote", dir, name, url)
+	ret := m.ctrl.Call(m, "AddRemote", ctx, dir, name, url)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // AddRemote indicates an expected call of AddRemote.
-func (mr *MockGitClientMockRecorder) AddRemote(dir, name, url interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) AddRemote(ctx, dir, name, url interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddRemote", reflect.TypeOf((*MockGitClient)(nil).AddRemote), dir, name, url)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddRemote", reflect.TypeOf((*MockGitClient)(nil).AddRemote), ctx, dir, name, url)
 }
 
 // Checkout mocks base method.
-func (m *MockGitClient) Checkout(dir, ref string) error {
+func (m *MockGitClient) Checkout(ctx context.Context, dir, ref string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Checkout", dir, ref)
+	ret := m.ctrl.Call(m, "Checkout", ctx, dir, ref)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Checkout indicates an expected call of Checkout.
-func (mr *MockGitClientMockRecorder) Checkout(dir, ref interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) Checkout(ctx, dir, ref interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Checkout", reflect.TypeOf((*MockGitClient)(nil).Checkout), dir, ref)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Checkout", reflect.TypeOf((*MockGitClient)(nil).Checkout), ctx, dir, ref)
 }
 
 // Clone mocks base method.
-func (m *MockGitClient) Clone(dir, url string, opts *types.CloneOptions) error {
+func (m *MockGitClient) Clone(ctx context.Context, dir, url string, opts *types.CloneOptions) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Clone", dir, url, opts)
+	ret := m.ctrl.Call(m, "Clone", ctx, dir, url, opts)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Clone indicates an expected call of Clone.
-func (mr *MockGitClientMockRecorder) Clone(dir, url, opts interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) Clone(ctx, dir, url, opts interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Clone", reflect.TypeOf((*MockGitClient)(nil).Clone), dir, url, opts)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Clone", reflect.TypeOf((*MockGitClient)(nil).Clone), ctx, dir, url, opts)
 }
 
 // Fetch mocks base method.
-func (m *MockGitClient) Fetch(dir string, depth int, ref string) error {
+func (m *MockGitClient) Fetch(ctx context.Context, dir string, depth int, ref string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Fetch", dir, depth, ref)
+	ret := m.ctrl.Call(m, "Fetch", ctx, dir, depth, ref)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Fetch indicates an expected call of Fetch.
-func (mr *MockGitClientMockRecorder) Fetch(dir, depth, ref interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) Fetch(ctx, dir, depth, ref interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Fetch", reflect.TypeOf((*MockGitClient)(nil).Fetch), dir, depth, ref)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Fetch", reflect.TypeOf((*MockGitClient)(nil).Fetch), ctx, dir, depth, ref)
 }
 
 // FetchAll mocks base method.
-func (m *MockGitClient) FetchAll(dir string) error {
+func (m *MockGitClient) FetchAll(ctx context.Context, dir string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FetchAll", dir)
+	ret := m.ctrl.Call(m, "FetchAll", ctx, dir)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // FetchAll indicates an expected call of FetchAll.
-func (mr *MockGitClientMockRecorder) FetchAll(dir interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) FetchAll(ctx, dir interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchAll", reflect.TypeOf((*MockGitClient)(nil).FetchAll), dir)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchAll", reflect.TypeOf((*MockGitClient)(nil).FetchAll), ctx, dir)
 }
 
 // GetCommitLog mocks base method.
-func (m *MockGitClient) GetCommitLog(dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error) {
+func (m *MockGitClient) GetCommitLog(ctx context.Context, dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCommitLog", dir, oldHash, newHash, maxCount)
+	ret := m.ctrl.Call(m, "GetCommitLog", ctx, dir, oldHash, newHash, maxCount)
 	ret0, _ := ret[0].([]types.CommitInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetCommitLog indicates an expected call of GetCommitLog.
-func (mr *MockGitClientMockRecorder) GetCommitLog(dir, oldHash, newHash, maxCount interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) GetCommitLog(ctx, dir, oldHash, newHash, maxCount interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCommitLog", reflect.TypeOf((*MockGitClient)(nil).GetCommitLog), dir, oldHash, newHash, maxCount)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCommitLog", reflect.TypeOf((*MockGitClient)(nil).GetCommitLog), ctx, dir, oldHash, newHash, maxCount)
 }
 
 // GetHeadHash mocks base method.
-func (m *MockGitClient) GetHeadHash(dir string) (string, error) {
+func (m *MockGitClient) GetHeadHash(ctx context.Context, dir string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetHeadHash", dir)
+	ret := m.ctrl.Call(m, "GetHeadHash", ctx, dir)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetHeadHash indicates an expected call of GetHeadHash.
-func (mr *MockGitClientMockRecorder) GetHeadHash(dir interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) GetHeadHash(ctx, dir interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHeadHash", reflect.TypeOf((*MockGitClient)(nil).GetHeadHash), dir)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHeadHash", reflect.TypeOf((*MockGitClient)(nil).GetHeadHash), ctx, dir)
 }
 
 // GetTagForCommit mocks base method.
-func (m *MockGitClient) GetTagForCommit(dir, commitHash string) (string, error) {
+func (m *MockGitClient) GetTagForCommit(ctx context.Context, dir, commitHash string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTagForCommit", dir, commitHash)
+	ret := m.ctrl.Call(m, "GetTagForCommit", ctx, dir, commitHash)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetTagForCommit indicates an expected call of GetTagForCommit.
-func (mr *MockGitClientMockRecorder) GetTagForCommit(dir, commitHash interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) GetTagForCommit(ctx, dir, commitHash interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTagForCommit", reflect.TypeOf((*MockGitClient)(nil).GetTagForCommit), dir, commitHash)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTagForCommit", reflect.TypeOf((*MockGitClient)(nil).GetTagForCommit), ctx, dir, commitHash)
 }
 
 // Init mocks base method.
-func (m *MockGitClient) Init(dir string) error {
+func (m *MockGitClient) Init(ctx context.Context, dir string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Init", dir)
+	ret := m.ctrl.Call(m, "Init", ctx, dir)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Init indicates an expected call of Init.
-func (mr *MockGitClientMockRecorder) Init(dir interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) Init(ctx, dir interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Init", reflect.TypeOf((*MockGitClient)(nil).Init), dir)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Init", reflect.TypeOf((*MockGitClient)(nil).Init), ctx, dir)
 }
 
 // ListTree mocks base method.
-func (m *MockGitClient) ListTree(dir, ref, subdir string) ([]string, error) {
+func (m *MockGitClient) ListTree(ctx context.Context, dir, ref, subdir string) ([]string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListTree", dir, ref, subdir)
+	ret := m.ctrl.Call(m, "ListTree", ctx, dir, ref, subdir)
 	ret0, _ := ret[0].([]string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListTree indicates an expected call of ListTree.
-func (mr *MockGitClientMockRecorder) ListTree(dir, ref, subdir interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) ListTree(ctx, dir, ref, subdir interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTree", reflect.TypeOf((*MockGitClient)(nil).ListTree), dir, ref, subdir)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTree", reflect.TypeOf((*MockGitClient)(nil).ListTree), ctx, dir, ref, subdir)
 }
