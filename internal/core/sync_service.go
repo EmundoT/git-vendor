@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -415,11 +416,13 @@ func (s *SyncService) SyncVendor(v *types.VendorSpec, lockedRefs map[string]stri
 	}
 	defer func() { _ = s.fs.RemoveAll(tempDir) }() //nolint:errcheck // cleanup in defer
 
+	ctx := context.Background()
+
 	// Initialize git repo
-	if err := s.gitClient.Init(tempDir); err != nil {
+	if err := s.gitClient.Init(ctx, tempDir); err != nil {
 		return nil, CopyStats{}, fmt.Errorf("failed to initialize git repository for %s: %w", v.Name, err)
 	}
-	if err := s.gitClient.AddRemote(tempDir, "origin", v.URL); err != nil {
+	if err := s.gitClient.AddRemote(ctx, tempDir, "origin", v.URL); err != nil {
 		return nil, CopyStats{}, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, v.URL, err)
 	}
 
@@ -484,12 +487,14 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 
 	// Fetch and checkout
 	fmt.Printf("  ⠿ Fetching ref '%s'...\n", spec.Ref)
+	ctx := context.Background()
+
 	if isLocked {
 		// Locked sync - checkout specific commit
 		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
 			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 		}
-		if err := s.gitClient.Checkout(tempDir, targetCommit); err != nil {
+		if err := s.gitClient.Checkout(ctx, tempDir, targetCommit); err != nil {
 			// Detect stale lock hash error and provide helpful message
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "reference is not a tree") || strings.Contains(errMsg, "not a valid object") {
@@ -502,22 +507,22 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
 			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 		}
-		if err := s.gitClient.Checkout(tempDir, FetchHead); err != nil {
-			if err := s.gitClient.Checkout(tempDir, spec.Ref); err != nil {
+		if err := s.gitClient.Checkout(ctx, tempDir, FetchHead); err != nil {
+			if err := s.gitClient.Checkout(ctx, tempDir, spec.Ref); err != nil {
 				return RefMetadata{}, CopyStats{}, NewCheckoutError(spec.Ref, v.Name, err)
 			}
 		}
 	}
 
 	// Get current commit hash
-	hash, err := s.gitClient.GetHeadHash(tempDir)
+	hash, err := s.gitClient.GetHeadHash(ctx, tempDir)
 	if err != nil {
 		return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to get commit hash for %s @ %s: %w", v.Name, spec.Ref, err)
 	}
 
 	// Get version tag for this commit (if any)
 	//nolint:errcheck // Version tag is optional, empty string is acceptable fallback
-	versionTag, _ := s.gitClient.GetTagForCommit(tempDir, hash)
+	versionTag, _ := s.gitClient.GetTagForCommit(ctx, tempDir, hash)
 
 	// Copy license file (don't count in stats)
 	if err := s.license.CopyLicense(tempDir, v.Name); err != nil {
@@ -546,10 +551,11 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 // fetchWithFallback tries shallow fetch first, falls back to full fetch if needed
 // This eliminates duplicate fetch retry logic
 func (s *SyncService) fetchWithFallback(tempDir, ref string) error {
+	ctx := context.Background()
 	// Try shallow fetch first
-	if err := s.gitClient.Fetch(tempDir, 1, ref); err != nil {
+	if err := s.gitClient.Fetch(ctx, tempDir, 1, ref); err != nil {
 		// Shallow fetch failed, try full fetch
-		if err := s.gitClient.FetchAll(tempDir); err != nil {
+		if err := s.gitClient.FetchAll(ctx, tempDir); err != nil {
 			return fmt.Errorf("fetch ref %s: %w", ref, err)
 		}
 	}

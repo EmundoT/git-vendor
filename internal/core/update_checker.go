@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -109,23 +110,25 @@ func (c *UpdateChecker) fetchLatestHash(url, ref string) (string, error) {
 	}
 	defer c.fs.RemoveAll(tempDir) //nolint:errcheck
 
+	ctx := context.Background()
+
 	// Initialize git repo
-	if err := c.gitClient.Init(tempDir); err != nil {
+	if err := c.gitClient.Init(ctx, tempDir); err != nil {
 		return "", fmt.Errorf("git init failed: %w", err)
 	}
 
 	// Add remote
-	if err := c.gitClient.AddRemote(tempDir, "origin", url); err != nil {
+	if err := c.gitClient.AddRemote(ctx, tempDir, "origin", url); err != nil {
 		return "", fmt.Errorf("git remote add failed: %w", err)
 	}
 
 	// Fetch the specific ref with depth 1 (we only need the latest commit)
-	if err := c.gitClient.Fetch(tempDir, 1, ref); err != nil {
+	if err := c.gitClient.Fetch(ctx, tempDir, 1, ref); err != nil {
 		return "", fmt.Errorf("git fetch failed: %w", err)
 	}
 
 	// Get the commit hash
-	hash, err := c.gitClient.GetHeadHash(tempDir)
+	hash, err := c.gitClient.GetHeadHash(ctx, tempDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get commit hash: %w", err)
 	}
