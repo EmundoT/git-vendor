@@ -88,10 +88,22 @@ func findPositionStart(path string) int {
 func parsePositionSpecifier(spec string) (*PositionSpec, error) {
 	// Try column-precise range: L5C10:L10C30
 	if m := reColRange.FindStringSubmatch(spec); m != nil {
-		startLine, _ := strconv.Atoi(m[1])
-		startCol, _ := strconv.Atoi(m[2])
-		endLine, _ := strconv.Atoi(m[3])
-		endCol, _ := strconv.Atoi(m[4])
+		startLine, err := strconv.Atoi(m[1])
+		if err != nil {
+			return nil, fmt.Errorf("invalid start line %q: %w", m[1], err)
+		}
+		startCol, err := strconv.Atoi(m[2])
+		if err != nil {
+			return nil, fmt.Errorf("invalid start column %q: %w", m[2], err)
+		}
+		endLine, err := strconv.Atoi(m[3])
+		if err != nil {
+			return nil, fmt.Errorf("invalid end line %q: %w", m[3], err)
+		}
+		endCol, err := strconv.Atoi(m[4])
+		if err != nil {
+			return nil, fmt.Errorf("invalid end column %q: %w", m[4], err)
+		}
 
 		if err := validateLineCol(startLine, startCol, endLine, endCol); err != nil {
 			return nil, err

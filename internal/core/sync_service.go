@@ -598,7 +598,10 @@ func (s *SyncService) canSkipSync(vendorName, ref, commitHash string, mappings [
 		}
 
 		// Strip position specifier from destination path for file system access
-		destFile, _, _ := types.ParsePathPosition(destPath)
+		destFile, _, err := types.ParsePathPosition(destPath)
+		if err != nil {
+			destFile = destPath
+		}
 
 		// Check if file exists
 		fullPath := filepath.Join(s.rootDir, destFile)
@@ -636,7 +639,10 @@ func (s *SyncService) updateCache(vendorName string, spec types.BranchSpec, comm
 			continue
 		}
 		// Strip position specifier from destination path for file system access
-		destFile, _, _ := types.ParsePathPosition(destPath)
+		destFile, _, err := types.ParsePathPosition(destPath)
+		if err != nil {
+			destFile = destPath
+		}
 		fullPath := filepath.Join(s.rootDir, destFile)
 		destPaths = append(destPaths, fullPath)
 	}

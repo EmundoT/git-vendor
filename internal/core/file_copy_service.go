@@ -180,7 +180,10 @@ func (s *FileCopyService) computeDestPath(mapping types.PathMapping, spec types.
 	if destPath == "" || destPath == "." {
 		srcClean := s.cleanSourcePath(mapping.From, spec.Ref)
 		// Strip position from source before computing auto-path
-		srcFile, _, _ := types.ParsePathPosition(srcClean)
+		srcFile, _, err := types.ParsePathPosition(srcClean)
+		if err != nil {
+			srcFile = srcClean // Fallback to raw path if position parsing fails
+		}
 		destPath = ComputeAutoPath(srcFile, spec.DefaultTarget, vendor.Name)
 	}
 
