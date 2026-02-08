@@ -591,8 +591,11 @@ func (s *SyncService) canSkipSync(vendorName, ref, commitHash string, mappings [
 			return false
 		}
 
+		// Strip position specifier from destination path for file system access
+		destFile, _, _ := types.ParsePathPosition(destPath)
+
 		// Check if file exists
-		fullPath := filepath.Join(s.rootDir, destPath)
+		fullPath := filepath.Join(s.rootDir, destFile)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			// File missing - can't skip
 			return false
@@ -605,7 +608,7 @@ func (s *SyncService) canSkipSync(vendorName, ref, commitHash string, mappings [
 			return false
 		}
 
-		cachedHash, exists := cachedChecksums[destPath]
+		cachedHash, exists := cachedChecksums[destFile]
 		if !exists || cachedHash != currentHash {
 			// Checksum mismatch or not in cache - can't skip
 			return false
@@ -626,7 +629,9 @@ func (s *SyncService) updateCache(vendorName string, spec types.BranchSpec, comm
 			// Skip auto-named files (too complex to track)
 			continue
 		}
-		fullPath := filepath.Join(s.rootDir, destPath)
+		// Strip position specifier from destination path for file system access
+		destFile, _, _ := types.ParsePathPosition(destPath)
+		fullPath := filepath.Join(s.rootDir, destFile)
 		destPaths = append(destPaths, fullPath)
 	}
 
