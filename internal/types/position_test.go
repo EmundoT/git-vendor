@@ -1,7 +1,10 @@
 package types
 
 import (
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ============================================================================
@@ -277,5 +280,74 @@ func TestParsePathPosition_LargeLineNumbers(t *testing.T) {
 	}
 	if pos.StartLine != 99999 || pos.EndLine != 100000 {
 		t.Errorf("lines = %d-%d, want 99999-100000", pos.StartLine, pos.EndLine)
+	}
+}
+
+// ============================================================================
+// PositionLock YAML Round-Trip
+// ============================================================================
+
+func TestPositionLock_YAMLRoundTrip(t *testing.T) {
+	lock := LockDetails{
+		Name:       "test-vendor",
+		Ref:        "main",
+		CommitHash: "abc123",
+		Updated:    "2025-01-01T00:00:00Z",
+		Positions: []PositionLock{
+			{
+				From:       "src/api.go:L5-L20",
+				To:         "lib/api.go",
+				SourceHash: "sha256:deadbeef",
+			},
+			{
+				From:       "src/types.go:L1C5:L1C30",
+				To:         "lib/types.go:L10-L10",
+				SourceHash: "sha256:cafebabe",
+			},
+		},
+	}
+
+	// Marshal
+	data, err := yaml.Marshal(lock)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	// Unmarshal
+	var got LockDetails
+	if err := yaml.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if len(got.Positions) != 2 {
+		t.Fatalf("positions count = %d, want 2", len(got.Positions))
+	}
+	if got.Positions[0].From != "src/api.go:L5-L20" {
+		t.Errorf("positions[0].From = %q, want %q", got.Positions[0].From, "src/api.go:L5-L20")
+	}
+	if got.Positions[0].SourceHash != "sha256:deadbeef" {
+		t.Errorf("positions[0].SourceHash = %q, want %q", got.Positions[0].SourceHash, "sha256:deadbeef")
+	}
+	if got.Positions[1].To != "lib/types.go:L10-L10" {
+		t.Errorf("positions[1].To = %q, want %q", got.Positions[1].To, "lib/types.go:L10-L10")
+	}
+}
+
+func TestPositionLock_OmittedWhenEmpty(t *testing.T) {
+	lock := LockDetails{
+		Name:       "test-vendor",
+		Ref:        "main",
+		CommitHash: "abc123",
+		Updated:    "2025-01-01T00:00:00Z",
+	}
+
+	data, err := yaml.Marshal(lock)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	// Should not contain "positions" key when empty
+	if strings.Contains(string(data), "positions") {
+		t.Errorf("YAML should omit positions when empty, got:\n%s", string(data))
 	}
 }

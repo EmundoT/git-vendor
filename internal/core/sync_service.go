@@ -23,7 +23,8 @@ type SyncOptions struct {
 // RefMetadata holds per-ref metadata collected during sync
 type RefMetadata struct {
 	CommitHash string
-	VersionTag string // Git tag pointing to commit, if any
+	VersionTag string             // Git tag pointing to commit, if any
+	Positions  []positionRecord   // Position extractions performed during sync
 }
 
 // SyncServiceInterface defines the contract for vendor synchronization.
@@ -545,7 +546,7 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 		}
 	}
 
-	return RefMetadata{CommitHash: hash, VersionTag: versionTag}, stats, nil
+	return RefMetadata{CommitHash: hash, VersionTag: versionTag, Positions: stats.Positions}, stats, nil
 }
 
 // fetchWithFallback tries shallow fetch first, falls back to full fetch if needed
