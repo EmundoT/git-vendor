@@ -14,6 +14,7 @@ type CopyStats struct {
 	FileCount int
 	ByteCount int64
 	Positions []positionRecord // Position-extracted mappings (for lockfile tracking)
+	Warnings  []string         // Non-fatal warnings generated during copy
 }
 
 // positionRecord tracks a single position extraction during copy
@@ -28,6 +29,7 @@ func (s *CopyStats) Add(other CopyStats) {
 	s.FileCount += other.FileCount
 	s.ByteCount += other.ByteCount
 	s.Positions = append(s.Positions, other.Positions...)
+	s.Warnings = append(s.Warnings, other.Warnings...)
 }
 
 // FileSystem abstracts file system operations for testing

@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -114,6 +115,12 @@ func (s *FileCopyService) copyWithPosition(srcPath, destFile string, srcPos, des
 		return CopyStats{}, err
 	}
 
+	// Check for local modifications that will be overwritten
+	var warnings []string
+	if w := s.checkLocalModifications(destFile, destPos, content); w != "" {
+		warnings = append(warnings, w)
+	}
+
 	// Place content at destination
 	if err := PlaceContent(destFile, content, destPos); err != nil {
 		return CopyStats{}, fmt.Errorf("place content at %s: %w", destFile, err)
@@ -127,8 +134,34 @@ func (s *FileCopyService) copyWithPosition(srcPath, destFile string, srcPos, des
 			To:         toRaw,
 			SourceHash: hash,
 		}},
+		Warnings: warnings,
 	}
 	return stats, nil
+}
+
+// checkLocalModifications detects if the destination has been modified since last sync.
+// Returns a warning message if modifications are detected, empty string otherwise.
+func (s *FileCopyService) checkLocalModifications(destFile string, destPos *types.PositionSpec, incomingContent string) string {
+	if destPos != nil {
+		// Destination has a position — compare just that range
+		existing, _, err := ExtractPosition(destFile, destPos)
+		if err != nil {
+			return "" // File doesn't exist yet or range invalid — no warning needed
+		}
+		if existing != incomingContent {
+			return fmt.Sprintf("%s has local modifications at target position that will be overwritten", destFile)
+		}
+	} else {
+		// Destination is whole-file — compare entire content
+		data, err := os.ReadFile(destFile)
+		if err != nil {
+			return "" // File doesn't exist yet — no warning needed
+		}
+		if string(data) != incomingContent {
+			return fmt.Sprintf("%s has local modifications that will be overwritten", destFile)
+		}
+	}
+	return ""
 }
 
 // cleanSourcePath removes blob/tree prefixes from source path
