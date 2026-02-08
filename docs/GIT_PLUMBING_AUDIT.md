@@ -387,13 +387,19 @@ Proposed git-plumbing (one path):
   RunSilent() → returns error                     — for fire-and-forget
 ```
 
+**Status: FIXED.** git-vendor now has two unified runners:
+- `run(ctx, dir, args...)` — fire-and-forget (CombinedOutput, discard on success)
+- `runOutput(ctx, dir, args...)` — capture trimmed stdout (Output, stderr in ExitError)
+
+All 4 methods that previously used direct `exec.Command` (GetHeadHash, GetCommitLog, GetTagForCommit, ListTree) now use `runOutput()`. All methods use `exec.CommandContext` for context support.
+
 ### 3. Bug / Limitation Found During Audit
 
 **`GetCommitLog` pipe delimiter vulnerability** (`git_operations.go:170`):
 
 The log format `--pretty=format:%H|%h|%s|%an|%ai` uses `|` as delimiter. If a commit subject contains `|`, parsing breaks silently (line is skipped due to `len(parts) != 5` check on line 198).
 
-**Recommendation:** The shared library should use null-byte delimiter `%x00` for machine-safe parsing:
+**Status: FIXED.** Now uses null-byte delimiter `%x00` for machine-safe parsing:
 ```text
 --pretty=format:%H%x00%h%x00%s%x00%an%x00%ai
 ```
@@ -404,6 +410,8 @@ Only `ListTree` uses `context.WithTimeout` (30s). All other operations have no t
 - Accept `context.Context` on every function
 - Default to no timeout (caller decides)
 - Provide `WithTimeout` convenience where appropriate
+
+**Status: FIXED.** All GitClient interface methods now accept `context.Context` as first parameter. The 30s timeout has been moved from ListTree's internal implementation to the caller (`RemoteExplorer.FetchRepoDir`) where it belongs.
 
 ### 5. Proposed Extraction Order
 

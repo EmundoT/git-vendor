@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -61,36 +62,38 @@ func (s *VendorSyncer) DiffVendor(vendorName string) ([]types.VendorDiff, error)
 			}
 			defer func() { _ = s.fs.RemoveAll(tempDir) }() //nolint:errcheck // cleanup in defer
 
+			ctx := context.Background()
+
 			// Initialize repo
-			if err := s.gitClient.Init(tempDir); err != nil {
+			if err := s.gitClient.Init(ctx, tempDir); err != nil {
 				return fmt.Errorf("failed to init temp repo: %w", err)
 			}
 
 			// Add remote
-			if err := s.gitClient.AddRemote(tempDir, "origin", vendor.URL); err != nil {
+			if err := s.gitClient.AddRemote(ctx, tempDir, "origin", vendor.URL); err != nil {
 				return fmt.Errorf("failed to add remote: %w", err)
 			}
 
 			// Fetch the ref (full fetch to get all commits for diff)
-			if err := s.gitClient.FetchAll(tempDir); err != nil {
+			if err := s.gitClient.FetchAll(ctx, tempDir); err != nil {
 				// Try fetching just the ref
-				if err := s.gitClient.Fetch(tempDir, 0, spec.Ref); err != nil {
+				if err := s.gitClient.Fetch(ctx, tempDir, 0, spec.Ref); err != nil {
 					return fmt.Errorf("failed to fetch ref '%s': %w", spec.Ref, err)
 				}
 			}
 
 			// Get latest commit hash
-			if err := s.gitClient.Checkout(tempDir, "FETCH_HEAD"); err != nil {
+			if err := s.gitClient.Checkout(ctx, tempDir, "FETCH_HEAD"); err != nil {
 				return fmt.Errorf("failed to checkout FETCH_HEAD: %w", err)
 			}
 
-			latestHash, err := s.gitClient.GetHeadHash(tempDir)
+			latestHash, err := s.gitClient.GetHeadHash(ctx, tempDir)
 			if err != nil {
 				return fmt.Errorf("failed to get HEAD hash: %w", err)
 			}
 
 			// Get commit log between locked and latest
-			commits, err := s.gitClient.GetCommitLog(tempDir, lockedHash, latestHash, 10) // Limit to 10 commits
+			commits, err := s.gitClient.GetCommitLog(ctx, tempDir, lockedHash, latestHash, 10) // Limit to 10 commits
 			if err != nil {
 				// If the locked commit is not in history, it might be ahead or diverged
 				commits = []types.CommitInfo{}

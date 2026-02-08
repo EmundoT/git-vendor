@@ -1,7 +1,9 @@
 package core
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/EmundoT/git-vendor/internal/core/providers"
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -54,14 +56,16 @@ func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error)
 		Depth:      1,
 	}
 
-	if err := e.gitClient.Clone(tempDir, url, opts); err != nil {
+	ctx := context.Background()
+
+	if err := e.gitClient.Clone(ctx, tempDir, url, opts); err != nil {
 		return nil, err
 	}
 
 	// Fetch specific ref if needed (best-effort, may already be available)
 	if ref != "" && ref != "HEAD" {
 		// Ignore error - if fetch fails, ListTree below will handle it
-		_ = e.gitClient.Fetch(tempDir, 0, ref) //nolint:errcheck
+		_ = e.gitClient.Fetch(ctx, tempDir, 0, ref) //nolint:errcheck
 	}
 
 	// Determine target ref
@@ -70,7 +74,11 @@ func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error)
 		target = "HEAD"
 	}
 
-	return e.gitClient.ListTree(tempDir, target, subdir)
+	// Use 30-second timeout for ls-tree operations on remote content
+	treeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	return e.gitClient.ListTree(treeCtx, tempDir, target, subdir)
 }
 
 // ListLocalDir lists local directory contents
