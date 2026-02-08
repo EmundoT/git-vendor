@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,7 @@ func TestSystemGitClient_GetCommitLog(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Initialize git repository
-	if err := git.Init(tempDir); err != nil {
+	if err := git.Init(context.Background(), tempDir); err != nil {
 		t.Fatalf("Failed to init git repo: %v", err)
 	}
 
@@ -31,7 +32,7 @@ func TestSystemGitClient_GetCommitLog(t *testing.T) {
 	runGitCommand(t, tempDir, "commit", "-m", "First commit")
 
 	// Get first commit hash
-	hash1, err := git.GetHeadHash(tempDir)
+	hash1, err := git.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
 		t.Fatalf("Failed to get first commit hash: %v", err)
 	}
@@ -55,13 +56,13 @@ func TestSystemGitClient_GetCommitLog(t *testing.T) {
 	runGitCommand(t, tempDir, "commit", "-m", "Third commit")
 
 	// Get final commit hash
-	hash3, err := git.GetHeadHash(tempDir)
+	hash3, err := git.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
 		t.Fatalf("Failed to get final commit hash: %v", err)
 	}
 
 	// Test: Get commit log between first and third commit
-	commits, err := git.GetCommitLog(tempDir, hash1, hash3, 0)
+	commits, err := git.GetCommitLog(context.Background(), tempDir, hash1, hash3, 0)
 	if err != nil {
 		t.Fatalf("GetCommitLog failed: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestSystemGitClient_GetCommitLog_MaxCount(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Initialize git repository
-	if err := git.Init(tempDir); err != nil {
+	if err := git.Init(context.Background(), tempDir); err != nil {
 		t.Fatalf("Failed to init git repo: %v", err)
 	}
 
@@ -120,7 +121,7 @@ func TestSystemGitClient_GetCommitLog_MaxCount(t *testing.T) {
 	runGitCommand(t, tempDir, "add", "file1.txt")
 	runGitCommand(t, tempDir, "commit", "-m", "First commit")
 
-	hash1, err := git.GetHeadHash(tempDir)
+	hash1, err := git.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
 		t.Fatalf("Failed to get first commit hash: %v", err)
 	}
@@ -134,13 +135,13 @@ func TestSystemGitClient_GetCommitLog_MaxCount(t *testing.T) {
 		runGitCommand(t, tempDir, "commit", "-m", "Commit "+string(rune('0'+i)))
 	}
 
-	hash6, err := git.GetHeadHash(tempDir)
+	hash6, err := git.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
 		t.Fatalf("Failed to get final commit hash: %v", err)
 	}
 
 	// Test: Limit to 3 commits
-	commits, err := git.GetCommitLog(tempDir, hash1, hash6, 3)
+	commits, err := git.GetCommitLog(context.Background(), tempDir, hash1, hash6, 3)
 	if err != nil {
 		t.Fatalf("GetCommitLog failed: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestSystemGitClient_GetCommitLog_EmptyRange(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Initialize git repository
-	if err := git.Init(tempDir); err != nil {
+	if err := git.Init(context.Background(), tempDir); err != nil {
 		t.Fatalf("Failed to init git repo: %v", err)
 	}
 
@@ -168,13 +169,13 @@ func TestSystemGitClient_GetCommitLog_EmptyRange(t *testing.T) {
 	runGitCommand(t, tempDir, "add", "file1.txt")
 	runGitCommand(t, tempDir, "commit", "-m", "First commit")
 
-	hash1, err := git.GetHeadHash(tempDir)
+	hash1, err := git.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
 		t.Fatalf("Failed to get commit hash: %v", err)
 	}
 
 	// Test: Get log from hash to itself (no new commits)
-	commits, err := git.GetCommitLog(tempDir, hash1, hash1, 0)
+	commits, err := git.GetCommitLog(context.Background(), tempDir, hash1, hash1, 0)
 	if err != nil {
 		t.Fatalf("GetCommitLog failed: %v", err)
 	}
@@ -190,7 +191,7 @@ func TestSystemGitClient_GetCommitLog_InvalidRange(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Initialize git repository
-	if err := git.Init(tempDir); err != nil {
+	if err := git.Init(context.Background(), tempDir); err != nil {
 		t.Fatalf("Failed to init git repo: %v", err)
 	}
 
@@ -203,7 +204,7 @@ func TestSystemGitClient_GetCommitLog_InvalidRange(t *testing.T) {
 	runGitCommand(t, tempDir, "commit", "-m", "First commit")
 
 	// Test: Invalid hash should error
-	_, err := git.GetCommitLog(tempDir, "invalid-hash", "another-invalid-hash", 0)
+	_, err := git.GetCommitLog(context.Background(), tempDir, "invalid-hash", "another-invalid-hash", 0)
 	if err == nil {
 		t.Error("Expected error for invalid commit hashes, got nil")
 	}

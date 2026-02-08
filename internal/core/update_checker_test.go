@@ -80,18 +80,18 @@ func TestUpdateChecker_CheckUpdates(t *testing.T) {
 
 	// Mock git operations for vendor1 (up to date)
 	mockFS.EXPECT().CreateTemp("", "update-check-*").Return("/tmp/check1", nil)
-	mockGit.EXPECT().Init("/tmp/check1").Return(nil)
-	mockGit.EXPECT().AddRemote("/tmp/check1", "origin", "https://github.com/test/repo1").Return(nil)
-	mockGit.EXPECT().Fetch("/tmp/check1", 1, "main").Return(nil)
-	mockGit.EXPECT().GetHeadHash("/tmp/check1").Return("abc123", nil) // Same hash = up to date
+	mockGit.EXPECT().Init(gomock.Any(), "/tmp/check1").Return(nil)
+	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/check1", "origin", "https://github.com/test/repo1").Return(nil)
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/check1", 1, "main").Return(nil)
+	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/check1").Return("abc123", nil) // Same hash = up to date
 	mockFS.EXPECT().RemoveAll("/tmp/check1").Return(nil)
 
 	// Mock git operations for vendor2 (outdated)
 	mockFS.EXPECT().CreateTemp("", "update-check-*").Return("/tmp/check2", nil)
-	mockGit.EXPECT().Init("/tmp/check2").Return(nil)
-	mockGit.EXPECT().AddRemote("/tmp/check2", "origin", "https://github.com/test/repo2").Return(nil)
-	mockGit.EXPECT().Fetch("/tmp/check2", 1, "v1.0").Return(nil)
-	mockGit.EXPECT().GetHeadHash("/tmp/check2").Return("xyz789", nil) // Different hash = outdated
+	mockGit.EXPECT().Init(gomock.Any(), "/tmp/check2").Return(nil)
+	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/check2", "origin", "https://github.com/test/repo2").Return(nil)
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/check2", 1, "v1.0").Return(nil)
+	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/check2").Return("xyz789", nil) // Different hash = outdated
 	mockFS.EXPECT().RemoveAll("/tmp/check2").Return(nil)
 
 	// Test: CheckUpdates
@@ -264,9 +264,9 @@ func TestUpdateChecker_CheckUpdates_FetchError(t *testing.T) {
 
 	// Mock git fetch failure
 	mockFS.EXPECT().CreateTemp("", "update-check-*").Return("/tmp/check1", nil)
-	mockGit.EXPECT().Init("/tmp/check1").Return(nil)
-	mockGit.EXPECT().AddRemote("/tmp/check1", "origin", "https://github.com/test/repo1").Return(nil)
-	mockGit.EXPECT().Fetch("/tmp/check1", 1, "main").Return(fmt.Errorf("network error"))
+	mockGit.EXPECT().Init(gomock.Any(), "/tmp/check1").Return(nil)
+	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/check1", "origin", "https://github.com/test/repo1").Return(nil)
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/check1", 1, "main").Return(fmt.Errorf("network error"))
 	mockFS.EXPECT().RemoveAll("/tmp/check1").Return(nil)
 
 	// Test: CheckUpdates should skip vendor with fetch error and return empty results
@@ -324,18 +324,18 @@ func TestUpdateChecker_CheckUpdates_MultipleSpecs(t *testing.T) {
 
 	// Mock git operations for main
 	mockFS.EXPECT().CreateTemp("", "update-check-*").Return("/tmp/check1", nil)
-	mockGit.EXPECT().Init("/tmp/check1").Return(nil)
-	mockGit.EXPECT().AddRemote("/tmp/check1", "origin", "https://github.com/test/repo1").Return(nil)
-	mockGit.EXPECT().Fetch("/tmp/check1", 1, "main").Return(nil)
-	mockGit.EXPECT().GetHeadHash("/tmp/check1").Return("abc123", nil)
+	mockGit.EXPECT().Init(gomock.Any(), "/tmp/check1").Return(nil)
+	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/check1", "origin", "https://github.com/test/repo1").Return(nil)
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/check1", 1, "main").Return(nil)
+	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/check1").Return("abc123", nil)
 	mockFS.EXPECT().RemoveAll("/tmp/check1").Return(nil)
 
 	// Mock git operations for develop
 	mockFS.EXPECT().CreateTemp("", "update-check-*").Return("/tmp/check2", nil)
-	mockGit.EXPECT().Init("/tmp/check2").Return(nil)
-	mockGit.EXPECT().AddRemote("/tmp/check2", "origin", "https://github.com/test/repo1").Return(nil)
-	mockGit.EXPECT().Fetch("/tmp/check2", 1, "develop").Return(nil)
-	mockGit.EXPECT().GetHeadHash("/tmp/check2").Return("xyz789", nil)
+	mockGit.EXPECT().Init(gomock.Any(), "/tmp/check2").Return(nil)
+	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/check2", "origin", "https://github.com/test/repo1").Return(nil)
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/check2", 1, "develop").Return(nil)
+	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/check2").Return("xyz789", nil)
 	mockFS.EXPECT().RemoveAll("/tmp/check2").Return(nil)
 
 	// Test: CheckUpdates should check both specs

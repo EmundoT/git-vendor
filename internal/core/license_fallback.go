@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,7 +40,7 @@ func (c *FallbackLicenseChecker) CheckLicense(repoURL string) (string, error) {
 		NoCheckout: false, // Need to checkout to read files
 	}
 
-	if err := c.gitClient.Clone(tempDir, repoURL, opts); err != nil {
+	if err := c.gitClient.Clone(context.Background(), tempDir, repoURL, opts); err != nil {
 		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 

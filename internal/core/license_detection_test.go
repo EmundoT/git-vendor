@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -223,8 +224,8 @@ func TestFallbackChecker_LicenseFileFound(t *testing.T) {
 	fs.EXPECT().CreateTemp("", "license-check-*").Return("/tmp/test123", nil)
 
 	// Mock: git clone
-	git.EXPECT().Clone("/tmp/test123", "https://github.com/example/repo", gomock.Any()).
-		DoAndReturn(func(_, _ string, opts *types.CloneOptions) error {
+	git.EXPECT().Clone(gomock.Any(), "/tmp/test123", "https://github.com/example/repo", gomock.Any()).
+		DoAndReturn(func(_ context.Context, _, _ string, opts *types.CloneOptions) error {
 			// Verify clone options
 			if opts.Depth != 1 || opts.NoCheckout {
 				t.Errorf("Expected depth=1, no-checkout=false, got depth=%d, no-checkout=%v",
@@ -267,7 +268,7 @@ func TestFallbackChecker_CloneFails(t *testing.T) {
 	fs.EXPECT().CreateTemp("", "license-check-*").Return("/tmp/test123", nil)
 
 	// Mock: git clone fails
-	git.EXPECT().Clone("/tmp/test123", "https://github.com/example/repo", gomock.Any()).
+	git.EXPECT().Clone(gomock.Any(), "/tmp/test123", "https://github.com/example/repo", gomock.Any()).
 		Return(errors.New("clone failed: repository not found"))
 
 	// Mock: cleanup
