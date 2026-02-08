@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -26,12 +27,12 @@ func TestUpdateAll_HappyPath_SingleVendor(t *testing.T) {
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.EXPECT().Init("/tmp/test-12345").Return(nil)
-	git.EXPECT().AddRemote("/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
-	git.EXPECT().Fetch("/tmp/test-12345", 1, "main").Return(nil)
-	git.EXPECT().Checkout("/tmp/test-12345", "FETCH_HEAD").Return(nil)
-	git.EXPECT().GetHeadHash("/tmp/test-12345").Return("abc123def456", nil)
-	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+	git.EXPECT().Init(gomock.Any(), "/tmp/test-12345").Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), "/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), "/tmp/test-12345", "FETCH_HEAD").Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test-12345").Return("abc123def456", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
@@ -83,17 +84,17 @@ func TestUpdateAll_HappyPath_MultipleVendors(t *testing.T) {
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil).Times(3)
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil).Times(3)
 
-	git.EXPECT().Init(gomock.Any()).Return(nil).Times(3)
-	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
-	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
 
 	callCount := 0
-	git.EXPECT().GetHeadHash(gomock.Any()).DoAndReturn(func(_ string) (string, error) {
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, _ string) (string, error) {
 		callCount++
 		return fmt.Sprintf("hash%d00000", callCount), nil
 	}).Times(3)
-	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
@@ -161,7 +162,7 @@ func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
 
 	// Mock: vendor-bad fails (second call), others succeed
 	callCount := 0
-	git.EXPECT().Init(gomock.Any()).DoAndReturn(func(_ string) error {
+	git.EXPECT().Init(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, _ string) error {
 		callCount++
 		if callCount == 2 {
 			return fmt.Errorf("git init failed")
@@ -169,11 +170,11 @@ func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
 		return nil
 	}).Times(3)
 
-	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil).Times(2)
-	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil).Times(2)
-	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil).Times(2)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
@@ -213,12 +214,12 @@ func TestUpdateAll_LockSaveFails(t *testing.T) {
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.EXPECT().Init(gomock.Any()).Return(nil)
-	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
-	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
@@ -278,12 +279,12 @@ func TestUpdateAll_TimestampFormat(t *testing.T) {
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.EXPECT().Init(gomock.Any()).Return(nil)
-	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
-	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
@@ -350,18 +351,18 @@ func TestUpdateAll_MultipleSpecsPerVendor(t *testing.T) {
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil).Times(1)
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil).Times(1)
 
-	git.EXPECT().Init(gomock.Any()).Return(nil).Times(1)
-	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
 	// Each spec gets fetched, checked out, and hash retrieved
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
-	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
 
 	hashCounter := 0
-	git.EXPECT().GetHeadHash(gomock.Any()).DoAndReturn(func(_ string) (string, error) {
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, _ string) (string, error) {
 		hashCounter++
 		return fmt.Sprintf("hash%d00000", hashCounter), nil
 	}).Times(3)
-	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
@@ -403,12 +404,12 @@ func TestUpdateAll_LicensePathSet(t *testing.T) {
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil)
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
-	git.EXPECT().Init(gomock.Any()).Return(nil)
-	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Checkout(gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().GetHeadHash(gomock.Any()).Return("abc123def", nil)
-	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()

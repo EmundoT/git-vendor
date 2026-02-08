@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )
@@ -18,16 +17,16 @@ var semverRegex = regexp.MustCompile(`^\d+\.\d+\.\d+`)
 
 // GitClient handles git command operations
 type GitClient interface {
-	Init(dir string) error
-	AddRemote(dir, name, url string) error
-	Fetch(dir string, depth int, ref string) error
-	FetchAll(dir string) error
-	Checkout(dir, ref string) error
-	GetHeadHash(dir string) (string, error)
-	Clone(dir, url string, opts *types.CloneOptions) error
-	ListTree(dir, ref, subdir string) ([]string, error)
-	GetCommitLog(dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error)
-	GetTagForCommit(dir, commitHash string) (string, error)
+	Init(ctx context.Context, dir string) error
+	AddRemote(ctx context.Context, dir, name, url string) error
+	Fetch(ctx context.Context, dir string, depth int, ref string) error
+	FetchAll(ctx context.Context, dir string) error
+	Checkout(ctx context.Context, dir, ref string) error
+	GetHeadHash(ctx context.Context, dir string) (string, error)
+	Clone(ctx context.Context, dir, url string, opts *types.CloneOptions) error
+	ListTree(ctx context.Context, dir, ref, subdir string) ([]string, error)
+	GetCommitLog(ctx context.Context, dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error)
+	GetTagForCommit(ctx context.Context, dir, commitHash string) (string, error)
 }
 
 // SystemGitClient implements GitClient using system git commands
@@ -41,48 +40,42 @@ func NewSystemGitClient(verbose bool) *SystemGitClient {
 }
 
 // Init initializes a git repository
-func (g *SystemGitClient) Init(dir string) error {
-	return g.run(dir, "init")
+func (g *SystemGitClient) Init(ctx context.Context, dir string) error {
+	return g.run(ctx, dir, "init")
 }
 
 // AddRemote adds a git remote
-func (g *SystemGitClient) AddRemote(dir, name, url string) error {
-	return g.run(dir, "remote", "add", name, url)
+func (g *SystemGitClient) AddRemote(ctx context.Context, dir, name, url string) error {
+	return g.run(ctx, dir, "remote", "add", name, url)
 }
 
 // Fetch fetches from remote with optional depth
-func (g *SystemGitClient) Fetch(dir string, depth int, ref string) error {
+func (g *SystemGitClient) Fetch(ctx context.Context, dir string, depth int, ref string) error {
 	args := []string{"fetch"}
 	if depth > 0 {
 		args = append(args, "--depth", fmt.Sprintf("%d", depth))
 	}
 	args = append(args, "origin", ref)
-	return g.run(dir, args...)
+	return g.run(ctx, dir, args...)
 }
 
 // FetchAll fetches all refs from origin
-func (g *SystemGitClient) FetchAll(dir string) error {
-	return g.run(dir, "fetch", "origin")
+func (g *SystemGitClient) FetchAll(ctx context.Context, dir string) error {
+	return g.run(ctx, dir, "fetch", "origin")
 }
 
 // Checkout checks out a git ref
-func (g *SystemGitClient) Checkout(dir, ref string) error {
-	return g.run(dir, "checkout", ref)
+func (g *SystemGitClient) Checkout(ctx context.Context, dir, ref string) error {
+	return g.run(ctx, dir, "checkout", ref)
 }
 
 // GetHeadHash returns the current HEAD commit hash
-func (g *SystemGitClient) GetHeadHash(dir string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
+func (g *SystemGitClient) GetHeadHash(ctx context.Context, dir string) (string, error) {
+	return g.runOutput(ctx, dir, "rev-parse", "HEAD")
 }
 
 // Clone clones a repository with options
-func (g *SystemGitClient) Clone(dir, url string, opts *types.CloneOptions) error {
+func (g *SystemGitClient) Clone(ctx context.Context, dir, url string, opts *types.CloneOptions) error {
 	args := []string{"clone"}
 
 	if opts != nil {
@@ -98,38 +91,39 @@ func (g *SystemGitClient) Clone(dir, url string, opts *types.CloneOptions) error
 	}
 
 	args = append(args, url, ".")
-	return g.run(dir, args...)
+	return g.run(ctx, dir, args...)
 }
 
-// ListTree lists files/directories at a given ref and subdir
-func (g *SystemGitClient) ListTree(dir, ref, subdir string) ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
+// ListTree lists files/directories at a given ref and subdir.
+// The caller should set a deadline on ctx if a timeout is desired.
+func (g *SystemGitClient) ListTree(ctx context.Context, dir, ref, subdir string) ([]string, error) {
 	target := ref
 	if target == "" {
 		target = "HEAD"
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "ls-tree", target)
+	args := []string{"ls-tree", target}
 	if subdir != "" && subdir != "." {
 		cleanSub := strings.TrimSuffix(subdir, "/")
-		cmd.Args = append(cmd.Args, cleanSub+"/")
+		args = append(args, cleanSub+"/")
 	}
-	cmd.Dir = dir
 
-	out, err := cmd.Output()
+	output, err := g.runOutput(ctx, dir, args...)
 	if err != nil && subdir != "" {
 		// Try without trailing slash
-		cmd = exec.CommandContext(ctx, "git", "ls-tree", target, strings.TrimSuffix(subdir, "/"))
-		cmd.Dir = dir
-		out, err = cmd.Output()
+		args = []string{"ls-tree", target, strings.TrimSuffix(subdir, "/")}
+		output, err = g.runOutput(ctx, dir, args...)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("git ls-tree failed: %w", err)
 	}
 
-	lines := strings.Split(string(out), "\n")
+	return parseListTreeOutput(output, subdir), nil
+}
+
+// parseListTreeOutput parses git ls-tree output into a sorted list of entries
+func parseListTreeOutput(output, subdir string) []string {
+	lines := strings.Split(output, "\n")
 	var items []string
 
 	for _, l := range lines {
@@ -161,13 +155,15 @@ func (g *SystemGitClient) ListTree(dir, ref, subdir string) ([]string, error) {
 	}
 
 	sort.Strings(items)
-	return items, nil
+	return items
 }
 
-// GetCommitLog retrieves commit history between two commits
-func (g *SystemGitClient) GetCommitLog(dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error) {
-	// Format: hash|shortHash|subject|author|date
-	formatString := "--pretty=format:%H|%h|%s|%an|%ai"
+// GetCommitLog retrieves commit history between two commits.
+// Uses null-byte delimiter (%x00) for safe parsing of commit subjects
+// that may contain pipe characters.
+func (g *SystemGitClient) GetCommitLog(ctx context.Context, dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error) {
+	// Format: hash\x00shortHash\x00subject\x00author\x00date
+	formatString := "--pretty=format:%H%x00%h%x00%s%x00%an%x00%ai"
 
 	args := []string{"log", formatString}
 	if maxCount > 0 {
@@ -178,15 +174,16 @@ func (g *SystemGitClient) GetCommitLog(dir, oldHash, newHash string, maxCount in
 	rangeSpec := fmt.Sprintf("%s..%s", oldHash, newHash)
 	args = append(args, rangeSpec)
 
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-
-	out, err := cmd.Output()
+	output, err := g.runOutput(ctx, dir, args...)
 	if err != nil {
 		return nil, fmt.Errorf("git log failed: %w", err)
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if output == "" {
+		return nil, nil
+	}
+
+	lines := strings.Split(output, "\n")
 	var commits []types.CommitInfo
 
 	for _, line := range lines {
@@ -194,7 +191,7 @@ func (g *SystemGitClient) GetCommitLog(dir, oldHash, newHash string, maxCount in
 			continue
 		}
 
-		parts := strings.Split(line, "|")
+		parts := strings.Split(line, "\x00")
 		if len(parts) != 5 {
 			continue
 		}
@@ -213,23 +210,18 @@ func (g *SystemGitClient) GetCommitLog(dir, oldHash, newHash string, maxCount in
 
 // GetTagForCommit returns a git tag that points to the given commit hash, if any.
 // Prefers semver-looking tags (v1.0.0, 1.0.0) over other tags.
-func (g *SystemGitClient) GetTagForCommit(dir, commitHash string) (string, error) {
-	// Get tags pointing to this exact commit
-	cmd := exec.Command("git", "tag", "--points-at", commitHash)
-	cmd.Dir = dir
-
-	out, err := cmd.Output()
+func (g *SystemGitClient) GetTagForCommit(ctx context.Context, dir, commitHash string) (string, error) {
+	output, err := g.runOutput(ctx, dir, "tag", "--points-at", commitHash)
 	if err != nil {
 		// No tags found, not an error
 		return "", nil
 	}
 
-	tagsOutput := strings.TrimSpace(string(out))
-	if tagsOutput == "" {
+	if output == "" {
 		return "", nil
 	}
 
-	tags := strings.Split(tagsOutput, "\n")
+	tags := strings.Split(output, "\n")
 	if len(tags) == 0 || tags[0] == "" {
 		return "", nil
 	}
@@ -284,13 +276,14 @@ func GetGitUserIdentity() string {
 	return email
 }
 
-// run executes a git command
-func (g *SystemGitClient) run(dir string, args ...string) error {
+// run executes a git command, discarding output on success.
+// Uses CombinedOutput to include stderr in error messages.
+func (g *SystemGitClient) run(ctx context.Context, dir string, args ...string) error {
 	if g.verbose {
 		fmt.Fprintf(os.Stderr, "[DEBUG] git %s (in %s)\n", strings.Join(args, " "), dir)
 	}
 
-	cmd := exec.Command("git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -298,6 +291,27 @@ func (g *SystemGitClient) run(dir string, args ...string) error {
 	}
 
 	return nil
+}
+
+// runOutput executes a git command and returns trimmed stdout.
+// Uses Output (not CombinedOutput) so stderr is available in ExitError.
+func (g *SystemGitClient) runOutput(ctx context.Context, dir string, args ...string) (string, error) {
+	if g.verbose {
+		fmt.Fprintf(os.Stderr, "[DEBUG] git %s (in %s)\n", strings.Join(args, " "), dir)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("%s", string(exitErr.Stderr))
+		}
+		return "", err
+	}
+
+	return strings.TrimSpace(string(out)), nil
 }
 
 // ParseSmartURL extracts repository, ref, and path from GitHub URLs

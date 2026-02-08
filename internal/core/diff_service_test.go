@@ -50,12 +50,12 @@ func TestDiffVendor_Success(t *testing.T) {
 
 	// Setup git operations for diff
 	mockFS.EXPECT().CreateTemp("", "diff-check-*").Return("/tmp/test", nil)
-	mockGit.EXPECT().Init("/tmp/test").Return(nil)
-	mockGit.EXPECT().AddRemote("/tmp/test", "origin", "https://github.com/owner/repo").Return(nil)
-	mockGit.EXPECT().FetchAll("/tmp/test").Return(nil)
-	mockGit.EXPECT().Checkout("/tmp/test", "FETCH_HEAD").Return(nil)
-	mockGit.EXPECT().GetHeadHash("/tmp/test").Return("def456", nil)
-	mockGit.EXPECT().GetCommitLog("/tmp/test", "abc123", "def456", 10).Return([]types.CommitInfo{
+	mockGit.EXPECT().Init(gomock.Any(), "/tmp/test").Return(nil)
+	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/test", "origin", "https://github.com/owner/repo").Return(nil)
+	mockGit.EXPECT().FetchAll(gomock.Any(), "/tmp/test").Return(nil)
+	mockGit.EXPECT().Checkout(gomock.Any(), "/tmp/test", "FETCH_HEAD").Return(nil)
+	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test").Return("def456", nil)
+	mockGit.EXPECT().GetCommitLog(gomock.Any(), "/tmp/test", "abc123", "def456", 10).Return([]types.CommitInfo{
 		{
 			ShortHash: "def456",
 			Subject:   "Update dependencies",

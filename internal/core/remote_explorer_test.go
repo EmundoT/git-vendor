@@ -167,13 +167,13 @@ func TestFetchRepoDir_HappyPath(t *testing.T) {
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
 	// Mock: Clone succeeds
-	git.EXPECT().Clone("/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(nil)
+	git.EXPECT().Clone(gomock.Any(), "/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(nil)
 
 	// Mock: Fetch is called after clone when ref is not HEAD
-	git.EXPECT().Fetch("/tmp/test-12345", 0, "main").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", 0, "main").Return(nil)
 
 	// Mock: ListTree returns files
-	git.EXPECT().ListTree("/tmp/test-12345", "main", "src").Return([]string{"file1.go", "file2.go", "subdir/"}, nil)
+	git.EXPECT().ListTree(gomock.Any(), "/tmp/test-12345", "main", "src").Return([]string{"file1.go", "file2.go", "subdir/"}, nil)
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
@@ -195,7 +195,7 @@ func TestFetchRepoDir_CloneFails(t *testing.T) {
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
 	// Mock: Clone fails
-	git.EXPECT().Clone("/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(fmt.Errorf("network timeout"))
+	git.EXPECT().Clone(gomock.Any(), "/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(fmt.Errorf("network timeout"))
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
@@ -217,13 +217,13 @@ func TestFetchRepoDir_SpecificRef(t *testing.T) {
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
 	// Mock: Clone succeeds
-	git.EXPECT().Clone("/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(nil)
+	git.EXPECT().Clone(gomock.Any(), "/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(nil)
 
 	// Mock: Fetch called for specific ref
-	git.EXPECT().Fetch("/tmp/test-12345", gomock.Any(), "v1.0.0").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", gomock.Any(), "v1.0.0").Return(nil)
 
 	// Mock: ListTree returns files
-	git.EXPECT().ListTree("/tmp/test-12345", "v1.0.0", "").Return([]string{"file.go"}, nil)
+	git.EXPECT().ListTree(gomock.Any(), "/tmp/test-12345", "v1.0.0", "").Return([]string{"file.go"}, nil)
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
@@ -242,13 +242,13 @@ func TestFetchRepoDir_ListTreeFails(t *testing.T) {
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil)
 
 	// Mock: Clone succeeds
-	git.EXPECT().Clone("/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(nil)
+	git.EXPECT().Clone(gomock.Any(), "/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(nil)
 
 	// Mock: Fetch is called after clone when ref is not HEAD
-	git.EXPECT().Fetch("/tmp/test-12345", 0, "main").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", 0, "main").Return(nil)
 
 	// Mock: ListTree fails
-	git.EXPECT().ListTree("/tmp/test-12345", "main", "nonexistent").Return(nil, fmt.Errorf("invalid tree object"))
+	git.EXPECT().ListTree(gomock.Any(), "/tmp/test-12345", "main", "nonexistent").Return(nil, fmt.Errorf("invalid tree object"))
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 

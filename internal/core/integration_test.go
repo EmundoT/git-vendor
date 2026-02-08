@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -107,7 +108,7 @@ func TestIntegration_GitOperations_Clone(t *testing.T) {
 	}
 
 	repoURL := "file://" + srcRepo
-	err := gitClient.Clone(destDir, repoURL, opts)
+	err := gitClient.Clone(context.Background(), destDir, repoURL, opts)
 
 	// Verify
 	if err != nil {
@@ -144,7 +145,7 @@ func TestIntegration_GitOperations_ListTree(t *testing.T) {
 
 	// Test: ListTree at root
 	gitClient := NewSystemGitClient(false)
-	items, err := gitClient.ListTree(repo, "HEAD", "")
+	items, err := gitClient.ListTree(context.Background(), repo, "HEAD", "")
 
 	// Verify root listing
 	if err != nil {
@@ -156,7 +157,7 @@ func TestIntegration_GitOperations_ListTree(t *testing.T) {
 	}
 
 	// Test: ListTree in subdirectory
-	items, err = gitClient.ListTree(repo, "HEAD", "src")
+	items, err = gitClient.ListTree(context.Background(), repo, "HEAD", "src")
 	if err != nil {
 		t.Fatalf("ListTree(src) failed: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestIntegration_GitOperations_ListTree(t *testing.T) {
 	}
 
 	// Test: ListTree in nested subdirectory
-	items, err = gitClient.ListTree(repo, "HEAD", "src/util")
+	items, err = gitClient.ListTree(context.Background(), repo, "HEAD", "src/util")
 	if err != nil {
 		t.Fatalf("ListTree(src/util) failed: %v", err)
 	}
@@ -266,24 +267,24 @@ func TestIntegration_GitOperations_Fetch(t *testing.T) {
 	gitClient := NewSystemGitClient(false)
 
 	// Test: Init, AddRemote, Fetch
-	err := gitClient.Init(destRepo)
+	err := gitClient.Init(context.Background(), destRepo)
 	if err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
 
-	err = gitClient.AddRemote(destRepo, "origin", repoURL)
+	err = gitClient.AddRemote(context.Background(), destRepo, "origin", repoURL)
 	if err != nil {
 		t.Fatalf("AddRemote failed: %v", err)
 	}
 
 	// Test: Fetch specific ref (tags need refs/ prefix)
-	err = gitClient.Fetch(destRepo, 1, "refs/tags/v1.0:refs/tags/v1.0")
+	err = gitClient.Fetch(context.Background(), destRepo, 1, "refs/tags/v1.0:refs/tags/v1.0")
 	if err != nil {
 		t.Fatalf("Fetch failed: %v", err)
 	}
 
 	// Verify: can checkout the fetched tag
-	err = gitClient.Checkout(destRepo, "v1.0")
+	err = gitClient.Checkout(context.Background(), destRepo, "v1.0")
 	if err != nil {
 		// Fetch succeeded even if checkout fails (tag might not be local)
 		t.Logf("Fetch succeeded but checkout failed (expected): %v", err)
@@ -308,7 +309,7 @@ func TestIntegration_GitOperations_Checkout(t *testing.T) {
 	gitClient := NewSystemGitClient(false)
 
 	// Test: Checkout first commit
-	err := gitClient.Checkout(repo, firstHash)
+	err := gitClient.Checkout(context.Background(), repo, firstHash)
 	if err != nil {
 		t.Fatalf("Checkout failed: %v", err)
 	}
@@ -343,7 +344,7 @@ func TestIntegration_GitOperations_GetHeadHash(t *testing.T) {
 
 	// Test: GetHeadHash
 	gitClient := NewSystemGitClient(false)
-	hash, err := gitClient.GetHeadHash(repo)
+	hash, err := gitClient.GetHeadHash(context.Background(), repo)
 
 	// Verify
 	if err != nil {
