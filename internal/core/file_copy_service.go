@@ -68,7 +68,7 @@ func (s *FileCopyService) copyMapping(tempDir string, vendor *types.VendorSpec, 
 
 	// Position extraction mode: extract specific lines/columns from source
 	if srcPos != nil {
-		return s.copyWithPosition(srcPath, destFile, srcPos, destPos, vendor.Name, spec.Ref, srcFile)
+		return s.copyWithPosition(srcPath, destFile, srcPos, destPos, vendor.Name, spec.Ref, srcFile, mapping.From, mapping.To)
 	}
 
 	// Standard copy (no position specifier) — existing behavior
@@ -99,9 +99,9 @@ func (s *FileCopyService) copyMapping(tempDir string, vendor *types.VendorSpec, 
 }
 
 // copyWithPosition handles position-based extraction and placement.
-func (s *FileCopyService) copyWithPosition(srcPath, destFile string, srcPos, destPos *types.PositionSpec, vendorName, ref, srcClean string) (CopyStats, error) {
+func (s *FileCopyService) copyWithPosition(srcPath, destFile string, srcPos, destPos *types.PositionSpec, vendorName, ref, srcClean string, fromRaw, toRaw string) (CopyStats, error) {
 	// Extract content from source at the specified position
-	content, _, err := ExtractPosition(srcPath, srcPos)
+	content, hash, err := ExtractPosition(srcPath, srcPos)
 	if err != nil {
 		if strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "does not exist") {
 			return CopyStats{}, NewPathNotFoundError(srcClean, vendorName, ref)
@@ -119,7 +119,16 @@ func (s *FileCopyService) copyWithPosition(srcPath, destFile string, srcPos, des
 		return CopyStats{}, fmt.Errorf("place content at %s: %w", destFile, err)
 	}
 
-	return CopyStats{FileCount: 1, ByteCount: int64(len(content))}, nil
+	stats := CopyStats{
+		FileCount: 1,
+		ByteCount: int64(len(content)),
+		Positions: []positionRecord{{
+			From:       fromRaw,
+			To:         toRaw,
+			SourceHash: hash,
+		}},
+	}
+	return stats, nil
 }
 
 // cleanSourcePath removes blob/tree prefixes from source path

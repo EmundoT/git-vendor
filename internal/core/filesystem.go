@@ -13,12 +13,21 @@ import (
 type CopyStats struct {
 	FileCount int
 	ByteCount int64
+	Positions []positionRecord // Position-extracted mappings (for lockfile tracking)
+}
+
+// positionRecord tracks a single position extraction during copy
+type positionRecord struct {
+	From       string // Source path with position specifier
+	To         string // Destination path with optional position specifier
+	SourceHash string // SHA-256 hash of extracted content
 }
 
 // Add adds another CopyStats to this one
 func (s *CopyStats) Add(other CopyStats) {
 	s.FileCount += other.FileCount
 	s.ByteCount += other.ByteCount
+	s.Positions = append(s.Positions, other.Positions...)
 }
 
 // FileSystem abstracts file system operations for testing

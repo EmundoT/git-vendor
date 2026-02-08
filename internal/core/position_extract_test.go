@@ -75,7 +75,7 @@ func TestExtractPosition_ColumnPrecise_SingleLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// EndCol is 1-indexed exclusive bound (like Go slices): L1C5:L1C10 extracts cols 5-9
+	// EndCol is 1-indexed inclusive bound: L1C5:L1C10 extracts cols 5-10 (6 chars)
 	extracted, _, err := ExtractPosition(filePath, &types.PositionSpec{
 		StartLine: 1, EndLine: 1, StartCol: 5, EndCol: 10,
 	})
@@ -377,5 +377,73 @@ func TestExtractThenPlace_IntoExistingFile(t *testing.T) {
 	want := "keep1\nfoo\nbar\nkeep4\n"
 	if string(got) != want {
 		t.Errorf("result = %q, want %q", string(got), want)
+	}
+}
+
+// ============================================================================
+// CopyStats Position Tracking
+// ============================================================================
+
+func TestCopyStats_PositionsAggregation(t *testing.T) {
+	s1 := CopyStats{
+		FileCount: 1,
+		ByteCount: 100,
+		Positions: []positionRecord{
+			{From: "a.go:L1-L5", To: "b.go", SourceHash: "sha256:aaa"},
+		},
+	}
+	s2 := CopyStats{
+		FileCount: 2,
+		ByteCount: 200,
+		Positions: []positionRecord{
+			{From: "c.go:L10-L20", To: "d.go:L5-L15", SourceHash: "sha256:bbb"},
+		},
+	}
+
+	s1.Add(s2)
+
+	if s1.FileCount != 3 {
+		t.Errorf("FileCount = %d, want 3", s1.FileCount)
+	}
+	if s1.ByteCount != 300 {
+		t.Errorf("ByteCount = %d, want 300", s1.ByteCount)
+	}
+	if len(s1.Positions) != 2 {
+		t.Fatalf("Positions length = %d, want 2", len(s1.Positions))
+	}
+	if s1.Positions[0].SourceHash != "sha256:aaa" {
+		t.Errorf("Positions[0].SourceHash = %q, want sha256:aaa", s1.Positions[0].SourceHash)
+	}
+	if s1.Positions[1].From != "c.go:L10-L20" {
+		t.Errorf("Positions[1].From = %q, want c.go:L10-L20", s1.Positions[1].From)
+	}
+}
+
+func TestToPositionLocks(t *testing.T) {
+	// Empty input returns nil
+	result := toPositionLocks(nil)
+	if result != nil {
+		t.Errorf("expected nil for empty input, got %v", result)
+	}
+
+	result = toPositionLocks([]positionRecord{})
+	if result != nil {
+		t.Errorf("expected nil for empty slice, got %v", result)
+	}
+
+	// Non-empty input
+	records := []positionRecord{
+		{From: "src/api.go:L5-L20", To: "lib/api.go", SourceHash: "sha256:abc123"},
+		{From: "src/types.go:L1C5:L1C30", To: "lib/types.go:L10-L10", SourceHash: "sha256:def456"},
+	}
+	result = toPositionLocks(records)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 locks, got %d", len(result))
+	}
+	if result[0].From != "src/api.go:L5-L20" || result[0].SourceHash != "sha256:abc123" {
+		t.Errorf("lock[0] = %+v, unexpected", result[0])
+	}
+	if result[1].To != "lib/types.go:L10-L10" || result[1].SourceHash != "sha256:def456" {
+		t.Errorf("lock[1] = %+v, unexpected", result[1])
 	}
 }

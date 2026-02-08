@@ -12,7 +12,7 @@ type PositionSpec struct {
 	StartLine int // 1-indexed
 	EndLine   int // 1-indexed, 0 means same as StartLine (single line)
 	StartCol  int // 1-indexed, 0 means no column specified
-	EndCol    int // 1-indexed, 0 means no column specified
+	EndCol    int // 1-indexed inclusive, 0 means no column specified
 	ToEOF     bool
 }
 
