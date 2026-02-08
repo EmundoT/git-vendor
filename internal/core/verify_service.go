@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -102,7 +103,7 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 		// Check if file exists
 		actualHash, err := s.cache.ComputeFileChecksum(path)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				// File was deleted
 				result.Files = append(result.Files, types.FileStatus{
 					Path:         path,
@@ -140,6 +141,11 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 		}
 	}
 
+	// Verify position-extracted content against lockfile source hashes.
+	// This is a local-only check: read the destination file, extract the
+	// target range, hash it, and compare to the source_hash stored at sync time.
+	s.verifyPositions(lock, result)
+
 	// Scan for added files (in vendor directories but not in lockfile)
 	addedFiles, err := s.findAddedFiles(config, expectedFiles)
 	if err != nil {
@@ -162,6 +168,85 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 	}
 
 	return result, nil
+}
+
+// verifyPositions checks position-extracted content against lockfile source hashes.
+// For each PositionLock in the lockfile, it reads the destination file locally, extracts
+// the target range, and compares its hash to the stored source_hash. No network access needed.
+func (s *VerifyService) verifyPositions(lock types.VendorLock, result *types.VerifyResult) {
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
+		for _, pos := range lockEntry.Positions {
+			vendorName := lockEntry.Name
+
+			// Parse destination path and position
+			destFile, destPos, err := types.ParsePathPosition(pos.To)
+			if err != nil {
+				// If To is empty, fall back to parsing From for auto-path
+				// (position verify only makes sense when we know where the content went)
+				continue
+			}
+
+			// Determine what to verify:
+			// - If destination has a position → extract that range and hash it
+			// - If destination has no position → hash the whole file
+			var actualHash string
+			var displayPath string
+
+			if destPos != nil {
+				displayPath = pos.To
+				_, actualHash, err = ExtractPosition(destFile, destPos)
+			} else {
+				displayPath = destFile
+				actualHash, err = s.cache.ComputeFileChecksum(destFile)
+			}
+
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					result.Files = append(result.Files, types.FileStatus{
+						Path:         displayPath,
+						Vendor:       &vendorName,
+						Status:       "deleted",
+						ExpectedHash: &pos.SourceHash,
+					})
+					result.Summary.Deleted++
+					continue
+				}
+				// Extraction error (e.g., position out of range) — treat as modified
+				status := "modified"
+				errStr := err.Error()
+				result.Files = append(result.Files, types.FileStatus{
+					Path:         displayPath,
+					Vendor:       &vendorName,
+					Status:       status,
+					ExpectedHash: &pos.SourceHash,
+					ActualHash:   &errStr,
+				})
+				result.Summary.Modified++
+				continue
+			}
+
+			if actualHash == pos.SourceHash {
+				result.Files = append(result.Files, types.FileStatus{
+					Path:         displayPath,
+					Vendor:       &vendorName,
+					Status:       "verified",
+					ExpectedHash: &pos.SourceHash,
+					ActualHash:   &actualHash,
+				})
+				result.Summary.Verified++
+			} else {
+				result.Files = append(result.Files, types.FileStatus{
+					Path:         displayPath,
+					Vendor:       &vendorName,
+					Status:       "modified",
+					ExpectedHash: &pos.SourceHash,
+					ActualHash:   &actualHash,
+				})
+				result.Summary.Modified++
+			}
+		}
+	}
 }
 
 // buildExpectedFilesFromCache builds expected files map from cache (fallback)
@@ -256,7 +341,7 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 			return nil
 		})
 
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
 	}

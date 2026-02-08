@@ -447,3 +447,100 @@ func TestToPositionLocks(t *testing.T) {
 		t.Errorf("lock[1] = %+v, unexpected", result[1])
 	}
 }
+
+// ============================================================================
+// Sync-Time Local Modification Detection
+// ============================================================================
+
+func TestCheckLocalModifications_NoExistingFile(t *testing.T) {
+	fs := &OSFileSystem{}
+	svc := &FileCopyService{fs: fs}
+
+	// File doesn't exist — no warning
+	w := svc.checkLocalModifications("/nonexistent/file.go", nil, "new content")
+	if w != "" {
+		t.Errorf("expected no warning for missing file, got %q", w)
+	}
+}
+
+func TestCheckLocalModifications_WholeFile_NoChange(t *testing.T) {
+	tempDir := t.TempDir()
+	destFile := filepath.Join(tempDir, "dest.go")
+	content := "same content"
+	if err := os.WriteFile(destFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &OSFileSystem{}
+	svc := &FileCopyService{fs: fs}
+
+	w := svc.checkLocalModifications(destFile, nil, content)
+	if w != "" {
+		t.Errorf("expected no warning when content is identical, got %q", w)
+	}
+}
+
+func TestCheckLocalModifications_WholeFile_Modified(t *testing.T) {
+	tempDir := t.TempDir()
+	destFile := filepath.Join(tempDir, "dest.go")
+	if err := os.WriteFile(destFile, []byte("original content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &OSFileSystem{}
+	svc := &FileCopyService{fs: fs}
+
+	w := svc.checkLocalModifications(destFile, nil, "new content from source")
+	if w == "" {
+		t.Error("expected warning when content differs")
+	}
+	if !strings.Contains(w, "local modifications") {
+		t.Errorf("warning should mention 'local modifications', got %q", w)
+	}
+}
+
+func TestCheckLocalModifications_Position_NoChange(t *testing.T) {
+	tempDir := t.TempDir()
+	destFile := filepath.Join(tempDir, "dest.go")
+	if err := os.WriteFile(destFile, []byte("line1\nline2\nline3\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &OSFileSystem{}
+	svc := &FileCopyService{fs: fs}
+
+	pos := &types.PositionSpec{StartLine: 2}
+	w := svc.checkLocalModifications(destFile, pos, "line2")
+	if w != "" {
+		t.Errorf("expected no warning when position content matches, got %q", w)
+	}
+}
+
+func TestCheckLocalModifications_Position_Modified(t *testing.T) {
+	tempDir := t.TempDir()
+	destFile := filepath.Join(tempDir, "dest.go")
+	if err := os.WriteFile(destFile, []byte("line1\nmodified-line2\nline3\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &OSFileSystem{}
+	svc := &FileCopyService{fs: fs}
+
+	pos := &types.PositionSpec{StartLine: 2}
+	w := svc.checkLocalModifications(destFile, pos, "original-line2")
+	if w == "" {
+		t.Error("expected warning when position content differs")
+	}
+	if !strings.Contains(w, "target position") {
+		t.Errorf("warning should mention 'target position', got %q", w)
+	}
+}
+
+func TestCopyStats_WarningsAggregation(t *testing.T) {
+	s1 := CopyStats{Warnings: []string{"warn1"}}
+	s2 := CopyStats{Warnings: []string{"warn2", "warn3"}}
+	s1.Add(s2)
+	if len(s1.Warnings) != 3 {
+		t.Fatalf("expected 3 warnings, got %d", len(s1.Warnings))
+	}
+}

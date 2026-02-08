@@ -537,6 +537,11 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 		return RefMetadata{}, CopyStats{}, err
 	}
 
+	// Surface any position extraction warnings (e.g., local modifications being overwritten)
+	for _, w := range stats.Warnings {
+		fmt.Printf("  ⚠ %s\n", w)
+	}
+
 	// Build and save cache (if cache enabled)
 	if !opts.NoCache {
 		if err := s.updateCache(v.Name, spec, hash); err != nil {
