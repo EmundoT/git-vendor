@@ -218,7 +218,7 @@ func IsValidationError(err error) bool {
 type HookError struct {
 	VendorName string
 	Phase      string // "pre-sync" or "post-sync"
-	Command    string // first 80 chars of the command for context
+	Command    string // The hook command (truncated to 80 chars in Error() output)
 	Cause      error
 }
 
@@ -276,8 +276,9 @@ func (e *OSVAPIError) Error() string {
 	case e.StatusCode >= 400:
 		b.WriteString("\n  Context: Client error — request may be malformed")
 		if e.Body != "" {
-			b.WriteString(fmt.Sprintf("\n  Detail: %s", e.Body))
+			b.WriteString(fmt.Sprintf(" (%s)", e.Body))
 		}
+		b.WriteString("\n  Fix: Check vendor configuration and retry; if the issue persists, file a bug")
 	}
 	return b.String()
 }
