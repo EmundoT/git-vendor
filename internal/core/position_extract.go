@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -112,12 +113,19 @@ func extractColumns(lines []string, pos *types.PositionSpec, filePath string) (s
 // If pos is nil, the content replaces the entire file.
 // If pos specifies a range, only that range in the target is replaced.
 //
-// Security: PlaceContent does NOT validate filePath internally because it is called
-// with both validated relative paths (production via copyWithPosition) and absolute
-// temp-dir paths (tests, internal tooling). Callers MUST call ValidateDestPath(filePath)
-// before invoking PlaceContent with any user-controlled path.
-// See file_copy_service.go:copyMapping (line 66) for the production validation call site.
+// Security: PlaceContent self-validates relative paths via ValidateDestPath to block
+// path traversal (e.g., "../../../etc/passwd"). Absolute paths are allowed through
+// because they originate from internal/test usage with temp directories. Production
+// callers also validate at the service layer — see file_copy_service.go:copyMapping.
 func PlaceContent(filePath string, content string, pos *types.PositionSpec) error {
+	// Defense in depth: validate relative paths to block traversal.
+	// Absolute paths are skipped — they come from internal/test code using temp dirs.
+	if !filepath.IsAbs(filePath) {
+		if err := ValidateDestPath(filePath); err != nil {
+			return fmt.Errorf("PlaceContent write blocked: %w", err)
+		}
+	}
+
 	if pos == nil {
 		// Replace entire file
 		return os.WriteFile(filePath, []byte(content), 0644)

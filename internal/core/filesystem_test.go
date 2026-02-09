@@ -225,9 +225,10 @@ func TestValidateDestPath_WindowsAbsolutePaths(t *testing.T) {
 //   FIXED — license_service.go:CopyLicense now calls ValidateVendorName before path construction.
 //   FIXED — validation_service.go:ValidateConfig now calls ValidateVendorName at parse time.
 //   FIXED — ValidateDestPath now rejects embedded null bytes (defense in depth).
-//   DOCUMENTED — PlaceContent/CopyFile/CopyDir doc comments specify caller MUST validate.
-//              Self-validation rejected (A2→doc) because these functions are called with
-//              both relative user paths and absolute temp-dir paths internally.
+//   A3 — CopyFile/CopyDir now self-validate via ValidateWritePath (root-aware containment).
+//        PlaceContent self-validates relative paths via ValidateDestPath.
+//        Production uses NewRootedFileSystem(".") which validates all writes resolve within CWD.
+//        Unrooted filesystems (NewOSFileSystem) skip validation for back-compat.
 //   N/A  — vendor_syncer.go:Init uses hardcoded paths (vendor/, vendor/licenses/).
 //   N/A  — hook_service.go executes shell commands by design (same model as npm scripts).
 //   N/A  — update_service.go:computeFileHashes is read-only.
@@ -746,6 +747,239 @@ func TestValidateVendorName_LicensePathSafety(t *testing.T) {
 				t.Errorf("ValidateVendorName(%q) should reject — would produce license path %q", name, filepath.Clean(dest))
 			}
 		})
+	}
+}
+
+// ============================================================================
+// A3: Self-Validating Write Functions (Root-Aware FileSystem)
+// ============================================================================
+
+// TestNewRootedFileSystem_ValidateWritePath verifies that a rooted filesystem
+// rejects writes outside the project root and accepts writes within it.
+func TestNewRootedFileSystem_ValidateWritePath(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewRootedFileSystem(tempDir)
+
+	tests := []struct {
+		name      string
+		path      string
+		wantError bool
+	}{
+		// Paths within root — accepted
+		{"file in root", filepath.Join(tempDir, "file.txt"), false},
+		{"nested in root", filepath.Join(tempDir, "sub", "dir", "file.txt"), false},
+		{"root itself", tempDir, false},
+
+		// Paths outside root — rejected
+		{"parent of root", filepath.Dir(tempDir), true},
+		{"sibling of root", filepath.Join(filepath.Dir(tempDir), "sibling"), true},
+		{"absolute elsewhere", "/etc/passwd", true},
+		{"traversal from root", filepath.Join(tempDir, "..", "escape"), true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := fs.ValidateWritePath(tt.path)
+			if tt.wantError && err == nil {
+				t.Errorf("ValidateWritePath(%q) expected error for rooted fs (root=%q)", tt.path, tempDir)
+			}
+			if !tt.wantError && err != nil {
+				t.Errorf("ValidateWritePath(%q) unexpected error: %v (root=%q)", tt.path, err, tempDir)
+			}
+		})
+	}
+}
+
+// TestNewOSFileSystem_ValidateWritePath_Unrestricted verifies that an unrooted
+// filesystem's ValidateWritePath always returns nil (no restriction).
+func TestNewOSFileSystem_ValidateWritePath_Unrestricted(t *testing.T) {
+	fs := NewOSFileSystem()
+
+	paths := []string{
+		"/etc/passwd",
+		"../../../escape",
+		"/tmp/anything",
+		"relative/path",
+		".",
+	}
+
+	for _, path := range paths {
+		if err := fs.ValidateWritePath(path); err != nil {
+			t.Errorf("Unrooted ValidateWritePath(%q) should return nil, got: %v", path, err)
+		}
+	}
+}
+
+// TestRootedFileSystem_CopyFile_BlocksEscape verifies that CopyFile on a rooted
+// filesystem rejects destinations outside the project root.
+func TestRootedFileSystem_CopyFile_BlocksEscape(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewRootedFileSystem(tempDir)
+
+	// Create a source file inside the root
+	srcFile := filepath.Join(tempDir, "src.txt")
+	if err := os.WriteFile(srcFile, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Attempt to copy to a destination outside the root
+	escapeDst := filepath.Join(filepath.Dir(tempDir), "escaped.txt")
+	_, err := fs.CopyFile(srcFile, escapeDst)
+	if err == nil {
+		os.Remove(escapeDst) // cleanup in case it was created
+		t.Fatal("CopyFile should block write outside project root")
+	}
+	if !strings.Contains(err.Error(), "write blocked") {
+		t.Errorf("Error should mention 'write blocked', got: %v", err)
+	}
+
+	// Verify the file was NOT created
+	if _, statErr := os.Stat(escapeDst); statErr == nil {
+		os.Remove(escapeDst)
+		t.Error("Escaped file should not exist")
+	}
+}
+
+// TestRootedFileSystem_CopyFile_AllowsWithinRoot verifies that CopyFile on a rooted
+// filesystem allows writes within the project root.
+func TestRootedFileSystem_CopyFile_AllowsWithinRoot(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewRootedFileSystem(tempDir)
+
+	srcFile := filepath.Join(tempDir, "src.txt")
+	if err := os.WriteFile(srcFile, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	dstFile := filepath.Join(tempDir, "dst.txt")
+	stats, err := fs.CopyFile(srcFile, dstFile)
+	if err != nil {
+		t.Fatalf("CopyFile within root should succeed: %v", err)
+	}
+	if stats.FileCount != 1 {
+		t.Errorf("Expected FileCount=1, got %d", stats.FileCount)
+	}
+}
+
+// TestRootedFileSystem_CopyDir_BlocksEscape verifies that CopyDir on a rooted
+// filesystem rejects destinations outside the project root.
+func TestRootedFileSystem_CopyDir_BlocksEscape(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewRootedFileSystem(tempDir)
+
+	// Create source directory
+	srcDir := filepath.Join(tempDir, "srcdir")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("data"), 0644)
+
+	// Attempt to copy to a destination outside the root
+	escapeDst := filepath.Join(filepath.Dir(tempDir), "escaped_dir")
+	_, err := fs.CopyDir(srcDir, escapeDst)
+	if err == nil {
+		os.RemoveAll(escapeDst)
+		t.Fatal("CopyDir should block write outside project root")
+	}
+	if !strings.Contains(err.Error(), "write blocked") {
+		t.Errorf("Error should mention 'write blocked', got: %v", err)
+	}
+}
+
+// TestRootedFileSystem_PrefixCollision verifies that root containment check doesn't
+// allow prefix collisions (e.g., /tmp/foo should not allow /tmp/foobar).
+func TestRootedFileSystem_PrefixCollision(t *testing.T) {
+	tempDir := t.TempDir() // e.g., /tmp/TestXXX123
+	fs := NewRootedFileSystem(tempDir)
+
+	// Create a sibling directory that shares a prefix with tempDir
+	siblingDir := tempDir + "sibling"
+	os.MkdirAll(siblingDir, 0755)
+	defer os.RemoveAll(siblingDir)
+
+	escapeDst := filepath.Join(siblingDir, "file.txt")
+	err := fs.ValidateWritePath(escapeDst)
+	if err == nil {
+		t.Errorf("ValidateWritePath should reject prefix collision path %q (root=%q)", escapeDst, tempDir)
+	}
+}
+
+// TestPlaceContent_SelfValidation_RejectsRelativeTraversal verifies that PlaceContent
+// self-validates relative paths and rejects traversal attacks.
+func TestPlaceContent_SelfValidation_RejectsRelativeTraversal(t *testing.T) {
+	traversalPaths := []string{
+		"../../../etc/passwd",
+		"../escape.txt",
+		"a/b/../../../escape.txt",
+	}
+
+	for _, path := range traversalPaths {
+		err := PlaceContent(path, "malicious content", nil)
+		if err == nil {
+			t.Errorf("PlaceContent(%q) should reject relative traversal path", path)
+		}
+		if err != nil && !strings.Contains(err.Error(), "write blocked") {
+			t.Errorf("PlaceContent(%q) error should mention 'write blocked', got: %v", path, err)
+		}
+	}
+}
+
+// TestPlaceContent_SelfValidation_AllowsAbsolutePaths verifies that PlaceContent
+// skips validation for absolute paths (used by tests with temp dirs).
+func TestPlaceContent_SelfValidation_AllowsAbsolutePaths(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "target.go")
+
+	err := PlaceContent(filePath, "valid content", nil)
+	if err != nil {
+		t.Fatalf("PlaceContent with absolute temp path should succeed: %v", err)
+	}
+
+	data, _ := os.ReadFile(filePath)
+	if string(data) != "valid content" {
+		t.Errorf("Content mismatch: got %q", string(data))
+	}
+}
+
+// TestPlaceContent_SelfValidation_AllowsSafeRelativePaths verifies that PlaceContent
+// allows valid relative paths (the production use case).
+func TestPlaceContent_SelfValidation_AllowsSafeRelativePaths(t *testing.T) {
+	// Create a temp dir and chdir into it so relative paths resolve there
+	tempDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(tempDir)
+	defer os.Chdir(origDir)
+
+	os.MkdirAll("src/lib", 0755)
+	err := PlaceContent("src/lib/file.go", "package lib", nil)
+	if err != nil {
+		t.Fatalf("PlaceContent with safe relative path should succeed: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(tempDir, "src/lib/file.go"))
+	if string(data) != "package lib" {
+		t.Errorf("Content mismatch: got %q", string(data))
+	}
+}
+
+// TestRootedFileSystem_RelativePaths verifies that rooted filesystem handles
+// relative paths correctly by resolving them against CWD.
+func TestRootedFileSystem_RelativePaths(t *testing.T) {
+	tempDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(tempDir)
+	defer os.Chdir(origDir)
+
+	fs := NewRootedFileSystem(".")
+
+	// Relative path within CWD — should be accepted
+	err := fs.ValidateWritePath("vendor/file.txt")
+	if err != nil {
+		t.Errorf("Relative path within root should be accepted: %v", err)
+	}
+
+	// Relative traversal path — should be rejected
+	err = fs.ValidateWritePath("../../escape.txt")
+	if err == nil {
+		t.Error("Relative traversal path should be rejected by rooted filesystem")
 	}
 }
 
