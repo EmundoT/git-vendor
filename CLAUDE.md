@@ -403,6 +403,7 @@ vendors:
 
 - **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
 - **Binary file detection for position extraction**: Explicitly deferred. Position extraction on binary files produces garbage but is not guarded. If needed later, use `net/http.DetectContentType` check before extraction.
+- **Bare hex vs `sha256:` prefix in position verify**: `ComputeFileChecksum` returns bare hex, but `ExtractPosition` returns `"sha256:<hex>"`. When comparing hashes in `verifyPositions` for whole-file destinations (`destPos == nil`), MUST normalize `ComputeFileChecksum` output to `"sha256:"` prefix before comparing against `SourceHash`. Mixing formats causes false drift detection.
 
 ### Error Handling
 
@@ -555,6 +556,7 @@ go test -v ./...
 19. **errors.Is vs os.IsNotExist**: `os.IsNotExist()` does NOT unwrap `fmt.Errorf("%w")`-wrapped errors. MUST use `errors.Is(err, os.ErrNotExist)` when checking errors from functions that wrap (e.g., `ExtractPosition`)
 20. **Position extraction on binary files**: No binary detection — extracting positions from binary files produces garbage. Not currently guarded
 21. **Verify produces separate position-level and whole-file results**: A file with both types of lockfile entries gets two verification results; position-level can fail independently of whole-file
+22. **Hash format mismatch in verify**: `ComputeFileChecksum` returns bare hex, `ExtractPosition` returns `"sha256:<hex>"`. `verifyPositions` normalizes `ComputeFileChecksum` output with `"sha256:"` prefix for whole-file position destinations
 
 ## Quick Reference
 
