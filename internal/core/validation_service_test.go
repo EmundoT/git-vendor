@@ -1,11 +1,13 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
+	"github.com/golang/mock/gomock"
 )
 
 // ============================================================================
@@ -967,5 +969,450 @@ func TestDetectConflicts_MultipleOwnersPerPath(t *testing.T) {
 	// Should have 3 conflicts: v1-v2, v1-v3, v2-v3
 	if len(conflicts) != 3 {
 		t.Errorf("Expected 3 conflicts for 3 vendors mapping to same path, got %d", len(conflicts))
+	}
+}
+
+// ============================================================================
+// ValidateConfig — Gomock-based unit tests (no real filesystem)
+// ============================================================================
+
+// TestValidateConfig_Gomock_DuplicateNames verifies duplicate vendor name detection
+// via the mock ConfigStore, independent of filesystem.
+func TestValidateConfig_Gomock_DuplicateNames(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "dupe",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "src", To: "lib"}}}},
+			},
+			{
+				Name: "dupe",
+				URL:  "https://github.com/b/repo",
+				Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "pkg", To: "vendor"}}}},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for duplicate vendor names")
+	}
+	if !contains(err.Error(), "duplicate vendor name: dupe") {
+		t.Errorf("error = %q, want 'duplicate vendor name' message", err.Error())
+	}
+}
+
+// TestValidateConfig_Gomock_EmptySpecs verifies that a vendor with zero specs fails.
+func TestValidateConfig_Gomock_EmptySpecs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:  "empty-specs",
+				URL:   "https://github.com/a/repo",
+				Specs: []types.BranchSpec{},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for vendor with no specs")
+	}
+	if !contains(err.Error(), "has no specs configured") {
+		t.Errorf("error = %q, want 'has no specs configured'", err.Error())
+	}
+}
+
+// TestValidateConfig_Gomock_MissingRef verifies that a spec with empty ref fails.
+func TestValidateConfig_Gomock_MissingRef(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "no-ref",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "", Mapping: []types.PathMapping{{From: "src", To: "lib"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for spec with no ref")
+	}
+	if !contains(err.Error(), "has a spec with no ref") {
+		t.Errorf("error = %q, want 'has a spec with no ref'", err.Error())
+	}
+}
+
+// TestValidateConfig_Gomock_EmptyMappings verifies that a spec with zero mappings fails.
+func TestValidateConfig_Gomock_EmptyMappings(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "no-mappings",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for spec with no mappings")
+	}
+	if !contains(err.Error(), "has no path mappings") {
+		t.Errorf("error = %q, want 'has no path mappings'", err.Error())
+	}
+}
+
+// TestValidateConfig_Gomock_EmptyFromPath verifies that a mapping with empty "from" fails.
+func TestValidateConfig_Gomock_EmptyFromPath(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "empty-from",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "", To: "lib"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for empty 'from' path")
+	}
+	if !contains(err.Error(), "empty 'from' path") {
+		t.Errorf("error = %q, want 'empty from path'", err.Error())
+	}
+}
+
+// TestValidateConfig_Gomock_MissingURL verifies that a vendor with no URL fails.
+func TestValidateConfig_Gomock_MissingURL(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "no-url",
+				URL:  "",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src", To: "lib"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for missing URL")
+	}
+	if !contains(err.Error(), "has no URL") {
+		t.Errorf("error = %q, want 'has no URL'", err.Error())
+	}
+}
+
+// TestValidateConfig_Gomock_ConfigLoadError verifies error propagation from config store.
+func TestValidateConfig_Gomock_ConfigLoadError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{}, fmt.Errorf("permission denied"))
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error from config load failure")
+	}
+	if !contains(err.Error(), "permission denied") {
+		t.Errorf("error = %q, want 'permission denied'", err.Error())
+	}
+}
+
+// ============================================================================
+// DetectConflicts — Gomock-based unit tests
+// ============================================================================
+
+// TestDetectConflicts_Gomock_OverlappingPathsBetweenVendors verifies that overlapping
+// paths (one is a subdirectory of another) between different vendors are detected.
+func TestDetectConflicts_Gomock_OverlappingPathsBetweenVendors(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "vendor-a",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src/", To: "lib/"}}},
+				},
+			},
+			{
+				Name: "vendor-b",
+				URL:  "https://github.com/b/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "pkg/", To: "lib/sub/"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	conflicts, err := svc.DetectConflicts()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conflicts) == 0 {
+		t.Error("expected at least one overlap conflict for lib/ and lib/sub/")
+	}
+}
+
+// TestDetectConflicts_Gomock_SameExactPath verifies that two vendors mapping to the
+// same exact destination path produces a conflict.
+func TestDetectConflicts_Gomock_SameExactPath(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "vendor-a",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "file.go", To: "shared/file.go"}}},
+				},
+			},
+			{
+				Name: "vendor-b",
+				URL:  "https://github.com/b/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "other.go", To: "shared/file.go"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	conflicts, err := svc.DetectConflicts()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conflicts) == 0 {
+		t.Error("expected conflict for same exact destination path")
+	}
+
+	// Verify the conflict references both vendors
+	found := false
+	for _, c := range conflicts {
+		if (c.Vendor1 == "vendor-a" && c.Vendor2 == "vendor-b") ||
+			(c.Vendor1 == "vendor-b" && c.Vendor2 == "vendor-a") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected conflict between vendor-a and vendor-b")
+	}
+}
+
+// TestDetectConflicts_Gomock_SelfConflictSingleVendor verifies that a single vendor
+// with two mappings to the same destination path produces a self-conflict.
+func TestDetectConflicts_Gomock_SelfConflictSingleVendor(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "self-conflict",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "file1.go", To: "output.go"},
+							{From: "file2.go", To: "output.go"},
+						},
+					},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	conflicts, err := svc.DetectConflicts()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Two mappings from same vendor to same path → self-conflict
+	if len(conflicts) == 0 {
+		t.Error("expected self-conflict for same vendor mapping to same destination twice")
+	}
+}
+
+// TestDetectConflicts_Gomock_PositionPathStripped verifies that position specifiers
+// are stripped from destination paths before conflict comparison.
+// "output.go:L5" and "output.go:L10" target the same file and should conflict.
+func TestDetectConflicts_Gomock_PositionPathStripped(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "vendor-a",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src.go:L1-L5", To: "output.go:L5"}}},
+				},
+			},
+			{
+				Name: "vendor-b",
+				URL:  "https://github.com/b/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "pkg.go:L1", To: "output.go:L10"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	conflicts, err := svc.DetectConflicts()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Both map to "output.go" (after stripping positions) → conflict
+	if len(conflicts) == 0 {
+		t.Error("expected conflict: position-mapped paths to same file should conflict")
+	}
+}
+
+// TestDetectConflicts_Gomock_PositionVsWholeFile verifies that a position mapping
+// and a whole-file mapping to the same destination file produce a conflict.
+func TestDetectConflicts_Gomock_PositionVsWholeFile(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "whole-vendor",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src.go", To: "target.go"}}},
+				},
+			},
+			{
+				Name: "pos-vendor",
+				URL:  "https://github.com/b/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "pkg.go:L1-L5", To: "target.go:L10-L15"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	conflicts, err := svc.DetectConflicts()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conflicts) == 0 {
+		t.Error("expected conflict: whole-file and position mapping to same file should conflict")
+	}
+}
+
+// TestDetectConflicts_Gomock_NoConflict verifies that non-overlapping paths
+// produce zero conflicts.
+func TestDetectConflicts_Gomock_NoConflict(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "vendor-a",
+				URL:  "https://github.com/a/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src.go", To: "lib-a/file.go"}}},
+				},
+			},
+			{
+				Name: "vendor-b",
+				URL:  "https://github.com/b/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "pkg.go", To: "lib-b/file.go"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	conflicts, err := svc.DetectConflicts()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Errorf("expected 0 conflicts for non-overlapping paths, got %d", len(conflicts))
+	}
+}
+
+// TestDetectConflicts_Gomock_ConfigLoadError verifies error propagation.
+func TestDetectConflicts_Gomock_ConfigLoadError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{}, fmt.Errorf("disk error"))
+
+	svc := NewValidationService(mockConfig)
+	_, err := svc.DetectConflicts()
+	if err == nil {
+		t.Fatal("expected error from config load failure")
+	}
+	if !contains(err.Error(), "disk error") {
+		t.Errorf("error = %q, want 'disk error'", err.Error())
 	}
 }

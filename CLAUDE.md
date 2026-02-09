@@ -184,32 +184,6 @@ PositionSpec (internal/types/position.go)
   ├─ StartCol: int (1-indexed, 0 = no column)
   ├─ EndCol: int (1-indexed inclusive, 0 = no column)
   └─ ToEOF: bool (true = extract to end of file)
-
-VerifyResult (verify output)
-  ├─ SchemaVersion: "1.0"
-  ├─ Timestamp: RFC3339
-  ├─ Summary: VerifySummary
-  │   ├─ TotalFiles: int (total entries including positions)
-  │   ├─ Verified / Modified / Added / Deleted: int
-  │   └─ Result: "PASS" | "FAIL" | "WARN"
-  └─ Files: []FileStatus
-      └─ FileStatus
-          ├─ Path: display path (includes :L range for position entries)
-          ├─ Vendor: *string
-          ├─ Status: "verified" | "modified" | "added" | "deleted"
-          ├─ Type: "file" | "position"
-          ├─ ExpectedHash / ActualHash: *string (omitempty)
-          └─ Position: *PositionDetail (omitempty, present for type="position")
-              ├─ From: source path with position
-              ├─ To: destination path with optional position
-              └─ SourceHash: SHA-256 at sync time
-
-VendorStatus (status output)
-  ├─ Name / Ref: string
-  ├─ IsSynced: bool
-  ├─ MissingPaths: []string
-  ├─ FileCount: int (file-level mappings)
-  └─ PositionCount: int (position-level mappings from lockfile)
 ```
 
 ### File System Structure
@@ -285,8 +259,8 @@ file.go:L5C10:L10C30  # Line 5 col 10 through line 10 col 30 (1-indexed inclusiv
 **Pipeline:**
 
 1. `ParsePathPosition()` splits `path:Lspec` into file path + `PositionSpec`
-2. `ExtractPosition()` reads file, extracts content, returns content + SHA-256 hash
-3. `PlaceContent()` writes extracted content into target file at specified position
+2. `ExtractPosition()` reads file, normalizes CRLF→LF, extracts content, returns content + SHA-256 hash
+3. `PlaceContent()` normalizes existing content CRLF→LF, writes extracted content at specified position
 4. `CopyStats.Positions` carries `positionRecord` (From, To, SourceHash) back to caller
 5. `toPositionLocks()` converts to `PositionLock` for lockfile persistence
 
@@ -300,7 +274,6 @@ file.go:L5C10:L10C30  # Line 5 col 10 through line 10 col 30 (1-indexed inclusiv
 - `verifyPositions()` reads destination file locally, extracts target range, hashes, compares to stored `SourceHash`
 - No network access required — purely local verification
 - Position entries produce separate verification results from whole-file entries
-- Each FileStatus entry carries `Type` ("file" or "position") and position entries include a `Position` detail with from/to/source_hash
 
 **Key files:** `internal/types/position.go` (parser), `internal/core/position_extract.go` (extract/place), `internal/core/file_copy_service.go` (integration)
 
@@ -430,7 +403,7 @@ vendors:
 ### Legacy Traps (Non-Goals)
 
 - **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
-- **Binary file detection for position extraction**: Explicitly deferred. Position extraction on binary files produces garbage but is not guarded. If needed later, use `net/http.DetectContentType` check before extraction.
+- **`net/http.DetectContentType` for binary detection**: Rejected in favor of git's null-byte heuristic (scan first 8000 bytes for `\x00`). `DetectContentType` only inspects 512 bytes and can misclassify source code as `application/octet-stream`. The null-byte approach matches git's own `xdl_mmfile_istext` and has no false positives on valid text files including multi-byte UTF-8.
 
 ### Error Handling
 
@@ -583,11 +556,17 @@ go test -v ./...
 14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
 15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
 16. **Sentinel errors with tui.PrintError**: Sentinel errors like `ErrNotInitialized` are `error` types, not strings. Call `.Error()` when passing to `tui.PrintError(title, err.Error())`
-17. **Position syntax and Windows paths**: Position parser uses last `:L<digit>` occurrence to split, avoiding false matches on Windows drive letters like `C:\path`
-18. **EndCol is 1-indexed inclusive**: `L1C5:L1C10` extracts columns 5-10 (6 chars). Maps to Go slice `line[StartCol-1 : EndCol]` because Go's exclusive upper bound equals the 1-indexed inclusive bound
+17. **Position syntax and Windows paths**: Position parser uses first `:L<digit>` occurrence to split, avoiding false matches on Windows drive letters like `C:\path`
+18. **EndCol is 1-indexed inclusive byte offset**: `L1C5:L1C10` extracts bytes 5-10 (6 bytes). Maps to Go slice `line[StartCol-1 : EndCol]` because Go's exclusive upper bound equals the 1-indexed inclusive bound. See gotcha #22 for multi-byte character implications
 19. **errors.Is vs os.IsNotExist**: `os.IsNotExist()` does NOT unwrap `fmt.Errorf("%w")`-wrapped errors. MUST use `errors.Is(err, os.ErrNotExist)` when checking errors from functions that wrap (e.g., `ExtractPosition`)
-20. **Position extraction on binary files**: No binary detection — extracting positions from binary files produces garbage. Not currently guarded
+20. **Binary file detection**: `ExtractPosition` and `PlaceContent` (with position) reject binary files by scanning the first 8000 bytes for null bytes (git's heuristic). Null byte beyond 8000 bytes is NOT detected. Whole-file replacement (`PlaceContent` with nil pos) bypasses the check
 21. **Verify produces separate position-level and whole-file results**: A file with both types of lockfile entries gets two verification results; position-level can fail independently of whole-file
+22. **Position column semantics are byte-offset, not rune-offset**: Column numbers in `L1C5:L1C10` refer to byte positions in the Go string, not Unicode codepoints. For ASCII this is identical, but multi-byte characters (emoji=4 bytes, CJK=3 bytes, accented=2 bytes) require counting bytes. Extracting a partial multi-byte character produces invalid UTF-8.
+23. **CRLF normalized to LF in position extraction**: `extractFromContent` and `placeInContent` normalize `\r\n` → `\n` before processing. Extracted content always uses LF. Files with CRLF will have their line endings changed to LF after `PlaceContent`. Standalone `\r` (classic Mac) is NOT normalized.
+24. **Trailing newline creates phantom empty line**: A file ending with `\n` has one more "line" than visible content lines (e.g., `"a\nb\n"` = 3 lines: `"a"`, `"b"`, `""`). L5-EOF on a 5-line file with trailing newline captures the trailing newline; without trailing newline it does not.
+25. **Empty file has 1 line**: A 0-byte file splits to `[""]` (1 empty line). `L1` extracts empty string. `L2+` errors.
+26. **Sequential PlaceContent calls operate on modified content**: When two vendors write to different positions in the same file, the second call sees the file as modified by the first. If the first call changes line count, the second call's position targets shifted lines.
+27. **L1-EOF hash equals whole-file hash**: `L1-EOF` extraction produces content byte-identical to the raw file (after CRLF normalization), so the hash matches `sha256(file_content)`.
 
 ## Quick Reference
 
@@ -645,8 +624,6 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - **Deleted files**: Files in lockfile but missing from disk
 - **Added files**: Files in vendor directories but not in lockfile
 - **Position-level drift**: For position-extracted mappings, verifies the target range hash matches the stored `source_hash` (local-only, no cloning)
-
-**Output:** Each result entry includes a `type` field ("file" or "position"). Table output shows a type column; JSON output includes `type` and `position` (with from/to/source_hash) for position entries. Summary shows "N checked (M files, P positions)".
 
 ### Scan Command Flags
 

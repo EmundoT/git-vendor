@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/EmundoT/git-vendor/internal/core"
@@ -515,5 +516,46 @@ func TestNonInteractiveTUICallback_StartProgress_JSON(t *testing.T) {
 	_, isNoOp := tracker.(*NoOpProgressTracker)
 	if !isNoOp {
 		t.Error("Expected NoOpProgressTracker in JSON mode")
+	}
+}
+
+func TestNonInteractiveTUICallback_StartProgress_UnknownMode(t *testing.T) {
+	callback := NewNonInteractiveTUICallback(core.NonInteractiveFlags{
+		Mode: core.OutputMode(99), // Unknown mode hits default case
+	})
+
+	tracker := callback.StartProgress(5, "Unknown mode")
+
+	if tracker == nil {
+		t.Fatal("Expected progress tracker to be created")
+	}
+
+	// Default case returns NoOpProgressTracker
+	_, isNoOp := tracker.(*NoOpProgressTracker)
+	if !isNoOp {
+		t.Error("Expected NoOpProgressTracker for unknown mode")
+	}
+}
+
+func TestNonInteractiveTUICallback_ShowError_Normal_Stderr(t *testing.T) {
+	// Capture stderr
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	callback := NewNonInteractiveTUICallback(core.NonInteractiveFlags{
+		Mode: core.OutputNormal,
+	})
+
+	callback.ShowError("Err Title", "Err Detail")
+
+	_ = w.Close()
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if !strings.Contains(buf.String(), "Err Title") {
+		t.Errorf("ShowError normal mode stderr missing title, got: %q", buf.String())
 	}
 }
