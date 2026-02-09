@@ -230,3 +230,321 @@ func runGitCommand(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %v failed: %v\nOutput: %s", args, err, string(output))
 	}
 }
+
+// ============================================================================
+// ParseSmartURL Multi-Provider Edge Cases
+// ============================================================================
+
+func TestParseSmartURL_GitHubDeepLinks(t *testing.T) {
+	tests := []struct {
+		name     string
+		rawURL   string
+		wantBase string
+		wantRef  string
+		wantPath string
+	}{
+		{
+			name:     "blob link",
+			rawURL:   "https://github.com/owner/repo/blob/main/src/file.go",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "main",
+			wantPath: "src/file.go",
+		},
+		{
+			name:     "tree link with tag",
+			rawURL:   "https://github.com/owner/repo/tree/v1.0/src/",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "v1.0",
+			wantPath: "src/",
+		},
+		{
+			name:     "bare repo URL",
+			rawURL:   "https://github.com/owner/repo",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "",
+			wantPath: "",
+		},
+		{
+			name:     "bare with trailing slash",
+			rawURL:   "https://github.com/owner/repo/",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "",
+			wantPath: "",
+		},
+		{
+			name:     "with .git suffix",
+			rawURL:   "https://github.com/owner/repo.git",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "",
+			wantPath: "",
+		},
+		{
+			name:     "deep link nested path",
+			rawURL:   "https://github.com/owner/repo/blob/main/a/b/c/d.go",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "main",
+			wantPath: "a/b/c/d.go",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, ref, path := ParseSmartURL(tt.rawURL)
+			if base != tt.wantBase {
+				t.Errorf("base = %q, want %q", base, tt.wantBase)
+			}
+			if ref != tt.wantRef {
+				t.Errorf("ref = %q, want %q", ref, tt.wantRef)
+			}
+			if path != tt.wantPath {
+				t.Errorf("path = %q, want %q", path, tt.wantPath)
+			}
+		})
+	}
+}
+
+func TestParseSmartURL_GitLabNestedGroups(t *testing.T) {
+	// GitLab nested groups do NOT match the github.com regex,
+	// so they should return the URL as base with no ref or path.
+	tests := []struct {
+		name     string
+		rawURL   string
+		wantBase string
+	}{
+		{
+			name:     "simple GitLab",
+			rawURL:   "https://gitlab.com/owner/repo",
+			wantBase: "https://gitlab.com/owner/repo",
+		},
+		{
+			name:     "nested group",
+			rawURL:   "https://gitlab.com/owner/group/subgroup/repo",
+			wantBase: "https://gitlab.com/owner/group/subgroup/repo",
+		},
+		{
+			name:     "deeply nested group",
+			rawURL:   "https://gitlab.com/org/team/sub1/sub2/repo",
+			wantBase: "https://gitlab.com/org/team/sub1/sub2/repo",
+		},
+		{
+			name:     "GitLab with .git suffix",
+			rawURL:   "https://gitlab.com/owner/repo.git",
+			wantBase: "https://gitlab.com/owner/repo",
+		},
+		{
+			name:     "self-hosted GitLab",
+			rawURL:   "https://gitlab.mycompany.com/team/project",
+			wantBase: "https://gitlab.mycompany.com/team/project",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, ref, path := ParseSmartURL(tt.rawURL)
+			if base != tt.wantBase {
+				t.Errorf("base = %q, want %q", base, tt.wantBase)
+			}
+			if ref != "" {
+				t.Errorf("ref = %q, want empty (GitLab not parsed for deep links)", ref)
+			}
+			if path != "" {
+				t.Errorf("path = %q, want empty", path)
+			}
+		})
+	}
+}
+
+func TestParseSmartURL_BitbucketURLs(t *testing.T) {
+	tests := []struct {
+		name     string
+		rawURL   string
+		wantBase string
+	}{
+		{
+			name:     "Bitbucket cloud",
+			rawURL:   "https://bitbucket.org/owner/repo",
+			wantBase: "https://bitbucket.org/owner/repo",
+		},
+		{
+			name:     "Bitbucket with .git suffix",
+			rawURL:   "https://bitbucket.org/owner/repo.git",
+			wantBase: "https://bitbucket.org/owner/repo",
+		},
+		{
+			name:     "Bitbucket with trailing slash",
+			rawURL:   "https://bitbucket.org/owner/repo/",
+			wantBase: "https://bitbucket.org/owner/repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, ref, path := ParseSmartURL(tt.rawURL)
+			if base != tt.wantBase {
+				t.Errorf("base = %q, want %q", base, tt.wantBase)
+			}
+			if ref != "" {
+				t.Errorf("ref = %q, want empty", ref)
+			}
+			if path != "" {
+				t.Errorf("path = %q, want empty", path)
+			}
+		})
+	}
+}
+
+func TestParseSmartURL_AuthTokenURLs(t *testing.T) {
+	// URLs with embedded auth tokens
+	tests := []struct {
+		name     string
+		rawURL   string
+		wantBase string
+	}{
+		{
+			name:     "token@ prefix in GitHub URL",
+			rawURL:   "https://token@github.com/owner/repo",
+			wantBase: "https://token@github.com/owner/repo",
+		},
+		{
+			name:     "oauth2 token in GitLab URL",
+			rawURL:   "https://oauth2:glpat-abc123@gitlab.com/owner/repo",
+			wantBase: "https://oauth2:glpat-abc123@gitlab.com/owner/repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, ref, path := ParseSmartURL(tt.rawURL)
+			if base != tt.wantBase {
+				t.Errorf("base = %q, want %q", base, tt.wantBase)
+			}
+			// Auth token URLs should not match deep link regex (no blob/tree)
+			if ref != "" {
+				t.Errorf("ref = %q, want empty", ref)
+			}
+			if path != "" {
+				t.Errorf("path = %q, want empty", path)
+			}
+		})
+	}
+}
+
+func TestParseSmartURL_SSHURLs(t *testing.T) {
+	// SSH URLs should be returned as-is (minus .git suffix)
+	tests := []struct {
+		name     string
+		rawURL   string
+		wantBase string
+	}{
+		{
+			name:     "SSH with .git suffix",
+			rawURL:   "git@github.com:owner/repo.git",
+			wantBase: "git@github.com:owner/repo",
+		},
+		{
+			name:     "SSH without .git suffix",
+			rawURL:   "git@github.com:owner/repo",
+			wantBase: "git@github.com:owner/repo",
+		},
+		{
+			name:     "SSH GitLab",
+			rawURL:   "git@gitlab.com:owner/repo.git",
+			wantBase: "git@gitlab.com:owner/repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, ref, path := ParseSmartURL(tt.rawURL)
+			if base != tt.wantBase {
+				t.Errorf("base = %q, want %q", base, tt.wantBase)
+			}
+			if ref != "" {
+				t.Errorf("ref = %q, want empty", ref)
+			}
+			if path != "" {
+				t.Errorf("path = %q, want empty", path)
+			}
+		})
+	}
+}
+
+func TestParseSmartURL_BranchWithSlashes(t *testing.T) {
+	// Branch names with slashes are a documented limitation.
+	// The regex captures the first path segment as the ref, which is incorrect
+	// for branches like "feature/foo". This test documents the limitation.
+	base, ref, path := ParseSmartURL("https://github.com/owner/repo/blob/feature/foo/src/file.go")
+
+	// Due to the regex, "feature" is captured as ref, and "foo/src/file.go" as path.
+	// This is the known limitation documented in CLAUDE.md.
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("base = %q, want 'https://github.com/owner/repo'", base)
+	}
+	if ref != "feature" {
+		t.Errorf("ref = %q, want 'feature' (known limitation: only first segment captured)", ref)
+	}
+	if path != "foo/src/file.go" {
+		t.Errorf("path = %q, want 'foo/src/file.go' (known limitation: rest captured as path)", path)
+	}
+}
+
+func TestParseSmartURL_SelfHostedInstances(t *testing.T) {
+	tests := []struct {
+		name     string
+		rawURL   string
+		wantBase string
+	}{
+		{
+			name:     "GitHub Enterprise",
+			rawURL:   "https://github.mycompany.com/org/repo",
+			wantBase: "https://github.mycompany.com/org/repo",
+		},
+		{
+			name:     "custom Git server",
+			rawURL:   "https://git.internal.example.com/team/project",
+			wantBase: "https://git.internal.example.com/team/project",
+		},
+		{
+			name:     "custom server with .git",
+			rawURL:   "https://git.internal.example.com/team/project.git",
+			wantBase: "https://git.internal.example.com/team/project",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, ref, path := ParseSmartURL(tt.rawURL)
+			if base != tt.wantBase {
+				t.Errorf("base = %q, want %q", base, tt.wantBase)
+			}
+			if ref != "" {
+				t.Errorf("ref = %q, want empty", ref)
+			}
+			if path != "" {
+				t.Errorf("path = %q, want empty", path)
+			}
+		})
+	}
+}
+
+func TestParseSmartURL_CleanURL(t *testing.T) {
+	// Verify cleanURL trims whitespace and leading backslashes
+	tests := []struct {
+		name     string
+		rawURL   string
+		wantBase string
+	}{
+		{name: "leading spaces", rawURL: "  https://github.com/owner/repo", wantBase: "https://github.com/owner/repo"},
+		{name: "trailing spaces", rawURL: "https://github.com/owner/repo  ", wantBase: "https://github.com/owner/repo"},
+		{name: "leading backslash", rawURL: "\\https://github.com/owner/repo", wantBase: "https://github.com/owner/repo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, _, _ := ParseSmartURL(tt.rawURL)
+			if base != tt.wantBase {
+				t.Errorf("base = %q, want %q", base, tt.wantBase)
+			}
+		})
+	}
+}
