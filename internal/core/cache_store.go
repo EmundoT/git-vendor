@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,7 +69,7 @@ func (s *FileCacheStore) Load(vendorName, ref string) (types.IncrementalSyncCach
 	path := s.cachePath(vendorName, ref)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// Cache miss - return empty cache (not an error)
 			return cache, nil
 		}
@@ -109,7 +110,7 @@ func (s *FileCacheStore) Save(cache *types.IncrementalSyncCache) error {
 func (s *FileCacheStore) Delete(vendorName, ref string) error {
 	path := s.cachePath(vendorName, ref)
 	err := os.Remove(path)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to delete cache file: %w", err)
 	}
 	return nil
