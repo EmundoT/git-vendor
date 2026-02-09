@@ -140,7 +140,7 @@ ls -la <your-destination-paths>
 
 1. Copy an example that matches your use case
 2. Modify the URLs, paths, and refs
-3. Place it in your project as `vendor/vendor.yml`
+3. Place it in your project as `.git-vendor/vendor.yml`
 4. Run `git-vendor sync`
 
 For more information, see the [main README](../README.md).

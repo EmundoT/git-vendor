@@ -57,7 +57,7 @@ git-vendor v1.0.0 is a production-ready CLI tool for managing vendored dependenc
 - **Incremental Sync Cache** - 80% faster re-syncs with SHA-256 checksumming
   - Skip re-downloading unchanged files
   - Auto-invalidates when commit hashes change
-  - Cached in `vendor/.cache/`
+  - Cached in `.git-vendor/.cache/`
   - `--no-cache` flag to bypass cache
 - **Parallel Processing** - 3-5x speedup with worker pool for multi-vendor operations
   - `--parallel` flag enables parallel mode
@@ -84,7 +84,7 @@ git-vendor v1.0.0 is a production-ready CLI tool for managing vendored dependenc
 
 **CLI Commands:**
 
-- `init` - Initialize vendor directory structure
+- `init` - Initialize .git-vendor directory structure
 - `add` - Add vendor dependency (interactive wizard)
 - `edit` - Modify vendor configuration (interactive wizard)
 - `remove <name>` - Remove vendor
@@ -106,7 +106,7 @@ git-vendor v1.0.0 is a production-ready CLI tool for managing vendored dependenc
   - File-based detection for Bitbucket and generic Git
   - Pre-approved OSS licenses (MIT, Apache-2.0, BSD-\*, ISC, Unlicense, CC0-1.0)
   - User confirmation prompt for non-standard licenses
-  - Licenses cached in `vendor/licenses/` for audit trails
+  - Licenses cached in `.git-vendor/licenses/` for audit trails
 
 ### Architecture & Code Quality
 
@@ -248,7 +248,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
 
 - **Incremental Sync Cache** - 80% faster re-syncs
 
-  - SHA-256 file checksums cached in `vendor/.cache/`
+  - SHA-256 file checksums cached in `.git-vendor/.cache/`
   - Skip re-downloading unchanged files
   - Auto-invalidates when commit hashes change
   - `--no-cache` flag to bypass cache
@@ -281,7 +281,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
 
 **Commands:**
 
-- `init` - Initialize vendor directory structure
+- `init` - Initialize .git-vendor directory structure
 - `add` - Add vendor dependency (interactive wizard)
 - `edit` - Modify vendor configuration (interactive wizard)
 - `remove <name>` - Remove vendor
@@ -307,7 +307,7 @@ First beta release with comprehensive feature set for granular Git vendoring.
 
 - Path traversal protection - rejects absolute paths and `..` references
 - License compliance checking with pre-approved OSS licenses
-- License files cached in `vendor/licenses/` for audit
+- License files cached in `.git-vendor/licenses/` for audit
 - Security validations in vendor.yml parsing
 
 ### Performance
