@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,7 +94,7 @@ func TestOSFileSystem_Remove(t *testing.T) {
 	}
 
 	// Verify file exists
-	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+	if _, err := os.Stat(testFile); errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Test file was not created")
 	}
 
@@ -104,7 +105,7 @@ func TestOSFileSystem_Remove(t *testing.T) {
 	}
 
 	// Verify file is deleted
-	if _, err := os.Stat(testFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(testFile); !errors.Is(err, os.ErrNotExist) {
 		t.Error("File still exists after Remove")
 	}
 }
@@ -137,7 +138,7 @@ func TestOSFileSystem_Remove_Directory(t *testing.T) {
 	}
 
 	// Verify directory is deleted
-	if _, err := os.Stat(testDir); !os.IsNotExist(err) {
+	if _, err := os.Stat(testDir); !errors.Is(err, os.ErrNotExist) {
 		t.Error("Directory still exists after Remove")
 	}
 }

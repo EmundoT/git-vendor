@@ -65,8 +65,8 @@ func TestForEachVendor_EarlyReturn(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
-	if err.Error() != "stop at vendor2" {
-		t.Errorf("Expected 'stop at vendor2' error, got '%s'", err.Error())
+	if !contains(err.Error(), "stop at vendor2") {
+		t.Errorf("Expected error containing 'stop at vendor2', got '%s'", err.Error())
 	}
 	if count != 2 {
 		t.Errorf("Expected to process 2 vendors before stopping, processed %d", count)

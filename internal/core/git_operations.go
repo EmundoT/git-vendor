@@ -2,12 +2,10 @@ package core
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
-	"sort"
 	"strings"
+
+	git "github.com/emundoT/git-plumbing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )
@@ -39,169 +37,89 @@ func NewSystemGitClient(verbose bool) *SystemGitClient {
 	return &SystemGitClient{verbose: verbose}
 }
 
+// gitFor creates a git-plumbing Git instance for the given directory.
+// Cheap allocation (single struct, no I/O) — required because git-vendor
+// passes dir per-call while git-plumbing stores it on the struct.
+func (g *SystemGitClient) gitFor(dir string) *git.Git {
+	return &git.Git{Dir: dir, Verbose: g.verbose}
+}
+
 // Init initializes a git repository
 func (g *SystemGitClient) Init(ctx context.Context, dir string) error {
-	return g.run(ctx, dir, "init")
+	return g.gitFor(dir).Init(ctx)
 }
 
 // AddRemote adds a git remote
 func (g *SystemGitClient) AddRemote(ctx context.Context, dir, name, url string) error {
-	return g.run(ctx, dir, "remote", "add", name, url)
+	return g.gitFor(dir).AddRemote(ctx, name, url)
 }
 
 // Fetch fetches from remote with optional depth
 func (g *SystemGitClient) Fetch(ctx context.Context, dir string, depth int, ref string) error {
-	args := []string{"fetch"}
-	if depth > 0 {
-		args = append(args, "--depth", fmt.Sprintf("%d", depth))
-	}
-	args = append(args, "origin", ref)
-	return g.run(ctx, dir, args...)
+	return g.gitFor(dir).Fetch(ctx, "origin", ref, depth)
 }
 
 // FetchAll fetches all refs from origin
 func (g *SystemGitClient) FetchAll(ctx context.Context, dir string) error {
-	return g.run(ctx, dir, "fetch", "origin")
+	return g.gitFor(dir).FetchAll(ctx, "origin")
 }
 
 // Checkout checks out a git ref
 func (g *SystemGitClient) Checkout(ctx context.Context, dir, ref string) error {
-	return g.run(ctx, dir, "checkout", ref)
+	return g.gitFor(dir).Checkout(ctx, ref)
 }
 
 // GetHeadHash returns the current HEAD commit hash
 func (g *SystemGitClient) GetHeadHash(ctx context.Context, dir string) (string, error) {
-	return g.runOutput(ctx, dir, "rev-parse", "HEAD")
+	return g.gitFor(dir).HEAD(ctx)
 }
 
-// Clone clones a repository with options
+// Clone clones a repository with options.
+// Converts types.CloneOptions to git.CloneOpts for the git-plumbing layer.
 func (g *SystemGitClient) Clone(ctx context.Context, dir, url string, opts *types.CloneOptions) error {
-	args := []string{"clone"}
-
+	var plumbingOpts *git.CloneOpts
 	if opts != nil {
-		if opts.Filter != "" {
-			args = append(args, "--filter="+opts.Filter)
-		}
-		if opts.NoCheckout {
-			args = append(args, "--no-checkout")
-		}
-		if opts.Depth > 0 {
-			args = append(args, "--depth", fmt.Sprintf("%d", opts.Depth))
+		plumbingOpts = &git.CloneOpts{
+			Filter:     opts.Filter,
+			NoCheckout: opts.NoCheckout,
+			Depth:      opts.Depth,
 		}
 	}
-
-	args = append(args, url, ".")
-	return g.run(ctx, dir, args...)
+	return g.gitFor(dir).Clone(ctx, url, plumbingOpts)
 }
 
 // ListTree lists files/directories at a given ref and subdir.
 // The caller should set a deadline on ctx if a timeout is desired.
+// Delegates to git-plumbing which handles ls-tree parsing internally.
 func (g *SystemGitClient) ListTree(ctx context.Context, dir, ref, subdir string) ([]string, error) {
-	target := ref
-	if target == "" {
-		target = "HEAD"
-	}
-
-	args := []string{"ls-tree", target}
-	if subdir != "" && subdir != "." {
-		cleanSub := strings.TrimSuffix(subdir, "/")
-		args = append(args, cleanSub+"/")
-	}
-
-	output, err := g.runOutput(ctx, dir, args...)
-	if err != nil && subdir != "" {
-		// Try without trailing slash
-		args = []string{"ls-tree", target, strings.TrimSuffix(subdir, "/")}
-		output, err = g.runOutput(ctx, dir, args...)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("git ls-tree failed: %w", err)
-	}
-
-	return parseListTreeOutput(output, subdir), nil
-}
-
-// parseListTreeOutput parses git ls-tree output into a sorted list of entries
-func parseListTreeOutput(output, subdir string) []string {
-	lines := strings.Split(output, "\n")
-	var items []string
-
-	for _, l := range lines {
-		parts := strings.Fields(l)
-		if len(parts) < 4 {
-			continue
-		}
-
-		objType := parts[1]
-		fullPath := strings.Join(parts[3:], " ")
-
-		relName := fullPath
-		if subdir != "" && subdir != "." {
-			cleanSub := strings.TrimSuffix(subdir, "/") + "/"
-			if !strings.HasPrefix(fullPath, cleanSub) {
-				continue
-			}
-			relName = strings.TrimPrefix(fullPath, cleanSub)
-		}
-		if relName == "" {
-			continue
-		}
-
-		if objType == "tree" {
-			items = append(items, relName+"/")
-		} else {
-			items = append(items, relName)
-		}
-	}
-
-	sort.Strings(items)
-	return items
+	return g.gitFor(dir).ListTree(ctx, ref, subdir)
 }
 
 // GetCommitLog retrieves commit history between two commits.
-// Uses null-byte delimiter (%x00) for safe parsing of commit subjects
-// that may contain pipe characters.
+// Delegates to git-plumbing Log() and converts git.Commit to types.CommitInfo.
 func (g *SystemGitClient) GetCommitLog(ctx context.Context, dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error) {
-	// Format: hash\x00shortHash\x00subject\x00author\x00date
-	formatString := "--pretty=format:%H%x00%h%x00%s%x00%an%x00%ai"
-
-	args := []string{"log", formatString}
-	if maxCount > 0 {
-		args = append(args, fmt.Sprintf("-%d", maxCount))
+	opts := git.LogOpts{
+		Range:    oldHash + ".." + newHash,
+		MaxCount: maxCount,
 	}
 
-	// Use range syntax: oldHash..newHash shows commits in newHash not in oldHash
-	rangeSpec := fmt.Sprintf("%s..%s", oldHash, newHash)
-	args = append(args, rangeSpec)
-
-	output, err := g.runOutput(ctx, dir, args...)
+	plumbingCommits, err := g.gitFor(dir).Log(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("git log failed: %w", err)
+		return nil, err
 	}
 
-	if output == "" {
+	if len(plumbingCommits) == 0 {
 		return nil, nil
 	}
 
-	lines := strings.Split(output, "\n")
-	var commits []types.CommitInfo
-
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-
-		parts := strings.Split(line, "\x00")
-		if len(parts) != 5 {
-			continue
-		}
-
+	commits := make([]types.CommitInfo, 0, len(plumbingCommits))
+	for _, c := range plumbingCommits {
 		commits = append(commits, types.CommitInfo{
-			Hash:      parts[0],
-			ShortHash: parts[1],
-			Subject:   parts[2],
-			Author:    parts[3],
-			Date:      parts[4],
+			Hash:      c.Hash,
+			ShortHash: c.Short,
+			Subject:   c.Subject,
+			Author:    c.Author,
+			Date:      c.Date.Format("2006-01-02 15:04:05 -0700"),
 		})
 	}
 
@@ -210,19 +128,10 @@ func (g *SystemGitClient) GetCommitLog(ctx context.Context, dir, oldHash, newHas
 
 // GetTagForCommit returns a git tag that points to the given commit hash, if any.
 // Prefers semver-looking tags (v1.0.0, 1.0.0) over other tags.
+// Delegates to git-plumbing TagsAt() for tag retrieval, applies semver preference locally.
 func (g *SystemGitClient) GetTagForCommit(ctx context.Context, dir, commitHash string) (string, error) {
-	output, err := g.runOutput(ctx, dir, "tag", "--points-at", commitHash)
-	if err != nil {
-		// No tags found, not an error
-		return "", nil
-	}
-
-	if output == "" {
-		return "", nil
-	}
-
-	tags := strings.Split(output, "\n")
-	if len(tags) == 0 || tags[0] == "" {
+	tags, err := g.gitFor(dir).TagsAt(ctx, commitHash)
+	if err != nil || len(tags) == 0 {
 		return "", nil
 	}
 
@@ -245,73 +154,10 @@ func isSemverTag(tag string) bool {
 
 // GetGitUserIdentity returns the git user identity in "Name <email>" format.
 // Returns empty string if not configured.
+// Uses git-plumbing with empty Dir to match original behavior (process working directory).
 func GetGitUserIdentity() string {
-	nameCmd := exec.Command("git", "config", "user.name")
-	nameOut, err := nameCmd.Output()
-	if err != nil {
-		return ""
-	}
-
-	emailCmd := exec.Command("git", "config", "user.email")
-	emailOut, err := emailCmd.Output()
-	if err != nil {
-		return ""
-	}
-
-	name := strings.TrimSpace(string(nameOut))
-	email := strings.TrimSpace(string(emailOut))
-
-	if name == "" && email == "" {
-		return ""
-	}
-
-	if name != "" && email != "" {
-		return fmt.Sprintf("%s <%s>", name, email)
-	}
-
-	if name != "" {
-		return name
-	}
-
-	return email
-}
-
-// run executes a git command, discarding output on success.
-// Uses CombinedOutput to include stderr in error messages.
-func (g *SystemGitClient) run(ctx context.Context, dir string, args ...string) error {
-	if g.verbose {
-		fmt.Fprintf(os.Stderr, "[DEBUG] git %s (in %s)\n", strings.Join(args, " "), dir)
-	}
-
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s", string(output))
-	}
-
-	return nil
-}
-
-// runOutput executes a git command and returns trimmed stdout.
-// Uses Output (not CombinedOutput) so stderr is available in ExitError.
-func (g *SystemGitClient) runOutput(ctx context.Context, dir string, args ...string) (string, error) {
-	if g.verbose {
-		fmt.Fprintf(os.Stderr, "[DEBUG] git %s (in %s)\n", strings.Join(args, " "), dir)
-	}
-
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-
-	out, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("%s", string(exitErr.Stderr))
-		}
-		return "", err
-	}
-
-	return strings.TrimSpace(string(out)), nil
+	g := &git.Git{}
+	return g.UserIdentity(context.Background())
 }
 
 // ParseSmartURL extracts repository, ref, and path from GitHub URLs
