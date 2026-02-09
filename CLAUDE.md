@@ -103,10 +103,16 @@ The codebase follows clean architecture principles with proper separation of con
 
 2. **internal/core/** - Business logic layer (dependency injection pattern)
 
-   - **engine.go**: `Manager` facade - public API that delegates to VendorSyncer
-   - **vendor_syncer.go**: `VendorSyncer` - orchestrates all business logic
+   - **engine.go**: `Manager` facade - public API that delegates to service layer
+   - **vendor_syncer.go**: `VendorSyncer` - top-level orchestrator, delegates to services below
+   - **sync_service.go**: `SyncService` - sync logic (fetchWithFallback, canSkipSync, updateCache)
+   - **update_service.go**: `UpdateService` - update lockfile, compute file hashes, parallel updates
+   - **file_copy_service.go**: `FileCopyService` - position-aware file copy, local modification detection
+   - **verify_service.go**: `VerifyService` - verification against lockfile hashes + position-level checks
+   - **validation_service.go**: `ValidationService` - config validation, conflict detection
+   - **position_extract.go**: Position extraction and placement (ExtractPosition, PlaceContent)
    - **git_operations.go**: `GitClient` interface - Git command operations
-   - **filesystem.go**: `FileSystem` interface - File I/O operations
+   - **filesystem.go**: `FileSystem` interface - File I/O operations, CopyStats, ValidateDestPath
    - **github_client.go**: `LicenseChecker` interface - GitHub API license detection
    - **config_store.go**: `ConfigStore` interface - vendor.yml I/O
    - **lock_store.go**: `LockStore` interface - vendor.lock I/O
@@ -656,11 +662,28 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 **vendor_syncer.go:**
 
-- `syncVendor()` - Core sync logic for single vendor
+- `VendorSyncer` - Top-level orchestrator, delegates to SyncService/UpdateService/etc.
+- `FetchRepoDir()` - Browse remote repository contents via git ls-tree
+
+**sync_service.go:**
+
+- `Sync()` - Orchestrate sync for one or all vendors
+- `SyncVendor()` - Core sync logic for single vendor
+- `syncRef()` - Sync a single ref (clone, checkout, copy, cache)
+- `canSkipSync()` - Check cache to skip redundant sync operations
+- `updateCache()` - Build and save cache after successful sync
+
+**update_service.go:**
+
 - `UpdateAll()` - Update all vendors, regenerate lockfile
-- `DetectConflicts()` - Find path conflicts between vendors
+- `UpdateAllWithOptions()` - Parallel update variant with worker pool
+- `computeFileHashes()` - Compute SHA-256 hashes for lockfile entries
+- `toPositionLocks()` - Convert positionRecord to PositionLock for lockfile persistence
+
+**validation_service.go:**
+
 - `ValidateConfig()` - Comprehensive config validation
-- `Verify()` - Verify vendored files against lockfile hashes
+- `DetectConflicts()` - Find path conflicts between vendors
 
 **vuln_scanner.go:**
 

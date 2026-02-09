@@ -201,6 +201,8 @@ func RunEditVendorWizard(mgr interface{}, vendor *types.VendorSpec) *types.Vendo
 	}
 }
 
+// runMappingManager presents a menu loop for viewing, adding, editing, and deleting
+// path mappings within a single BranchSpec. Returns the updated BranchSpec on exit.
 func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) types.BranchSpec {
 	for {
 		var opts []huh.Option[string]
@@ -286,6 +288,9 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 	}
 }
 
+// runMappingCreator prompts the user to create a new PathMapping by selecting a remote
+// path (via browser or manual entry) and a local target. Supports position specifiers
+// like :L5-L20. Returns nil if the user cancels.
 func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 	var m types.PathMapping
 
@@ -345,6 +350,9 @@ func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 	return &m
 }
 
+// runRemoteBrowser presents an interactive directory browser for the remote repository.
+// runRemoteBrowser uses VendorManager.FetchRepoDir to list contents via git ls-tree.
+// Returns the selected file/directory path, or empty string if cancelled.
 func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 	// Extract repo name from URL for breadcrumb
 	repoName := path.Base(url)
@@ -421,6 +429,9 @@ func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 	}
 }
 
+// runLocalBrowser presents an interactive directory browser for the local filesystem.
+// runLocalBrowser uses VendorManager.ListLocalDir to list directory contents.
+// Returns the selected file/directory path, or empty string if cancelled.
 func runLocalBrowser(mgr VendorManager) string {
 	currentDir := "."
 	for {
@@ -500,6 +511,7 @@ func validateToPath(s string) error {
 	return err
 }
 
+// truncate shortens a string to maxLen characters, adding "..." suffix if truncated.
 func truncate(s string, maxLen int) string {
 	if len(s) > maxLen {
 		return s[:maxLen-3] + "..."
