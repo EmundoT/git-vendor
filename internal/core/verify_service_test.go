@@ -1040,6 +1040,406 @@ func TestVerify_PositionExtraction_DeletedFile(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Empty Lockfile Tests
+// ============================================================================
+
+func TestVerify_EmptyLockfile_NoCacheFallback(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "test-vendor",
+			URL:  "https://github.com/owner/repo",
+			Specs: []types.BranchSpec{{
+				Ref:     "main",
+				Mapping: []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}},
+			}},
+		}},
+	}, nil)
+
+	// Empty lockfile — no FileHashes, no Positions
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name:       "test-vendor",
+			Ref:        "main",
+			CommitHash: "abc123",
+		}},
+	}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+
+	// No cache available either → should error
+	_, err := service.Verify()
+	if err == nil {
+		t.Fatal("Expected error for empty lockfile with no cache, got nil")
+	}
+	if !contains(err.Error(), "no file hashes") {
+		t.Errorf("Expected 'no file hashes' error, got: %v", err)
+	}
+}
+
+func TestVerify_EmptyLockfile_WithCacheFallback(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Setup cache with files
+	cache.files["lib/file.go"] = "hash123"
+	cache.caches["test-vendor@main"] = types.IncrementalSyncCache{
+		VendorName: "test-vendor",
+		Ref:        "main",
+		CommitHash: "abc123",
+		Files: []types.FileChecksum{
+			{Path: "lib/file.go", Hash: "hash123"},
+		},
+	}
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "test-vendor",
+			URL:  "https://github.com/owner/repo",
+			Specs: []types.BranchSpec{{
+				Ref:     "main",
+				Mapping: []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}},
+			}},
+		}},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name:       "test-vendor",
+			Ref:        "main",
+			CommitHash: "abc123",
+		}},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/file.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify()
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Summary.Result != "PASS" {
+		t.Errorf("Expected PASS, got %s", result.Summary.Result)
+	}
+	if result.Summary.Verified != 1 {
+		t.Errorf("Expected 1 verified, got %d", result.Summary.Verified)
+	}
+}
+
+// ============================================================================
+// Mixed Position and Whole-File Tests
+// ============================================================================
+
+func TestVerify_MixedPositionAndWholeFile_SameVendor(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create two destination files
+	wholeFile := filepath.Join(tmpDir, "lib", "whole.go")
+	posFile := filepath.Join(tmpDir, "lib", "partial.go")
+	if err := os.MkdirAll(filepath.Dir(wholeFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(wholeFile, []byte("whole file content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Position file with 5 lines: lines 3-4 are vendored
+	posContent := "line1\nline2\nvendored-a\nvendored-b\nline5\n"
+	if err := os.WriteFile(posFile, []byte(posContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	realCache := NewFileCacheStore(NewOSFileSystem(), tmpDir)
+	wholeHash, _ := realCache.ComputeFileChecksum(wholeFile)
+	posFileHash, _ := realCache.ComputeFileChecksum(posFile)
+	_, posSourceHash, _ := ExtractPosition(posFile, &types.PositionSpec{StartLine: 3, EndLine: 4})
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "multi-type-vendor",
+			URL:  "https://github.com/owner/repo",
+			Specs: []types.BranchSpec{{
+				Ref: "main",
+				Mapping: []types.PathMapping{
+					{From: "src/whole.go", To: wholeFile},
+					{From: "src/partial.go:L10-L11", To: posFile + ":L3-L4"},
+				},
+			}},
+		}},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name:       "multi-type-vendor",
+			Ref:        "main",
+			CommitHash: "abc123",
+			FileHashes: map[string]string{
+				wholeFile: wholeHash,
+				posFile:   posFileHash,
+			},
+			Positions: []types.PositionLock{{
+				From:       "src/partial.go:L10-L11",
+				To:         posFile + ":L3-L4",
+				SourceHash: posSourceHash,
+			}},
+		}},
+	}, nil)
+
+	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
+	result, err := service.Verify()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "PASS" {
+		t.Errorf("Expected PASS, got %s", result.Summary.Result)
+	}
+	// 2 whole-file verified + 1 position verified = 3
+	if result.Summary.Verified != 3 {
+		t.Errorf("Expected 3 verified (2 whole-file + 1 position), got %d", result.Summary.Verified)
+	}
+
+	// Verify type breakdown
+	fileCount, posCount := 0, 0
+	for _, f := range result.Files {
+		switch f.Type {
+		case "file":
+			fileCount++
+		case "position":
+			posCount++
+		}
+	}
+	if fileCount != 2 {
+		t.Errorf("Expected 2 file-type entries, got %d", fileCount)
+	}
+	if posCount != 1 {
+		t.Errorf("Expected 1 position-type entry, got %d", posCount)
+	}
+}
+
+func TestVerify_PositionDriftAtTargetRange(t *testing.T) {
+	// Test: position content has drifted (modified) while whole file hash also changed
+	tmpDir := t.TempDir()
+
+	destFile := filepath.Join(tmpDir, "lib", "config.go")
+	if err := os.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write original content, compute hashes
+	original := "line1\nline2\noriginal-vendored\nline4\nline5\n"
+	if err := os.WriteFile(destFile, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	realCache := NewFileCacheStore(NewOSFileSystem(), tmpDir)
+	originalWholeHash, _ := realCache.ComputeFileChecksum(destFile)
+	_, originalPosHash, _ := ExtractPosition(destFile, &types.PositionSpec{StartLine: 3, EndLine: 3})
+
+	// Now modify only the vendored line
+	modified := "line1\nline2\nMODIFIED-vendored\nline4\nline5\n"
+	if err := os.WriteFile(destFile, []byte(modified), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "test-vendor",
+			URL:  "https://github.com/owner/repo",
+			Specs: []types.BranchSpec{{
+				Ref: "main",
+				Mapping: []types.PathMapping{
+					{From: "src/config.go:L3", To: destFile + ":L3"},
+				},
+			}},
+		}},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name:       "test-vendor",
+			Ref:        "main",
+			CommitHash: "abc123",
+			FileHashes: map[string]string{destFile: originalWholeHash},
+			Positions: []types.PositionLock{{
+				From:       "src/config.go:L3",
+				To:         destFile + ":L3",
+				SourceHash: originalPosHash,
+			}},
+		}},
+	}, nil)
+
+	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
+	result, err := service.Verify()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "FAIL" {
+		t.Errorf("Expected FAIL, got %s", result.Summary.Result)
+	}
+
+	// Both whole-file and position should show modified
+	if result.Summary.Modified < 2 {
+		t.Errorf("Expected at least 2 modified (whole-file + position), got %d", result.Summary.Modified)
+	}
+
+	// Find position-type modified entry
+	posModified := false
+	for _, f := range result.Files {
+		if f.Type == "position" && f.Status == "modified" {
+			posModified = true
+			if f.Position == nil {
+				t.Error("Expected Position detail on modified position entry")
+			}
+		}
+	}
+	if !posModified {
+		t.Error("Expected a position-type modified entry")
+	}
+}
+
+func TestVerify_MultipleVendors_MixedResults(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Vendor A: file verified
+	cache.files["lib/vendor-a/file.go"] = "hashA"
+	// Vendor B: file modified (different hash)
+	cache.files["lib/vendor-b/file.go"] = "hashB-modified"
+	// Vendor C: file deleted (not in cache.files)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "vendor-a", URL: "https://github.com/owner/a", Specs: []types.BranchSpec{{
+				Ref: "main", Mapping: []types.PathMapping{{From: "src/file.go", To: "lib/vendor-a/file.go"}},
+			}}},
+			{Name: "vendor-b", URL: "https://github.com/owner/b", Specs: []types.BranchSpec{{
+				Ref: "main", Mapping: []types.PathMapping{{From: "src/file.go", To: "lib/vendor-b/file.go"}},
+			}}},
+			{Name: "vendor-c", URL: "https://github.com/owner/c", Specs: []types.BranchSpec{{
+				Ref: "main", Mapping: []types.PathMapping{{From: "src/file.go", To: "lib/vendor-c/file.go"}},
+			}}},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "aaa", FileHashes: map[string]string{"lib/vendor-a/file.go": "hashA"}},
+			{Name: "vendor-b", Ref: "main", CommitHash: "bbb", FileHashes: map[string]string{"lib/vendor-b/file.go": "hashB-original"}},
+			{Name: "vendor-c", Ref: "main", CommitHash: "ccc", FileHashes: map[string]string{"lib/vendor-c/file.go": "hashC"}},
+		},
+	}, nil)
+
+	// fs.Stat for findAddedFiles
+	fs.EXPECT().Stat("lib/vendor-a/file.go").Return(&mockFileInfo{isDir: false}, nil)
+	fs.EXPECT().Stat("lib/vendor-b/file.go").Return(&mockFileInfo{isDir: false}, nil)
+	fs.EXPECT().Stat("lib/vendor-c/file.go").Return(nil, os.ErrNotExist)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "FAIL" {
+		t.Errorf("Expected FAIL, got %s", result.Summary.Result)
+	}
+	if result.Summary.Verified != 1 {
+		t.Errorf("Expected 1 verified, got %d", result.Summary.Verified)
+	}
+	if result.Summary.Modified != 1 {
+		t.Errorf("Expected 1 modified, got %d", result.Summary.Modified)
+	}
+	if result.Summary.Deleted != 1 {
+		t.Errorf("Expected 1 deleted, got %d", result.Summary.Deleted)
+	}
+	if result.Summary.TotalFiles != 3 {
+		t.Errorf("Expected 3 total files, got %d", result.Summary.TotalFiles)
+	}
+}
+
+func TestVerify_CacheFallback_StaleCache(t *testing.T) {
+	// Cache commit hash doesn't match lockfile → should be skipped
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Cache has a different commit hash than lockfile
+	cache.caches["test-vendor@main"] = types.IncrementalSyncCache{
+		VendorName: "test-vendor",
+		Ref:        "main",
+		CommitHash: "old-stale-hash", // Different from lockfile
+		Files: []types.FileChecksum{
+			{Path: "lib/file.go", Hash: "hash123"},
+		},
+	}
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "test-vendor",
+			URL:  "https://github.com/owner/repo",
+			Specs: []types.BranchSpec{{
+				Ref:     "main",
+				Mapping: []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}},
+			}},
+		}},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name:       "test-vendor",
+			Ref:        "main",
+			CommitHash: "new-current-hash", // Different from cache
+		}},
+	}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	_, err := service.Verify()
+
+	// Should error because no valid hashes available
+	if err == nil {
+		t.Fatal("Expected error for stale cache, got nil")
+	}
+	if !contains(err.Error(), "no") {
+		t.Errorf("Expected 'no cached file hashes' error, got: %v", err)
+	}
+}
+
 // joinLines joins strings with newlines and adds trailing newline
 func joinLines(lines []string) string {
 	result := ""
