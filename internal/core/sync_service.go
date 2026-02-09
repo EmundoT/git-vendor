@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -605,7 +606,7 @@ func (s *SyncService) canSkipSync(vendorName, ref, commitHash string, mappings [
 
 		// Check if file exists
 		fullPath := filepath.Join(s.rootDir, destFile)
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		if _, err := os.Stat(fullPath); errors.Is(err, os.ErrNotExist) {
 			// File missing - can't skip
 			return false
 		}

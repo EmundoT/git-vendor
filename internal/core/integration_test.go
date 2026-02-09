@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -116,10 +117,10 @@ func TestIntegration_GitOperations_Clone(t *testing.T) {
 	}
 
 	// Verify files exist
-	if _, err := os.Stat(filepath.Join(destDir, "README.md")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destDir, "README.md")); errors.Is(err, os.ErrNotExist) {
 		t.Error("README.md not found after clone")
 	}
-	if _, err := os.Stat(filepath.Join(destDir, "src/main.go")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destDir, "src/main.go")); errors.Is(err, os.ErrNotExist) {
 		t.Error("src/main.go not found after clone")
 	}
 
@@ -395,7 +396,7 @@ func TestIntegration_PathMapping_CopyNestedDirectories(t *testing.T) {
 		filepath.Join(destDir, "dest/lib/custom/helper.go"),
 	}
 	for _, file := range expectedFiles {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if _, err := os.Stat(file); errors.Is(err, os.ErrNotExist) {
 			t.Errorf("Expected file %s not found", file)
 		}
 	}
@@ -486,7 +487,7 @@ func TestIntegration_FullWorkflow_InitAddSyncUpdate(t *testing.T) {
 	}
 
 	// Verify vendor directory created
-	if _, err := os.Stat(filepath.Join(projectDir, "vendor")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(projectDir, "vendor")); errors.Is(err, os.ErrNotExist) {
 		t.Error("Vendor directory not created")
 	}
 
@@ -538,7 +539,7 @@ func TestIntegration_FullWorkflow_InitAddSyncUpdate(t *testing.T) {
 
 	// Verify files copied
 	importedFile := filepath.Join(projectDir, "lib/imported.go")
-	if _, err := os.Stat(importedFile); os.IsNotExist(err) {
+	if _, err := os.Stat(importedFile); errors.Is(err, os.ErrNotExist) {
 		t.Error("Synced file not found")
 	}
 
@@ -612,7 +613,7 @@ func TestIntegration_SyncWithOptions(t *testing.T) {
 
 	// Verify file copied
 	destFile := filepath.Join(projectDir, "dest/file.txt")
-	if _, err := os.Stat(destFile); os.IsNotExist(err) {
+	if _, err := os.Stat(destFile); errors.Is(err, os.ErrNotExist) {
 		t.Error("File not synced")
 	}
 
@@ -706,10 +707,10 @@ func TestIntegration_ParallelSync(t *testing.T) {
 	file1 := filepath.Join(projectDir, "v1/file1.txt")
 	file2 := filepath.Join(projectDir, "v2/file2.txt")
 
-	if _, err := os.Stat(file1); os.IsNotExist(err) {
+	if _, err := os.Stat(file1); errors.Is(err, os.ErrNotExist) {
 		t.Error("Vendor-1 file not synced")
 	}
-	if _, err := os.Stat(file2); os.IsNotExist(err) {
+	if _, err := os.Stat(file2); errors.Is(err, os.ErrNotExist) {
 		t.Error("Vendor-2 file not synced")
 	}
 }
@@ -807,7 +808,7 @@ func TestIntegration_GroupOperations(t *testing.T) {
 	}
 
 	// Verify only frontend file synced (after first group sync)
-	if _, err := os.Stat(frontendFile); os.IsNotExist(err) {
+	if _, err := os.Stat(frontendFile); errors.Is(err, os.ErrNotExist) {
 		t.Error("Frontend file not synced")
 	}
 
@@ -821,7 +822,7 @@ func TestIntegration_GroupOperations(t *testing.T) {
 	}
 
 	// Verify backend file now synced
-	if _, err := os.Stat(backendFile); os.IsNotExist(err) {
+	if _, err := os.Stat(backendFile); errors.Is(err, os.ErrNotExist) {
 		t.Error("Backend file not synced")
 	}
 }
