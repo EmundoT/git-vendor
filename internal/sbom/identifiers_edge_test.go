@@ -510,7 +510,7 @@ func TestValidateProjectName_EdgeCases(t *testing.T) {
 	}{
 		{"tabs and newlines", "\t\n", DefaultProjectName},
 		{"mixed whitespace", " \t name \n ", "name"},
-		{"unicode spaces", "\u00a0", DefaultProjectName}, // non-breaking space is NOT trimmed by TrimSpace in all Go versions
+		{"unicode spaces", "\u00a0", DefaultProjectName}, // Go's TrimSpace trims U+00A0 (NBSP) via unicode.IsSpace
 		{"single char", "x", "x"},
 		{"very long name preserved", strings.Repeat("a", 500), strings.Repeat("a", 500)},
 	}
