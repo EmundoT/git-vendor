@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -324,10 +325,8 @@ func TestValidateDestPath_URLEncodedTraversal(t *testing.T) {
 	}
 }
 
-// TestValidateDestPath_NullByteInjection verifies behavior with embedded null bytes.
-// Go's os.Create rejects null bytes at the syscall level (EINVAL), but ValidateDestPath
-// should ideally reject them too for defense in depth.
-// Current behavior: ValidateDestPath does NOT check for null bytes — the OS rejects them.
+// TestValidateDestPath_NullByteInjection verifies that ValidateDestPath rejects null bytes
+// as defense in depth (the OS also rejects at syscall level).
 func TestValidateDestPath_NullByteInjection(t *testing.T) {
 	tests := []struct {
 		name string
@@ -341,17 +340,23 @@ func TestValidateDestPath_NullByteInjection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Verify the OS rejects null bytes in paths by attempting a file operation.
-			// This confirms defense-in-depth even if ValidateDestPath doesn't catch it.
+			// ValidateDestPath MUST reject null bytes directly
+			err := ValidateDestPath(tt.path)
+			if err == nil {
+				t.Errorf("ValidateDestPath(%q) should reject null byte, got nil", tt.path)
+			}
+			if err != nil && !strings.Contains(err.Error(), "null bytes") {
+				t.Errorf("ValidateDestPath(%q) error should mention null bytes, got: %v", tt.path, err)
+			}
+
+			// Also verify the OS rejects null bytes (belt and suspenders)
 			tempDir := t.TempDir()
 			fullPath := filepath.Join(tempDir, tt.path)
-			_, err := os.Create(fullPath)
-			if err == nil {
-				// If the OS somehow allowed it, clean up
+			_, osErr := os.Create(fullPath)
+			if osErr == nil {
 				os.Remove(fullPath)
-				t.Errorf("OS allowed file creation with null byte in path %q — defense gap", tt.path)
+				t.Errorf("OS allowed file creation with null byte in path %q", tt.path)
 			}
-			// Expected: OS rejects with "invalid argument" or similar
 		})
 	}
 }
@@ -662,6 +667,84 @@ func TestValidateDestPath_CacheStoreSanitization(t *testing.T) {
 				if len(sanitized) >= 2 && sanitized[0] == '.' && sanitized[1] == '.' {
 					t.Errorf("sanitizeFilename(%q) = %q — starts with '..'", tt.input, sanitized)
 				}
+			}
+		})
+	}
+}
+
+// ============================================================================
+// SEC-001 Fix Verification: ValidateVendorName
+// ============================================================================
+
+// TestValidateVendorName verifies the new ValidateVendorName function rejects
+// names containing path traversal sequences, separators, or null bytes.
+func TestValidateVendorName(t *testing.T) {
+	tests := []struct {
+		name      string
+		vendor    string
+		wantError bool
+		errSubstr string
+	}{
+		// Valid names
+		{"simple name", "my-lib", false, ""},
+		{"name with dots", "lib.v2", false, ""},
+		{"name with spaces", "my lib", false, ""},
+		{"name with hyphens and numbers", "react-18", false, ""},
+
+		// Invalid: path separators
+		{"forward slash", "evil/lib", true, "path separators"},
+		{"backslash", "evil\\lib", true, "path separators"},
+		{"traversal via slash", "../../../etc/evil", true, "path separators"},
+		{"deeply nested traversal", "../../tmp/evil", true, "path separators"},
+
+		// Invalid: dotdot without slashes (still dangerous in filepath.Join)
+		{"bare dotdot", "..", true, "path traversal"},
+		{"dotdot prefix", "..name", true, "path traversal"},
+
+		// Invalid: null bytes
+		{"null byte", "evil\x00lib", true, "null bytes"},
+
+		// Invalid: empty
+		{"empty string", "", true, "must not be empty"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateVendorName(tt.vendor)
+			if tt.wantError && err == nil {
+				t.Errorf("ValidateVendorName(%q) expected error, got nil", tt.vendor)
+			}
+			if !tt.wantError && err != nil {
+				t.Errorf("ValidateVendorName(%q) expected no error, got: %v", tt.vendor, err)
+			}
+			if tt.wantError && err != nil && tt.errSubstr != "" {
+				if !strings.Contains(err.Error(), tt.errSubstr) {
+					t.Errorf("ValidateVendorName(%q) error should contain %q, got: %v", tt.vendor, tt.errSubstr, err)
+				}
+			}
+		})
+	}
+}
+
+// TestValidateVendorName_LicensePathSafety verifies that ValidateVendorName
+// blocks the exact attack vector from SEC-001: vendor names that would cause
+// license_service.go:CopyLicense to write outside vendor/licenses/.
+func TestValidateVendorName_LicensePathSafety(t *testing.T) {
+	attackVectors := []string{
+		"../../tmp/evil",
+		"../../../etc/cron.d/evil",
+		"../../malicious",
+		"../escape",
+		"subdir/../../escape",
+	}
+
+	for _, name := range attackVectors {
+		t.Run(name, func(t *testing.T) {
+			err := ValidateVendorName(name)
+			if err == nil {
+				// Show the path that would have been constructed
+				dest := filepath.Join("vendor", "licenses", name+".txt")
+				t.Errorf("ValidateVendorName(%q) should reject — would produce license path %q", name, filepath.Clean(dest))
 			}
 		})
 	}
