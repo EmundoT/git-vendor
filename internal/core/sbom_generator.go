@@ -105,7 +105,7 @@ func (g *SBOMGenerator) Generate(format SBOMFormat) ([]byte, error) {
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Generate: render %s SBOM: %w", format, err)
 	}
 
 	// Schema validation (if enabled)
@@ -415,7 +415,7 @@ func (g *SBOMGenerator) validateSBOM(data []byte, format SBOMFormat) error {
 		}
 		// Validate required fields per SPDX 2.3 spec
 		if err := validateSPDXRequiredFields(&testDoc); err != nil {
-			return err
+			return fmt.Errorf("validateSBOM: %w", err)
 		}
 	}
 	return nil

@@ -81,7 +81,7 @@ func (s *LicenseService) CopyLicense(tempDir, vendorName string) error {
 	// Ensure license directory exists
 	licenseDir := filepath.Join(s.rootDir, LicensesDir)
 	if err := s.fs.MkdirAll(licenseDir, 0755); err != nil {
-		return err
+		return fmt.Errorf("CopyLicense: create license directory: %w", err)
 	}
 
 	// Copy license file

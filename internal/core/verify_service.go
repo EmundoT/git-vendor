@@ -338,8 +338,11 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 	// Walk each destination directory
 	for destDir := range destDirs {
 		err := filepath.WalkDir(destDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
+			if err != nil {
+				return fmt.Errorf("findAddedFiles: access %s: %w", path, err)
+			}
+			if d.IsDir() {
+				return nil
 			}
 
 			// Check if this file is in expected files
@@ -363,7 +366,7 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 		})
 
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
+			return nil, fmt.Errorf("findAddedFiles: walk %s: %w", destDir, err)
 		}
 	}
 
