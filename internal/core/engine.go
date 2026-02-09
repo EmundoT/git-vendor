@@ -27,7 +27,7 @@ func NewManager() *Manager {
 	configStore := NewFileConfigStore(rootDir)
 	lockStore := NewFileLockStore(rootDir)
 	gitClient := NewSystemGitClient(Verbose)
-	fs := NewOSFileSystem()
+	fs := NewRootedFileSystem(".")
 
 	// Create provider registry for multi-platform URL parsing
 	providerRegistry := providers.NewProviderRegistry()
