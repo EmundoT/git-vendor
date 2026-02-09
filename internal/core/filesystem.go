@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // CopyStats tracks file copy statistics
@@ -159,8 +161,17 @@ func (fs *OSFileSystem) RemoveAll(path string) error {
 	return os.RemoveAll(path)
 }
 
-// ValidateDestPath ensures destination path is safe and doesn't allow path traversal
+// ValidateDestPath ensures destination path is safe and doesn't allow path traversal.
+// ValidateDestPath strips any position specifier (e.g., ":L5-L10") before validation,
+// so paths like "config.go:L5-L10" are accepted if the file path part is valid.
 func ValidateDestPath(destPath string) error {
+	// Strip position specifier before validation — only validate the file path part
+	pathPart, _, parseErr := types.ParsePathPosition(destPath)
+	if parseErr != nil {
+		pathPart = destPath // Fallback to raw path if position parsing fails
+	}
+	destPath = pathPart
+
 	// Clean the path to normalize it
 	cleaned := filepath.Clean(destPath)
 

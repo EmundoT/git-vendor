@@ -140,12 +140,18 @@ func (s *ValidationService) buildPathOwnershipMap(config types.VendorConfig) map
 				// Use auto-path computation if destination not explicitly specified
 				if destPath == "" || destPath == "." {
 					// Strip position from source before auto-path computation
-					srcFile, _, _ := types.ParsePathPosition(mapping.From)
+					srcFile, _, err := types.ParsePathPosition(mapping.From)
+					if err != nil {
+						srcFile = mapping.From
+					}
 					destPath = ComputeAutoPath(srcFile, spec.DefaultTarget, vendor.Name)
 				}
 
 				// Strip position specifier for conflict detection (compare file paths only)
-				destFile, _, _ := types.ParsePathPosition(destPath)
+				destFile, _, err := types.ParsePathPosition(destPath)
+				if err != nil {
+					destFile = destPath
+				}
 
 				// Normalize path
 				destPath = filepath.Clean(destFile)
