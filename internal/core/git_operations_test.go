@@ -211,6 +211,381 @@ func TestSystemGitClient_GetCommitLog_InvalidRange(t *testing.T) {
 }
 
 // ============================================================================
+// ParseSmartURL Tests
+// ============================================================================
+
+func TestParseSmartURL_GitHubBlobURL(t *testing.T) {
+	base, ref, path := ParseSmartURL("https://github.com/owner/repo/blob/main/src/file.go")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	if ref != "main" {
+		t.Errorf("Expected ref 'main', got '%s'", ref)
+	}
+	if path != "src/file.go" {
+		t.Errorf("Expected path 'src/file.go', got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_GitHubTreeURL(t *testing.T) {
+	base, ref, path := ParseSmartURL("https://github.com/owner/repo/tree/main/src/dir/")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	if ref != "main" {
+		t.Errorf("Expected ref 'main', got '%s'", ref)
+	}
+	if path != "src/dir/" {
+		t.Errorf("Expected path 'src/dir/', got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_TagURLWithSlashInPath(t *testing.T) {
+	base, ref, path := ParseSmartURL("https://github.com/owner/repo/tree/v1.0/src/nested/dir")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	if ref != "v1.0" {
+		t.Errorf("Expected ref 'v1.0', got '%s'", ref)
+	}
+	if path != "src/nested/dir" {
+		t.Errorf("Expected path 'src/nested/dir', got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_BareRepoURL(t *testing.T) {
+	base, ref, path := ParseSmartURL("https://github.com/owner/repo")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	if ref != "" {
+		t.Errorf("Expected empty ref, got '%s'", ref)
+	}
+	if path != "" {
+		t.Errorf("Expected empty path, got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_TrailingSlash(t *testing.T) {
+	base, ref, path := ParseSmartURL("https://github.com/owner/repo/")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	if ref != "" {
+		t.Errorf("Expected empty ref, got '%s'", ref)
+	}
+	if path != "" {
+		t.Errorf("Expected empty path, got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_DotGitSuffix(t *testing.T) {
+	base, ref, path := ParseSmartURL("https://github.com/owner/repo.git")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	if ref != "" {
+		t.Errorf("Expected empty ref, got '%s'", ref)
+	}
+	if path != "" {
+		t.Errorf("Expected empty path, got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_SSHURLFormat(t *testing.T) {
+	// SSH URLs (git@github.com:owner/repo) don't match the deep-link regex.
+	// ParseSmartURL should return the cleaned URL as base, no ref/path.
+	base, ref, path := ParseSmartURL("git@github.com:owner/repo")
+	if ref != "" {
+		t.Errorf("Expected empty ref for SSH URL, got '%s'", ref)
+	}
+	if path != "" {
+		t.Errorf("Expected empty path for SSH URL, got '%s'", path)
+	}
+	// SSH URL won't match deep link regex, base returned as-is (minus trailing slash/.git)
+	if base != "git@github.com:owner/repo" {
+		t.Errorf("Expected base 'git@github.com:owner/repo', got '%s'", base)
+	}
+}
+
+func TestParseSmartURL_SSHURLWithDotGit(t *testing.T) {
+	base, ref, path := ParseSmartURL("git@github.com:owner/repo.git")
+	if base != "git@github.com:owner/repo" {
+		t.Errorf("Expected base 'git@github.com:owner/repo', got '%s'", base)
+	}
+	if ref != "" {
+		t.Errorf("Expected empty ref, got '%s'", ref)
+	}
+	if path != "" {
+		t.Errorf("Expected empty path, got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_HTTPvsHTTPS(t *testing.T) {
+	// HTTP URL should not match deep-link regex (it targets github.com specifically)
+	base, ref, path := ParseSmartURL("http://github.com/owner/repo")
+	if ref != "" {
+		t.Errorf("Expected empty ref for HTTP URL, got '%s'", ref)
+	}
+	if path != "" {
+		t.Errorf("Expected empty path for HTTP URL, got '%s'", path)
+	}
+	if base != "http://github.com/owner/repo" {
+		t.Errorf("Expected base 'http://github.com/owner/repo', got '%s'", base)
+	}
+}
+
+func TestParseSmartURL_GitLabNestedGroupURL(t *testing.T) {
+	// GitLab nested groups don't match the GitHub-specific deep-link regex
+	base, ref, path := ParseSmartURL("https://gitlab.com/group/subgroup/repo")
+	if ref != "" {
+		t.Errorf("Expected empty ref for GitLab URL, got '%s'", ref)
+	}
+	if path != "" {
+		t.Errorf("Expected empty path for GitLab URL, got '%s'", path)
+	}
+	if base != "https://gitlab.com/group/subgroup/repo" {
+		t.Errorf("Expected base 'https://gitlab.com/group/subgroup/repo', got '%s'", base)
+	}
+}
+
+func TestParseSmartURL_BitbucketURL(t *testing.T) {
+	base, ref, path := ParseSmartURL("https://bitbucket.org/owner/repo")
+	if base != "https://bitbucket.org/owner/repo" {
+		t.Errorf("Expected base 'https://bitbucket.org/owner/repo', got '%s'", base)
+	}
+	if ref != "" {
+		t.Errorf("Expected empty ref, got '%s'", ref)
+	}
+	if path != "" {
+		t.Errorf("Expected empty path, got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_WhitespaceHandling(t *testing.T) {
+	base, ref, path := ParseSmartURL("  https://github.com/owner/repo/blob/main/file.go  ")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	if ref != "main" {
+		t.Errorf("Expected ref 'main', got '%s'", ref)
+	}
+	if path != "file.go" {
+		t.Errorf("Expected path 'file.go', got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_DeepLinkWithNestedPath(t *testing.T) {
+	base, ref, path := ParseSmartURL("https://github.com/owner/repo/blob/v2.0.0/src/internal/pkg/util.go")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	if ref != "v2.0.0" {
+		t.Errorf("Expected ref 'v2.0.0', got '%s'", ref)
+	}
+	if path != "src/internal/pkg/util.go" {
+		t.Errorf("Expected path 'src/internal/pkg/util.go', got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_BranchLikeFeaturePath(t *testing.T) {
+	// Branch names with slashes can't be parsed — documented limitation.
+	// feature/v2/main appears as ref="feature" path="v2/main/src/file.go"
+	base, ref, path := ParseSmartURL("https://github.com/owner/repo/blob/feature/v2/main/src/file.go")
+	if base != "https://github.com/owner/repo" {
+		t.Errorf("Expected base 'https://github.com/owner/repo', got '%s'", base)
+	}
+	// The regex captures the first path segment as ref
+	if ref != "feature" {
+		t.Errorf("Expected ref 'feature' (slash branch limitation), got '%s'", ref)
+	}
+	// Rest becomes path
+	if path != "v2/main/src/file.go" {
+		t.Errorf("Expected path 'v2/main/src/file.go', got '%s'", path)
+	}
+}
+
+func TestParseSmartURL_TableDriven(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantBase string
+		wantRef  string
+		wantPath string
+	}{
+		{
+			name:     "GitHub blob with commit SHA",
+			input:    "https://github.com/owner/repo/blob/abc123def/src/main.go",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "abc123def",
+			wantPath: "src/main.go",
+		},
+		{
+			name:     "GitHub tree with tag",
+			input:    "https://github.com/owner/repo/tree/v1.2.3/internal/",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "v1.2.3",
+			wantPath: "internal/",
+		},
+		{
+			name:     "Bare URL with trailing .git and slash",
+			input:    "https://github.com/owner/repo.git/",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "",
+			wantPath: "",
+		},
+		{
+			name:     "Self-hosted GitHub Enterprise",
+			input:    "https://github.example.com/owner/repo",
+			wantBase: "https://github.example.com/owner/repo",
+			wantRef:  "",
+			wantPath: "",
+		},
+		{
+			name:     "URL with only owner (no repo)",
+			input:    "https://github.com/owner",
+			wantBase: "https://github.com/owner",
+			wantRef:  "",
+			wantPath: "",
+		},
+		{
+			name:     "Empty string",
+			input:    "",
+			wantBase: "",
+			wantRef:  "",
+			wantPath: "",
+		},
+		{
+			name:     "Just a domain",
+			input:    "https://github.com",
+			wantBase: "https://github.com",
+			wantRef:  "",
+			wantPath: "",
+		},
+		{
+			name:     "Single file at root blob",
+			input:    "https://github.com/owner/repo/blob/main/README.md",
+			wantBase: "https://github.com/owner/repo",
+			wantRef:  "main",
+			wantPath: "README.md",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotBase, gotRef, gotPath := ParseSmartURL(tt.input)
+			if gotBase != tt.wantBase {
+				t.Errorf("base: got '%s', want '%s'", gotBase, tt.wantBase)
+			}
+			if gotRef != tt.wantRef {
+				t.Errorf("ref: got '%s', want '%s'", gotRef, tt.wantRef)
+			}
+			if gotPath != tt.wantPath {
+				t.Errorf("path: got '%s', want '%s'", gotPath, tt.wantPath)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// cleanURL Tests
+// ============================================================================
+
+func TestCleanURL(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"  https://github.com/owner/repo  ", "https://github.com/owner/repo"},
+		{"\\https://github.com/owner/repo", "https://github.com/owner/repo"},
+		{"https://github.com/owner/repo", "https://github.com/owner/repo"},
+		{"", ""},
+		{"  \\\\url  ", "url"},
+	}
+
+	for _, tt := range tests {
+		got := cleanURL(tt.input)
+		if got != tt.want {
+			t.Errorf("cleanURL(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+// ============================================================================
+// isSemverTag Tests
+// ============================================================================
+
+func TestIsSemverTag(t *testing.T) {
+	tests := []struct {
+		tag  string
+		want bool
+	}{
+		{"v1.0.0", true},
+		{"1.0.0", true},
+		{"v2.3.4", true},
+		{"v0.0.1", true},
+		{"v1.0.0-beta", true},
+		{"release-1.0", false},
+		{"latest", false},
+		{"", false},
+		{"v", false},
+	}
+
+	for _, tt := range tests {
+		got := isSemverTag(tt.tag)
+		if got != tt.want {
+			t.Errorf("isSemverTag(%q) = %v, want %v", tt.tag, got, tt.want)
+		}
+	}
+}
+
+// ============================================================================
+// parseListTreeOutput Tests
+// ============================================================================
+
+func TestParseListTreeOutput(t *testing.T) {
+	output := "100644 blob abc123 file1.go\n040000 tree def456 subdir\n100644 blob ghi789 file2.go\n"
+	items := parseListTreeOutput(output, "")
+
+	if len(items) != 3 {
+		t.Fatalf("Expected 3 items, got %d", len(items))
+	}
+
+	// Items should be sorted
+	if items[0] != "file1.go" {
+		t.Errorf("Expected 'file1.go', got '%s'", items[0])
+	}
+	if items[1] != "file2.go" {
+		t.Errorf("Expected 'file2.go', got '%s'", items[1])
+	}
+	if items[2] != "subdir/" {
+		t.Errorf("Expected 'subdir/', got '%s'", items[2])
+	}
+}
+
+func TestParseListTreeOutput_WithSubdir(t *testing.T) {
+	output := "100644 blob abc123 src/file1.go\n100644 blob def456 src/file2.go\n"
+	items := parseListTreeOutput(output, "src")
+
+	if len(items) != 2 {
+		t.Fatalf("Expected 2 items, got %d", len(items))
+	}
+	if items[0] != "file1.go" {
+		t.Errorf("Expected 'file1.go', got '%s'", items[0])
+	}
+	if items[1] != "file2.go" {
+		t.Errorf("Expected 'file2.go', got '%s'", items[1])
+	}
+}
+
+func TestParseListTreeOutput_EmptyOutput(t *testing.T) {
+	items := parseListTreeOutput("", "")
+	if len(items) != 0 {
+		t.Errorf("Expected 0 items, got %d", len(items))
+	}
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
