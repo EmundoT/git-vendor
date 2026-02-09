@@ -98,7 +98,7 @@ func main() {
 			tui.PrintError("Initialization Failed", err.Error())
 			os.Exit(1)
 		}
-		tui.PrintSuccess("Initialized in ./vendor/")
+		tui.PrintSuccess("Initialized in ./" + core.VendorDir + "/")
 
 	case "add":
 		if !core.IsVendorInitialized() {

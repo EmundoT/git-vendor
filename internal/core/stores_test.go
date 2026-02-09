@@ -634,7 +634,7 @@ func TestLoadLock_EdgeCases(t *testing.T) {
   - name: "complete"
     ref: "v1.0.0"
     commit_hash: "abc123def456"
-    license_path: "vendor/licenses/complete.txt"
+    license_path: ".git-vendor/licenses/complete.txt"
     updated: "2025-01-15T12:30:45Z"`,
 			wantErr:   false,
 			wantCount: 1,

@@ -111,7 +111,7 @@ The codebase follows clean architecture principles with proper separation of con
    - **verify_service.go**: `VerifyService` - verification against lockfile hashes + position-level checks
    - **validation_service.go**: `ValidationService` - config validation, conflict detection
    - **position_extract.go**: Position extraction and placement (ExtractPosition, PlaceContent)
-   - **git_operations.go**: `GitClient` interface - Git command operations
+   - **git_operations.go**: `GitClient` interface + `SystemGitClient` (delegates to git-plumbing via `gitFor()` helper)
    - **filesystem.go**: `FileSystem` interface - File I/O operations, CopyStats, ValidateDestPath
    - **github_client.go**: `LicenseChecker` interface - GitHub API license detection
    - **config_store.go**: `ConfigStore` interface - vendor.yml I/O
@@ -188,17 +188,17 @@ PositionSpec (internal/types/position.go)
 
 ### File System Structure
 
-All vendor-related files live in `./vendor/`:
+All vendor-related files live in `./.git-vendor/`:
 
 ```text
-vendor/
+.git-vendor/
 ├── vendor.yml       # Configuration file
 ├── vendor.lock      # Lock file with commit hashes
 └── licenses/        # Cached license files
     └── {name}.txt
 ```
 
-Vendored files are copied to paths specified in the configuration (outside vendor/ directory).
+Vendored files are copied to paths specified in the configuration (outside .git-vendor/ directory).
 
 ## Key Operations
 
@@ -241,7 +241,7 @@ Automatic license detection via `GitHubLicenseChecker` (github_client.go:33):
 - Queries GitHub API `/repos/:owner/:repo/license` endpoint
 - Allowed by default: MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Unlicense, CC0-1.0
 - Other licenses prompt user confirmation via `tui.AskToOverrideCompliance()`
-- License files are automatically copied to `vendor/licenses/{name}.txt`
+- License files are automatically copied to `.git-vendor/licenses/{name}.txt`
 
 ### Position Extraction (Spec 071)
 
@@ -435,13 +435,16 @@ Display patterns:
 
 ### Git Operations
 
-Git operations use the `GitClient` interface (git_operations.go):
+Git operations use the `GitClient` interface (git_operations.go), delegating to git-plumbing:
 
 - `SystemGitClient` implements `GitClient` for production
-- Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`
-- Internal `run()` method executes git commands via `exec.Command`
-- Verbose mode logs commands to stderr when `--verbose` flag is used
-- Temp directories cleaned up with `defer fs.RemoveAll(tempDir)`
+- Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`, `GetCommitLog`, `GetTagForCommit`
+- `gitFor(dir)` helper creates `*git.Git` instances per-call (cheap allocation, no I/O)
+- All git execution delegated to git-plumbing (`github.com/emundoT/git-plumbing`) — no direct `exec.Command` calls
+- `GetCommitLog` adapter converts `git.Commit` → `types.CommitInfo` with date formatting (`time.Time` → `"2006-01-02 15:04:05 -0700"`)
+- `GetTagForCommit` adapter calls `TagsAt()` then applies local semver preference via `isSemverTag()`
+- Standalone: `GetGitUserIdentity()` → `git.Git{}.UserIdentity()`, `IsGitInstalled()` → `git.IsInstalled()`
+- Verbose mode propagated via `git.Git{Verbose: true}` which logs commands to stderr
 
 ## Development Notes
 
@@ -510,6 +513,7 @@ go test -v ./...
 
 **Runtime:**
 
+- `github.com/emundoT/git-plumbing` - Git CLI wrapper (self-vendored via git-vendor to `pkg/git-plumbing/`)
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
@@ -551,7 +555,7 @@ go test -v ./...
 9. **Edit mode**: Changes aren't saved until user selects "💾 Save & Exit"
 10. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing
 11. **Branch names with slashes**: Cannot parse from URL due to ambiguity - use base URL and enter ref manually
-12. **Incremental sync cache**: Stored in vendor/.cache/, auto-invalidates on commit hash changes, 1000 file limit per vendor
+12. **Incremental sync cache**: Stored in .git-vendor/.cache/, auto-invalidates on commit hash changes, 1000 file limit per vendor
 13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts. 5-minute timeout kills hanging hooks (override `hookService.timeout` in tests). Environment variable values are sanitized (newlines/null bytes stripped). Timeout tests MUST use `exec sleep` (not bare `sleep`) to prevent orphaned child processes when `sh -c` is killed
 14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
 15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
@@ -573,7 +577,7 @@ go test -v ./...
 ### Available Commands
 
 ```bash
-git-vendor init                      # Initialize vendor directory
+git-vendor init                      # Initialize .git-vendor directory
 git-vendor add                       # Add vendor (interactive)
 git-vendor edit                      # Edit vendor (interactive)
 git-vendor remove <name>             # Remove vendor
@@ -665,10 +669,10 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 ### File Paths
 
-- Config: `vendor/vendor.yml`
-- Lock: `vendor/vendor.lock`
-- Licenses: `vendor/licenses/<name>.txt`
-- Vendored files: User-specified paths (outside vendor/)
+- Config: `.git-vendor/vendor.yml`
+- Lock: `.git-vendor/vendor.lock`
+- Licenses: `.git-vendor/licenses/<name>.txt`
+- Vendored files: User-specified paths (outside .git-vendor/)
 
 ### Important Functions by File
 
@@ -736,6 +740,10 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 **git_operations.go:**
 
+- `gitFor(dir)` - Create `*git.Git` instance for given directory (delegates to git-plumbing)
+- `GetCommitLog()` - Retrieve commit log between two refs (adapter: `git.Commit` → `types.CommitInfo`)
+- `GetTagForCommit()` - Get tag for commit with semver preference (wraps `TagsAt()`)
+- `GetGitUserIdentity()` - Get git user identity string (delegates to `git.Git{}.UserIdentity()`)
 - `ParseSmartURL()` - Extract repo/ref/path from GitHub URLs
 - `GitClient.ListTree()` - Browse remote directories via git ls-tree
 

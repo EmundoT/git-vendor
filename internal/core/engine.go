@@ -2,7 +2,8 @@ package core
 
 import (
 	"os"
-	"os/exec"
+
+	git "github.com/emundoT/git-plumbing"
 
 	"github.com/EmundoT/git-vendor/internal/core/providers"
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -80,8 +81,7 @@ func (m *Manager) LicensePath(name string) string {
 
 // IsGitInstalled checks if git is available on the system
 func IsGitInstalled() bool {
-	_, err := exec.LookPath("git")
-	return err == nil
+	return git.IsInstalled()
 }
 
 // IsVendorInitialized checks if the vendor directory structure exists

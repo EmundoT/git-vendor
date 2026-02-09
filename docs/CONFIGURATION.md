@@ -15,7 +15,7 @@ Complete reference for vendor.yml and vendor.lock file formats.
 
 ## vendor.yml Format
 
-**Location:** `vendor/vendor.yml`
+**Location:** `.git-vendor/vendor.yml`
 
 Main configuration file defining all vendor dependencies.
 
@@ -65,7 +65,7 @@ vendors:
 
 ## vendor.lock Format
 
-**Location:** `vendor/vendor.lock`
+**Location:** `.git-vendor/vendor.lock`
 
 Lock file storing exact commit hashes for reproducibility.
 
@@ -87,12 +87,12 @@ vendors:
   - name: example-lib
     ref: main
     commit_hash: abc123def456789...
-    license_path: vendor/licenses/example-lib.txt
+    license_path: .git-vendor/licenses/example-lib.txt
     updated: "2024-12-27T10:30:45Z"
   - name: another-lib
     ref: v1.0.0
     commit_hash: fed987cba654321...
-    license_path: vendor/licenses/another-lib.txt
+    license_path: .git-vendor/licenses/another-lib.txt
     updated: "2024-12-27T10:31:20Z"
 ```
 
@@ -456,14 +456,14 @@ hooks:
 
 ```bash
 git-vendor validate
-git add vendor/vendor.yml
+git add .git-vendor/vendor.yml
 git commit -m "Add vendor dependencies"
 ```
 
 ### 7. Commit Lockfile
 
 ```bash
-git add vendor/vendor.lock
+git add .git-vendor/vendor.lock
 git commit -m "Lock vendor versions"
 ```
 
