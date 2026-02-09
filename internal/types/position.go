@@ -119,8 +119,14 @@ func parsePositionSpecifier(spec string) (*PositionSpec, error) {
 
 	// Try line range: L5-L10 or L5:L10
 	if m := reLineRange.FindStringSubmatch(spec); m != nil {
-		startLine, _ := strconv.Atoi(m[1])
-		endLine, _ := strconv.Atoi(m[2])
+		startLine, err := strconv.Atoi(m[1])
+		if err != nil {
+			return nil, fmt.Errorf("invalid start line %q: %w", m[1], err)
+		}
+		endLine, err := strconv.Atoi(m[2])
+		if err != nil {
+			return nil, fmt.Errorf("invalid end line %q: %w", m[2], err)
+		}
 
 		if startLine < 1 {
 			return nil, fmt.Errorf("start line must be >= 1, got %d", startLine)
@@ -137,7 +143,10 @@ func parsePositionSpecifier(spec string) (*PositionSpec, error) {
 
 	// Try line-to-EOF: L5-EOF
 	if m := reLineEOF.FindStringSubmatch(spec); m != nil {
-		startLine, _ := strconv.Atoi(m[1])
+		startLine, err := strconv.Atoi(m[1])
+		if err != nil {
+			return nil, fmt.Errorf("invalid start line %q: %w", m[1], err)
+		}
 		if startLine < 1 {
 			return nil, fmt.Errorf("start line must be >= 1, got %d", startLine)
 		}
@@ -149,7 +158,10 @@ func parsePositionSpecifier(spec string) (*PositionSpec, error) {
 
 	// Try single line: L5
 	if m := reSingleLine.FindStringSubmatch(spec); m != nil {
-		startLine, _ := strconv.Atoi(m[1])
+		startLine, err := strconv.Atoi(m[1])
+		if err != nil {
+			return nil, fmt.Errorf("invalid line number %q: %w", m[1], err)
+		}
 		if startLine < 1 {
 			return nil, fmt.Errorf("line must be >= 1, got %d", startLine)
 		}

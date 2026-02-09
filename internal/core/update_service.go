@@ -277,12 +277,18 @@ func (s *UpdateService) computeFileHashes(vendor *types.VendorSpec, ref string) 
 		destPath := mapping.To
 		if destPath == "" {
 			// Use auto-computed path — strip position from source for auto-naming
-			srcFile, _, _ := types.ParsePathPosition(mapping.From)
+			srcFile, _, err := types.ParsePathPosition(mapping.From)
+			if err != nil {
+				srcFile = mapping.From
+			}
 			destPath = ComputeAutoPath(srcFile, matchingSpec.DefaultTarget, vendor.Name)
 		}
 
 		// Strip position specifier from destination path for file system access
-		destFile, _, _ := types.ParsePathPosition(destPath)
+		destFile, _, err := types.ParsePathPosition(destPath)
+		if err != nil {
+			destFile = destPath
+		}
 
 		// Compute hash for this file
 		hash, err := s.cache.ComputeFileChecksum(destFile)

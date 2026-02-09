@@ -171,8 +171,9 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 }
 
 // verifyPositions checks position-extracted content against lockfile source hashes.
-// For each PositionLock in the lockfile, it reads the destination file locally, extracts
-// the target range, and compares its hash to the stored source_hash. No network access needed.
+// For each PositionLock entry, verifyPositions reads the destination file locally,
+// extracts the target range, and compares the computed hash to PositionLock.SourceHash.
+// No network access required — purely local verification.
 func (s *VerifyService) verifyPositions(lock types.VendorLock, result *types.VerifyResult) {
 	for i := range lock.Vendors {
 		lockEntry := &lock.Vendors[i]
@@ -297,7 +298,10 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 				}
 
 				// Strip position specifier from destination path for file system access
-				destFile, _, _ := types.ParsePathPosition(destPath)
+				destFile, _, parseErr := types.ParsePathPosition(destPath)
+				if parseErr != nil {
+					destFile = destPath
+				}
 
 				// Check if destFile is a directory or file
 				info, err := s.fs.Stat(destFile)

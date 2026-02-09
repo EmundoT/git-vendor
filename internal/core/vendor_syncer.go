@@ -454,13 +454,19 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 			if destPath == "" || destPath == "." {
 				srcClean := mapping.From
 				// Strip position specifier from source before auto-path computation
-				srcFile, _, _ := types.ParsePathPosition(srcClean)
+				srcFile, _, parseErr := types.ParsePathPosition(srcClean)
+				if parseErr != nil {
+					srcFile = srcClean
+				}
 				srcFile = filepath.Clean(srcFile)
 				destPath = ComputeAutoPath(srcFile, matchingSpec.DefaultTarget, vendorConfig.Name)
 			}
 
 			// Strip position specifier from destination path for file system access
-			destFile, _, _ := types.ParsePathPosition(destPath)
+			destFile, _, parseErr := types.ParsePathPosition(destPath)
+			if parseErr != nil {
+				destFile = destPath
+			}
 
 			// Check if path exists (don't join with rootDir since destFile is relative to CWD)
 			_, err := s.fs.Stat(destFile)
