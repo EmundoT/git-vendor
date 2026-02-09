@@ -437,7 +437,12 @@ Error handling follows Go conventions (see ROADMAP.md section 9.5 for details):
 
 - **`fmt.Errorf`**: Default for most errors (informational, wrapping with `%w`)
 - **Sentinel errors**: `ErrNotInitialized`, `ErrComplianceFailed` — use with `errors.Is()`
-- **Custom types**: `VendorNotFoundError`, `StaleCommitError`, etc. — use with `errors.As()` or `Is*()` helpers
+- **Custom types**: `VendorNotFoundError`, `StaleCommitError`, `HookError`, `OSVAPIError`, etc. — use with `errors.As()` or `Is*()` helpers
+
+Service-specific error handling:
+- **Hooks**: `HookError` wraps hook failures with vendor name, phase (pre/post-sync), and command context. Hooks have a 5-minute timeout via `context.WithTimeout` to prevent hangs. Environment variable values are sanitized to strip newlines/null bytes.
+- **Sync cache**: `canSkipSync()` logs a warning and forces re-sync on cache corruption. Uses `errors.Is(err, os.ErrNotExist)` for file existence checks (not `os.IsNotExist`).
+- **Vuln scanner**: `OSVAPIError` wraps HTTP error responses with status code and truncated body. Response bodies are size-limited to 10 MB via `io.LimitReader`. Rate limit (HTTP 429), server error (5xx), and client error (4xx) produce distinct error messages.
 
 Display patterns:
 - TUI functions use `check(err)` helper that prints "Aborted." and exits
@@ -573,7 +578,7 @@ go test -v ./...
 10. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing
 11. **Branch names with slashes**: Cannot parse from URL due to ambiguity - use base URL and enter ref manually
 12. **Incremental sync cache**: Stored in vendor/.cache/, auto-invalidates on commit hash changes, 1000 file limit per vendor
-13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts
+13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts. 5-minute timeout kills hanging hooks. Environment variable values are sanitized (newlines/null bytes stripped)
 14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
 15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
 16. **Sentinel errors with tui.PrintError**: Sentinel errors like `ErrNotInitialized` are `error` types, not strings. Call `.Error()` when passing to `tui.PrintError(title, err.Error())`
