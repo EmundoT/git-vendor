@@ -5,6 +5,63 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **CRITICAL: ALWAYS USE THE PRIVATE REMOTE**
 ALWAYS USE THE `private` remote ex. git pull private main or git push private main
 
+## Global Claude Code Protocol
+
+### Definition of Done (Non-Negotiable)
+
+Work is INCOMPLETE until ALL of the following pass with exit code zero:
+1. Build succeeds
+2. All tests pass
+3. Linter is green (aligned with local git hooks if configured)
+4. Inline documentation updated for any changed logic
+5. Relevant `CLAUDE.md` entries updated if patterns/commands changed
+
+**Self-Correction:** If build/test/lint fails, analyze the output, fix, and re-run immediately. Do NOT wait for prompting. Do NOT cheese tests — a passing test MUST be scrutinized for correctness, not tailored to pass.
+
+### Documentation
+
+- **Inline-first:** Documentation MUST live in the source file (language-idiomatic doc comments). Standalone docs only for staples like `README.md`.
+- **RAG-ready:** MUST NOT use pronouns ("this", "it") in doc blocks. Use explicit function/module names for isolation clarity.
+- **No gratuitous docs:** Every doc block MUST serve a purpose for a human or LLM. No obvious restating.
+- **DRY:** Document a concept once, reference elsewhere. No duplication across files.
+- **Staleness tax:** Every logic change MUST simultaneously update: inline docs, `CLAUDE.md` (if patterns changed), relevant guides.
+
+### Architectural Guardrails
+
+- **Negative documentation:** When an approach is rejected, document it as a "Legacy Trap" or "Non-Goal" in the project `CLAUDE.md` to prevent future regressions.
+- **RFC 2119:** Use MUST, MUST NOT, SHOULD in all planning and technical feedback.
+- **DRY/SOLID:** Propose a refactor before adding new features on top of messy or duplicated logic.
+
+### Communication Style
+
+- High-context, low-prose. I'm a dev — no "codebrain translating."
+- No hedging. No "Based on my analysis..." — just the plan or the code.
+- ALWAYS label code blocks with a language/format tag, even if just ` ```text `.
+- Present options with numbered lists. When multiple approaches exist, present them with tradeoffs.
+- Label response sections by topic (Section A, Point B) for easy reference and quick replies.
+- Each actionable content block (code, commands) gets its own labeled code block.
+- When a topic veers significantly off-task, recommend spinning it off to a new context with a ready-to-paste prompt that carries forward the relevant prior context.
+
+### Context Conservation
+
+- **Pseudoscript (preference: 6/10):** In long conversations, progressively shorthand repeated concepts, terms, and patterns using programmer-friendly abbreviations. Build a running glossary. Adapt density to topic — technical problem-solving ramps up; straightforward tasks stay clean. Full spec: `/pseudoscript`
+- **Evolving instructions:** For complex multi-step tasks, consolidate the full spec into an idempotent instruction set before executing. Present it as a contract. Full protocol: `/instructions-improve`
+
+### CLAUDE.md Stewardship
+
+This file is a living document. Update it immediately (without prompting) when:
+- A new project-level pattern, command, or convention is established
+- A "Legacy Trap" is discovered
+- A pseudoscript convention proves durable enough to persist across projects
+
+Proactively prune stale or superseded entries during task completion.
+
+### Tooling Preferences
+
+- You MAY suggest installing CLI tools. MUST explain: what it is, what you'll use it for, security considerations.
+- After completing a task, assess if the workflow should be scripted for reuse. If so, propose it. Track project scripts in the project `CLAUDE.md`.
+- MCP servers SHOULD provide capabilities beyond what CLI tools offer. Prefer CLI for git, GitHub, Docker, etc.
+
 ## Project Overview
 
 `git-vendor` is a CLI tool for managing vendored dependencies from Git repositories. It provides an interactive TUI for selecting specific files/directories from remote repos and syncing them to your local project with deterministic locking.
@@ -46,10 +103,16 @@ The codebase follows clean architecture principles with proper separation of con
 
 2. **internal/core/** - Business logic layer (dependency injection pattern)
 
-   - **engine.go**: `Manager` facade - public API that delegates to VendorSyncer
-   - **vendor_syncer.go**: `VendorSyncer` - orchestrates all business logic
+   - **engine.go**: `Manager` facade - public API that delegates to service layer
+   - **vendor_syncer.go**: `VendorSyncer` - top-level orchestrator, delegates to services below
+   - **sync_service.go**: `SyncService` - sync logic (fetchWithFallback, canSkipSync, updateCache)
+   - **update_service.go**: `UpdateService` - update lockfile, compute file hashes, parallel updates
+   - **file_copy_service.go**: `FileCopyService` - position-aware file copy, local modification detection
+   - **verify_service.go**: `VerifyService` - verification against lockfile hashes + position-level checks
+   - **validation_service.go**: `ValidationService` - config validation, conflict detection
+   - **position_extract.go**: Position extraction and placement (ExtractPosition, PlaceContent)
    - **git_operations.go**: `GitClient` interface - Git command operations
-   - **filesystem.go**: `FileSystem` interface - File I/O operations
+   - **filesystem.go**: `FileSystem` interface - File I/O operations, CopyStats, ValidateDestPath
    - **github_client.go**: `LicenseChecker` interface - GitHub API license detection
    - **config_store.go**: `ConfigStore` interface - vendor.yml I/O
    - **lock_store.go**: `LockStore` interface - vendor.lock I/O
@@ -108,7 +171,19 @@ VendorLock (vendor.lock)
       ├─ Ref: branch/tag
       ├─ CommitHash: exact commit SHA
       ├─ LicensePath: path to cached license
-      └─ Updated: timestamp
+      ├─ Updated: timestamp
+      └─ Positions: []PositionLock (omitempty)
+          └─ PositionLock
+              ├─ From: source path with position (e.g., "api/constants.go:L4-L6")
+              ├─ To: destination path with optional position
+              └─ SourceHash: SHA-256 of extracted content
+
+PositionSpec (internal/types/position.go)
+  ├─ StartLine: int (1-indexed)
+  ├─ EndLine: int (1-indexed, 0 = same as StartLine)
+  ├─ StartCol: int (1-indexed, 0 = no column)
+  ├─ EndCol: int (1-indexed inclusive, 0 = no column)
+  └─ ToEOF: bool (true = extract to end of file)
 ```
 
 ### File System Structure
@@ -167,6 +242,40 @@ Automatic license detection via `GitHubLicenseChecker` (github_client.go:33):
 - Allowed by default: MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Unlicense, CC0-1.0
 - Other licenses prompt user confirmation via `tui.AskToOverrideCompliance()`
 - License files are automatically copied to `vendor/licenses/{name}.txt`
+
+### Position Extraction (Spec 071)
+
+Fine-grained file vendoring — extract specific line/column ranges from source files and place them at specific positions in destination files.
+
+**Syntax** (appended to path with `:`):
+
+```text
+file.go:L5          # Single line 5
+file.go:L5-L20      # Lines 5 through 20
+file.go:L5-EOF      # Line 5 to end of file
+file.go:L5C10:L10C30  # Line 5 col 10 through line 10 col 30 (1-indexed inclusive)
+```
+
+**Pipeline:**
+
+1. `ParsePathPosition()` splits `path:Lspec` into file path + `PositionSpec`
+2. `ExtractPosition()` reads file, extracts content, returns content + SHA-256 hash
+3. `PlaceContent()` writes extracted content into target file at specified position
+4. `CopyStats.Positions` carries `positionRecord` (From, To, SourceHash) back to caller
+5. `toPositionLocks()` converts to `PositionLock` for lockfile persistence
+
+**Sync-time behavior:**
+
+- `checkLocalModifications()` warns (not errors) if destination content differs before overwrite
+- Warnings printed as `⚠ <path> has local modifications at target position that will be overwritten`
+
+**Verify-time behavior:**
+
+- `verifyPositions()` reads destination file locally, extracts target range, hashes, compares to stored `SourceHash`
+- No network access required — purely local verification
+- Position entries produce separate verification results from whole-file entries
+
+**Key files:** `internal/types/position.go` (parser), `internal/core/position_extract.go` (extract/place), `internal/core/file_copy_service.go` (integration)
 
 ### Path Traversal Protection
 
@@ -289,6 +398,11 @@ vendors:
 - Similar security model to npm scripts, git hooks, or Makefile targets
 
 ## Common Patterns
+
+### Legacy Traps (Non-Goals)
+
+- **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
+- **Binary file detection for position extraction**: Explicitly deferred. Position extraction on binary files produces garbage but is not guarded. If needed later, use `net/http.DetectContentType` check before extraction.
 
 ### Error Handling
 
@@ -436,6 +550,11 @@ go test -v ./...
 14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
 15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
 16. **Sentinel errors with tui.PrintError**: Sentinel errors like `ErrNotInitialized` are `error` types, not strings. Call `.Error()` when passing to `tui.PrintError(title, err.Error())`
+17. **Position syntax and Windows paths**: Position parser uses last `:L<digit>` occurrence to split, avoiding false matches on Windows drive letters like `C:\path`
+18. **EndCol is 1-indexed inclusive**: `L1C5:L1C10` extracts columns 5-10 (6 chars). Maps to Go slice `line[StartCol-1 : EndCol]` because Go's exclusive upper bound equals the 1-indexed inclusive bound
+19. **errors.Is vs os.IsNotExist**: `os.IsNotExist()` does NOT unwrap `fmt.Errorf("%w")`-wrapped errors. MUST use `errors.Is(err, os.ErrNotExist)` when checking errors from functions that wrap (e.g., `ExtractPosition`)
+20. **Position extraction on binary files**: No binary detection — extracting positions from binary files produces garbage. Not currently guarded
+21. **Verify produces separate position-level and whole-file results**: A file with both types of lockfile entries gets two verification results; position-level can fail independently of whole-file
 
 ## Quick Reference
 
@@ -492,6 +611,7 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - **Modified files**: Hash mismatch between expected and actual
 - **Deleted files**: Files in lockfile but missing from disk
 - **Added files**: Files in vendor directories but not in lockfile
+- **Position-level drift**: For position-extracted mappings, verifies the target range hash matches the stored `source_hash` (local-only, no cloning)
 
 ### Scan Command Flags
 
@@ -542,11 +662,28 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 **vendor_syncer.go:**
 
-- `syncVendor()` - Core sync logic for single vendor
+- `VendorSyncer` - Top-level orchestrator, delegates to SyncService/UpdateService/etc.
+- `FetchRepoDir()` - Browse remote repository contents via git ls-tree
+
+**sync_service.go:**
+
+- `Sync()` - Orchestrate sync for one or all vendors
+- `SyncVendor()` - Core sync logic for single vendor
+- `syncRef()` - Sync a single ref (clone, checkout, copy, cache)
+- `canSkipSync()` - Check cache to skip redundant sync operations
+- `updateCache()` - Build and save cache after successful sync
+
+**update_service.go:**
+
 - `UpdateAll()` - Update all vendors, regenerate lockfile
-- `DetectConflicts()` - Find path conflicts between vendors
+- `UpdateAllWithOptions()` - Parallel update variant with worker pool
+- `computeFileHashes()` - Compute SHA-256 hashes for lockfile entries
+- `toPositionLocks()` - Convert positionRecord to PositionLock for lockfile persistence
+
+**validation_service.go:**
+
 - `ValidateConfig()` - Comprehensive config validation
-- `Verify()` - Verify vendored files against lockfile hashes
+- `DetectConflicts()` - Find path conflicts between vendors
 
 **vuln_scanner.go:**
 
@@ -558,8 +695,21 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 **verify_service.go:**
 
 - `Verify()` - Core verification logic, returns VerifyResult
+- `verifyPositions()` - Position-level hash verification (local-only, no cloning)
 - `buildExpectedFilesFromCache()` - Cache fallback for lockfiles without hashes
 - `findAddedFiles()` - Scan vendor dirs for files not in lockfile
+
+**position_extract.go:**
+
+- `ExtractPosition()` - Read file, extract content at PositionSpec, return content + SHA-256 hash
+- `PlaceContent()` - Write extracted content into target file at specified position
+- `extractColumns()` / `placeColumns()` - Column-precise extraction and placement
+
+**file_copy_service.go:**
+
+- `CopyMappings()` - Orchestrate all file copy operations for a vendor ref
+- `copyWithPosition()` - Position-aware file copy (extract → place → track)
+- `checkLocalModifications()` - Detect local changes at target position before overwrite
 
 **git_operations.go:**
 

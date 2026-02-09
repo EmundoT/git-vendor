@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -45,44 +46,122 @@ func (s *FileCopyService) CopyMappings(tempDir string, vendor *types.VendorSpec,
 
 // copyMapping copies a single path mapping
 func (s *FileCopyService) copyMapping(tempDir string, vendor *types.VendorSpec, spec types.BranchSpec, mapping types.PathMapping) (CopyStats, error) {
-	// Clean the source path (remove blob/tree prefixes)
-	srcClean := s.cleanSourcePath(mapping.From, spec.Ref)
-	srcPath := filepath.Join(tempDir, srcClean)
+	// Parse position specifiers from source and destination paths
+	srcRaw := s.cleanSourcePath(mapping.From, spec.Ref)
+	srcFile, srcPos, err := types.ParsePathPosition(srcRaw)
+	if err != nil {
+		return CopyStats{}, fmt.Errorf("invalid source position in mapping for %s: %w", vendor.Name, err)
+	}
 
-	// Compute destination path
-	destPath := s.computeDestPath(mapping, spec, vendor)
+	srcPath := filepath.Join(tempDir, srcFile)
+
+	// Compute destination path (strip position for path computation, parse position separately)
+	destRaw := s.computeDestPath(mapping, spec, vendor)
+	destFile, destPos, err := types.ParsePathPosition(destRaw)
+	if err != nil {
+		return CopyStats{}, fmt.Errorf("invalid destination position in mapping for %s: %w", vendor.Name, err)
+	}
 
 	// Validate destination path to prevent path traversal attacks
-	if err := ValidateDestPath(destPath); err != nil {
+	if err := ValidateDestPath(destFile); err != nil {
 		return CopyStats{}, err
 	}
 
-	// Check if source exists
-	info, err := s.fs.Stat(srcPath)
-	if err != nil {
-		return CopyStats{}, NewPathNotFoundError(srcClean, vendor.Name, spec.Ref)
+	// Position extraction mode: extract specific lines/columns from source
+	if srcPos != nil {
+		return s.copyWithPosition(srcPath, destFile, srcPos, destPos, vendor.Name, spec.Ref, srcFile, mapping.From, mapping.To)
 	}
 
-	// Copy directory or file
+	// Standard copy (no position specifier) — existing behavior
+	info, err := s.fs.Stat(srcPath)
+	if err != nil {
+		return CopyStats{}, NewPathNotFoundError(srcFile, vendor.Name, spec.Ref)
+	}
+
 	if info.IsDir() {
-		if err := s.fs.MkdirAll(destPath, 0755); err != nil {
+		if err := s.fs.MkdirAll(destFile, 0755); err != nil {
 			return CopyStats{}, err
 		}
-		stats, err := s.fs.CopyDir(srcPath, destPath)
+		stats, err := s.fs.CopyDir(srcPath, destFile)
 		if err != nil {
-			return CopyStats{}, fmt.Errorf("failed to copy directory %s to %s: %w", srcPath, destPath, err)
+			return CopyStats{}, fmt.Errorf("failed to copy directory %s to %s: %w", srcPath, destFile, err)
 		}
 		return stats, nil
 	}
 
-	if err := s.fs.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+	if err := s.fs.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
 		return CopyStats{}, err
 	}
-	stats, err := s.fs.CopyFile(srcPath, destPath)
+	stats, err := s.fs.CopyFile(srcPath, destFile)
 	if err != nil {
-		return CopyStats{}, fmt.Errorf("failed to copy file %s to %s: %w", srcPath, destPath, err)
+		return CopyStats{}, fmt.Errorf("failed to copy file %s to %s: %w", srcPath, destFile, err)
 	}
 	return stats, nil
+}
+
+// copyWithPosition handles position-based extraction and placement.
+func (s *FileCopyService) copyWithPosition(srcPath, destFile string, srcPos, destPos *types.PositionSpec, vendorName, ref, srcClean string, fromRaw, toRaw string) (CopyStats, error) {
+	// Extract content from source at the specified position
+	content, hash, err := ExtractPosition(srcPath, srcPos)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "does not exist") {
+			return CopyStats{}, NewPathNotFoundError(srcClean, vendorName, ref)
+		}
+		return CopyStats{}, fmt.Errorf("extract position from %s: %w", srcClean, err)
+	}
+
+	// Ensure destination directory exists
+	if err := s.fs.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
+		return CopyStats{}, err
+	}
+
+	// Check for local modifications that will be overwritten
+	var warnings []string
+	if w := s.checkLocalModifications(destFile, destPos, content); w != "" {
+		warnings = append(warnings, w)
+	}
+
+	// Place content at destination
+	if err := PlaceContent(destFile, content, destPos); err != nil {
+		return CopyStats{}, fmt.Errorf("place content at %s: %w", destFile, err)
+	}
+
+	stats := CopyStats{
+		FileCount: 1,
+		ByteCount: int64(len(content)),
+		Positions: []positionRecord{{
+			From:       fromRaw,
+			To:         toRaw,
+			SourceHash: hash,
+		}},
+		Warnings: warnings,
+	}
+	return stats, nil
+}
+
+// checkLocalModifications detects if the destination has been modified since last sync.
+// Returns a warning message if modifications are detected, empty string otherwise.
+func (s *FileCopyService) checkLocalModifications(destFile string, destPos *types.PositionSpec, incomingContent string) string {
+	if destPos != nil {
+		// Destination has a position — compare just that range
+		existing, _, err := ExtractPosition(destFile, destPos)
+		if err != nil {
+			return "" // File doesn't exist yet or range invalid — no warning needed
+		}
+		if existing != incomingContent {
+			return fmt.Sprintf("%s has local modifications at target position that will be overwritten", destFile)
+		}
+	} else {
+		// Destination is whole-file — compare entire content
+		data, err := os.ReadFile(destFile)
+		if err != nil {
+			return "" // File doesn't exist yet — no warning needed
+		}
+		if string(data) != incomingContent {
+			return fmt.Sprintf("%s has local modifications that will be overwritten", destFile)
+		}
+	}
+	return ""
 }
 
 // cleanSourcePath removes blob/tree prefixes from source path
@@ -92,14 +171,20 @@ func (s *FileCopyService) cleanSourcePath(path, ref string) string {
 	return clean
 }
 
-// computeDestPath computes the destination path for a mapping
+// computeDestPath computes the destination path for a mapping.
+// If the destination has a position specifier, it is preserved in the returned string.
 func (s *FileCopyService) computeDestPath(mapping types.PathMapping, spec types.BranchSpec, vendor *types.VendorSpec) string {
 	destPath := mapping.To
 
 	// Use auto-path computation if destination not explicitly specified
 	if destPath == "" || destPath == "." {
 		srcClean := s.cleanSourcePath(mapping.From, spec.Ref)
-		destPath = ComputeAutoPath(srcClean, spec.DefaultTarget, vendor.Name)
+		// Strip position from source before computing auto-path
+		srcFile, _, err := types.ParsePathPosition(srcClean)
+		if err != nil {
+			srcFile = srcClean // Fallback to raw path if position parsing fails
+		}
+		destPath = ComputeAutoPath(srcFile, spec.DefaultTarget, vendor.Name)
 	}
 
 	return destPath

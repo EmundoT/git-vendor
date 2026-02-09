@@ -2,15 +2,16 @@ package tui
 
 import (
 	"fmt"
-	"github.com/EmundoT/git-vendor/internal/core"
-	"github.com/EmundoT/git-vendor/internal/types"
-	"github.com/EmundoT/git-vendor/internal/version"
 	"os"
 	"path"
 	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/EmundoT/git-vendor/internal/core"
+	"github.com/EmundoT/git-vendor/internal/types"
+	"github.com/EmundoT/git-vendor/internal/version"
 )
 
 var (
@@ -200,6 +201,8 @@ func RunEditVendorWizard(mgr interface{}, vendor *types.VendorSpec) *types.Vendo
 	}
 }
 
+// runMappingManager presents a menu loop for viewing, adding, editing, and deleting
+// path mappings within a single BranchSpec. Returns the updated BranchSpec on exit.
 func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) types.BranchSpec {
 	for {
 		var opts []huh.Option[string]
@@ -261,21 +264,33 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 				branch.Mapping = append(branch.Mapping[:idx], branch.Mapping[idx+1:]...)
 			}
 		case "edit":
-			// Reuse creator for editing
-			// Ideally pre-fill, but for now simple edit inputs
-			_ = huh.NewInput().Title("Remote Path").Value(&branch.Mapping[idx].From).Run()
+			_ = huh.NewInput().
+				Title("Remote Path").
+				Description("Append :L5-L20 for line range or :L5C10:L10C30 for column-precise extraction").
+				Value(&branch.Mapping[idx].From).
+				Validate(validateFromPath).
+				Run()
 
-			// Show auto-naming preview
-			autoName := path.Base(branch.Mapping[idx].From)
+			// Show auto-naming preview — strip position specifier for preview
+			fromFile, _, _ := types.ParsePathPosition(branch.Mapping[idx].From)
+			autoName := path.Base(fromFile)
 			if autoName == "" || autoName == "." || autoName == "/" {
 				autoName = "(repository root)"
 			}
-			description := fmt.Sprintf("Leave empty for automatic naming (will use: %s)", autoName)
-			_ = huh.NewInput().Title("Local Target").Description(description).Value(&branch.Mapping[idx].To).Run()
+			description := fmt.Sprintf("Leave empty for automatic naming (will use: %s). Supports :L5-L10 position syntax", autoName)
+			_ = huh.NewInput().
+				Title("Local Target").
+				Description(description).
+				Value(&branch.Mapping[idx].To).
+				Validate(validateToPath).
+				Run()
 		}
 	}
 }
 
+// runMappingCreator prompts the user to create a new PathMapping by selecting a remote
+// path (via browser or manual entry) and a local target. Supports position specifiers
+// like :L5-L20. Returns nil if the user cancels.
 func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 	var m types.PathMapping
 
@@ -295,7 +310,12 @@ func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 			return nil
 		}
 	} else {
-		_ = huh.NewInput().Title("Remote Path").Value(&m.From).Run()
+		_ = huh.NewInput().
+			Title("Remote Path").
+			Description("Append :L5-L20 for line range or :L5C10:L10C30 for column-precise extraction").
+			Value(&m.From).
+			Validate(validateFromPath).
+			Run()
 	}
 
 	// Local Target
@@ -312,18 +332,27 @@ func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 			return nil
 		} // User cancelled
 	} else {
-		// Show preview of auto-generated name
-		autoName := path.Base(m.From)
+		// Show preview of auto-generated name — strip position specifier for preview
+		fromFile, _, _ := types.ParsePathPosition(m.From)
+		autoName := path.Base(fromFile)
 		if autoName == "" || autoName == "." || autoName == "/" {
 			autoName = "(repository root)"
 		}
-		description := fmt.Sprintf("Leave empty for automatic naming (will use: %s)", autoName)
-		_ = huh.NewInput().Title("Local Target").Description(description).Value(&m.To).Run()
+		description := fmt.Sprintf("Leave empty for automatic naming (will use: %s). Supports :L5-L10 position syntax", autoName)
+		_ = huh.NewInput().
+			Title("Local Target").
+			Description(description).
+			Value(&m.To).
+			Validate(validateToPath).
+			Run()
 	}
 
 	return &m
 }
 
+// runRemoteBrowser presents an interactive directory browser for the remote repository.
+// runRemoteBrowser uses VendorManager.FetchRepoDir to list contents via git ls-tree.
+// Returns the selected file/directory path, or empty string if cancelled.
 func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 	// Extract repo name from URL for breadcrumb
 	repoName := path.Base(url)
@@ -400,6 +429,9 @@ func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 	}
 }
 
+// runLocalBrowser presents an interactive directory browser for the local filesystem.
+// runLocalBrowser uses VendorManager.ListLocalDir to list directory contents.
+// Returns the selected file/directory path, or empty string if cancelled.
 func runLocalBrowser(mgr VendorManager) string {
 	currentDir := "."
 	for {
@@ -460,6 +492,26 @@ func RunEditWizardName(vendorNames []string) string {
 	return selected
 }
 
+// validateFromPath validates a remote path, accepting optional position specifiers.
+func validateFromPath(s string) error {
+	if s == "" {
+		return fmt.Errorf("path cannot be empty")
+	}
+	_, _, err := types.ParsePathPosition(s)
+	return err
+}
+
+// validateToPath validates a local target path, accepting optional position specifiers.
+// Empty is allowed (triggers auto-naming).
+func validateToPath(s string) error {
+	if s == "" {
+		return nil // Empty triggers auto-naming
+	}
+	_, _, err := types.ParsePathPosition(s)
+	return err
+}
+
+// truncate shortens a string to maxLen characters, adding "..." suffix if truncated.
 func truncate(s string, maxLen int) string {
 	if len(s) > maxLen {
 		return s[:maxLen-3] + "..."

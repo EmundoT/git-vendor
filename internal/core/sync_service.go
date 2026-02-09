@@ -23,7 +23,8 @@ type SyncOptions struct {
 // RefMetadata holds per-ref metadata collected during sync
 type RefMetadata struct {
 	CommitHash string
-	VersionTag string // Git tag pointing to commit, if any
+	VersionTag string             // Git tag pointing to commit, if any
+	Positions  []positionRecord   // Position extractions performed during sync
 }
 
 // SyncServiceInterface defines the contract for vendor synchronization.
@@ -536,6 +537,11 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 		return RefMetadata{}, CopyStats{}, err
 	}
 
+	// Surface any position extraction warnings (e.g., local modifications being overwritten)
+	for _, w := range stats.Warnings {
+		fmt.Printf("  ⚠ %s\n", w)
+	}
+
 	// Build and save cache (if cache enabled)
 	if !opts.NoCache {
 		if err := s.updateCache(v.Name, spec, hash); err != nil {
@@ -545,7 +551,7 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 		}
 	}
 
-	return RefMetadata{CommitHash: hash, VersionTag: versionTag}, stats, nil
+	return RefMetadata{CommitHash: hash, VersionTag: versionTag, Positions: stats.Positions}, stats, nil
 }
 
 // fetchWithFallback tries shallow fetch first, falls back to full fetch if needed
@@ -591,8 +597,14 @@ func (s *SyncService) canSkipSync(vendorName, ref, commitHash string, mappings [
 			return false
 		}
 
+		// Strip position specifier from destination path for file system access
+		destFile, _, err := types.ParsePathPosition(destPath)
+		if err != nil {
+			destFile = destPath
+		}
+
 		// Check if file exists
-		fullPath := filepath.Join(s.rootDir, destPath)
+		fullPath := filepath.Join(s.rootDir, destFile)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			// File missing - can't skip
 			return false
@@ -605,7 +617,7 @@ func (s *SyncService) canSkipSync(vendorName, ref, commitHash string, mappings [
 			return false
 		}
 
-		cachedHash, exists := cachedChecksums[destPath]
+		cachedHash, exists := cachedChecksums[destFile]
 		if !exists || cachedHash != currentHash {
 			// Checksum mismatch or not in cache - can't skip
 			return false
@@ -626,7 +638,12 @@ func (s *SyncService) updateCache(vendorName string, spec types.BranchSpec, comm
 			// Skip auto-named files (too complex to track)
 			continue
 		}
-		fullPath := filepath.Join(s.rootDir, destPath)
+		// Strip position specifier from destination path for file system access
+		destFile, _, err := types.ParsePathPosition(destPath)
+		if err != nil {
+			destFile = destPath
+		}
+		fullPath := filepath.Join(s.rootDir, destFile)
 		destPaths = append(destPaths, fullPath)
 	}
 
