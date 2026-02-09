@@ -15,24 +15,25 @@ import (
 // CJK, accented characters), users MUST count bytes, not visible characters.
 // Example: in "café", é occupies bytes 4-5, so L1C4:L1C5 extracts "é".
 // Extracting a partial multi-byte character (e.g., L1C4:L1C4 on "café")
-// produces invalid UTF-8. This is by design — byte-offset semantics are
-// consistent with Go string indexing and avoid hidden rune-counting costs.
+// produces invalid UTF-8. Byte-offset semantics are a deliberate design choice —
+// consistent with Go string indexing and avoiding hidden rune-counting costs.
 //
 // Line ending normalization:
 // CRLF (\r\n) is normalized to LF (\n) before extraction and placement.
 // Extracted content always uses LF regardless of the source file's original
-// line endings. This ensures deterministic hashing across platforms.
+// line endings. CRLF normalization ensures deterministic hashing across platforms.
 // Standalone \r (classic Mac line endings) is NOT normalized.
 //
 // Trailing newline behavior:
-// strings.Split splits on \n, so a file ending with \n produces an empty
-// trailing element that counts as a line. For a 5-line file ending with \n,
-// the internal line count is 6 (5 content lines + 1 empty). L5-EOF on such
-// a file extracts "line5\n" (including the trailing newline). On a file
-// without a trailing newline, L5-EOF extracts just "line5".
+// A file ending with \n is treated as having an additional empty line after
+// the final newline. For a 5-line file ending with \n, the internal line
+// count is 6 (5 content lines + 1 empty). L5-EOF on such a file extracts
+// "line5\n" (including the trailing newline). On a file without a trailing
+// newline, L5-EOF extracts just "line5".
 //
 // Empty file behavior:
-// A 0-byte file splits to [""] (1 empty line). L1 extracts "". L2+ errors.
+// A 0-byte file is treated as having exactly 1 empty line. L1 extracts "".
+// L2+ errors with "line does not exist".
 //
 // L1-EOF hash equivalence:
 // L1-EOF on any file produces content identical to the raw file bytes (after

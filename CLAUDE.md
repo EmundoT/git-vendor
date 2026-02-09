@@ -259,8 +259,8 @@ file.go:L5C10:L10C30  # Line 5 col 10 through line 10 col 30 (1-indexed inclusiv
 **Pipeline:**
 
 1. `ParsePathPosition()` splits `path:Lspec` into file path + `PositionSpec`
-2. `ExtractPosition()` reads file, extracts content, returns content + SHA-256 hash
-3. `PlaceContent()` writes extracted content into target file at specified position
+2. `ExtractPosition()` reads file, normalizes CRLF→LF, extracts content, returns content + SHA-256 hash
+3. `PlaceContent()` normalizes existing content CRLF→LF, writes extracted content at specified position
 4. `CopyStats.Positions` carries `positionRecord` (From, To, SourceHash) back to caller
 5. `toPositionLocks()` converts to `PositionLock` for lockfile persistence
 
@@ -550,7 +550,7 @@ go test -v ./...
 14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
 15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
 16. **Sentinel errors with tui.PrintError**: Sentinel errors like `ErrNotInitialized` are `error` types, not strings. Call `.Error()` when passing to `tui.PrintError(title, err.Error())`
-17. **Position syntax and Windows paths**: Position parser uses last `:L<digit>` occurrence to split, avoiding false matches on Windows drive letters like `C:\path`
+17. **Position syntax and Windows paths**: Position parser uses first `:L<digit>` occurrence to split, avoiding false matches on Windows drive letters like `C:\path`
 18. **EndCol is 1-indexed inclusive byte offset**: `L1C5:L1C10` extracts bytes 5-10 (6 bytes). Maps to Go slice `line[StartCol-1 : EndCol]` because Go's exclusive upper bound equals the 1-indexed inclusive bound. See gotcha #22 for multi-byte character implications
 19. **errors.Is vs os.IsNotExist**: `os.IsNotExist()` does NOT unwrap `fmt.Errorf("%w")`-wrapped errors. MUST use `errors.Is(err, os.ErrNotExist)` when checking errors from functions that wrap (e.g., `ExtractPosition`)
 20. **Position extraction on binary files**: No binary detection — extracting positions from binary files produces garbage. Not currently guarded
