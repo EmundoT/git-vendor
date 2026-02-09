@@ -871,6 +871,205 @@ func TestParallelOptions_Validation(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Forward Compatibility Tests
+// ============================================================================
+
+func TestVendorConfig_YAML_UnknownFieldsIgnored(t *testing.T) {
+	// Unknown fields in YAML should be silently ignored (forward compatibility).
+	// This ensures older clients can read configs written by newer versions.
+	input := `
+vendors:
+  - name: test-vendor
+    url: https://github.com/test/repo
+    license: MIT
+    future_field: "some new feature"
+    another_unknown: 42
+    specs:
+      - ref: main
+        unknown_branch_field: true
+        mapping:
+          - from: src/
+            to: lib/
+            unknown_mapping_field: "value"
+`
+	var config VendorConfig
+	err := yaml.Unmarshal([]byte(input), &config)
+	if err != nil {
+		t.Fatalf("unknown fields should be silently ignored, got error: %v", err)
+	}
+
+	if len(config.Vendors) != 1 {
+		t.Fatalf("expected 1 vendor, got %d", len(config.Vendors))
+	}
+	if config.Vendors[0].Name != "test-vendor" {
+		t.Errorf("name = %q, want %q", config.Vendors[0].Name, "test-vendor")
+	}
+	if config.Vendors[0].Specs[0].Ref != "main" {
+		t.Errorf("ref = %q, want %q", config.Vendors[0].Specs[0].Ref, "main")
+	}
+}
+
+func TestVendorLock_YAML_UnknownFieldsIgnored(t *testing.T) {
+	input := `
+schema_version: "2.0"
+future_lock_field: true
+vendors:
+  - name: test
+    ref: main
+    commit_hash: abc123
+    license_path: vendor/licenses/test.txt
+    updated: "2024-01-15T10:30:00Z"
+    unknown_vendor_field: "future data"
+    positions:
+      - from: "file.go:L5"
+        to: "out.go"
+        source_hash: "sha256:abc"
+        unknown_position_field: "ignored"
+`
+	var lock VendorLock
+	err := yaml.Unmarshal([]byte(input), &lock)
+	if err != nil {
+		t.Fatalf("unknown fields should be silently ignored, got error: %v", err)
+	}
+
+	if lock.SchemaVersion != "2.0" {
+		t.Errorf("schema_version = %q, want %q", lock.SchemaVersion, "2.0")
+	}
+	if len(lock.Vendors) != 1 {
+		t.Fatalf("expected 1 vendor, got %d", len(lock.Vendors))
+	}
+	if len(lock.Vendors[0].Positions) != 1 {
+		t.Fatalf("expected 1 position, got %d", len(lock.Vendors[0].Positions))
+	}
+}
+
+// ============================================================================
+// Scan Types Tests
+// ============================================================================
+
+func TestScanResult_JSON_RoundTrip(t *testing.T) {
+	result := ScanResult{
+		SchemaVersion: "1.0",
+		Timestamp:     "2024-01-15T10:30:00Z",
+		Summary: ScanSummary{
+			TotalDependencies: 5,
+			Scanned:           4,
+			NotScanned:        1,
+			Vulnerabilities: VulnCounts{
+				Critical: 1, High: 2, Medium: 3, Low: 0, Unknown: 0, Total: 6,
+			},
+			Result:            ScanResultFail,
+			FailOnThreshold:   "high",
+			ThresholdExceeded: true,
+		},
+		Dependencies: []DependencyScan{
+			{
+				Name:       "dep-a",
+				Version:    testutil.StrPtr("v1.0.0"),
+				Commit:     "abc123",
+				URL:        "https://github.com/org/dep-a",
+				ScanStatus: ScanStatusScanned,
+				Vulnerabilities: []Vulnerability{
+					{
+						ID:           "CVE-2024-1234",
+						Aliases:      []string{"GHSA-xxxx-yyyy-zzzz"},
+						Severity:     SeverityCritical,
+						CVSSScore:    9.8,
+						Summary:      "Remote code execution",
+						Details:      "Extended description",
+						FixedVersion: "v1.0.1",
+						References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2024-1234"},
+					},
+				},
+			},
+			{
+				Name:            "dep-b",
+				Version:         nil,
+				Commit:          "def456",
+				ScanStatus:      ScanStatusNotScanned,
+				ScanReason:      "private repository",
+				Vulnerabilities: []Vulnerability{},
+			},
+		},
+	}
+
+	testutil.AssertJSONRoundTrip(t, result)
+}
+
+func TestScanSummary_JSON_OmitEmpty(t *testing.T) {
+	summary := ScanSummary{
+		TotalDependencies: 3,
+		Scanned:           3,
+		Result:            ScanResultPass,
+		// FailOnThreshold and ThresholdExceeded omitted
+	}
+
+	testutil.AssertJSONOmitsField(t, summary, "fail_on_threshold")
+	testutil.AssertJSONOmitsField(t, summary, "threshold_exceeded")
+}
+
+func TestDependencyScan_JSON_OmitEmpty(t *testing.T) {
+	dep := DependencyScan{
+		Name:            "dep",
+		Commit:          "abc",
+		ScanStatus:      ScanStatusScanned,
+		Vulnerabilities: []Vulnerability{},
+		// URL and ScanReason omitted
+	}
+
+	testutil.AssertJSONOmitsField(t, dep, "url")
+	testutil.AssertJSONOmitsField(t, dep, "scan_reason")
+}
+
+func TestVulnerability_JSON_OmitEmpty(t *testing.T) {
+	vuln := Vulnerability{
+		ID:         "CVE-2024-0001",
+		Aliases:    []string{},
+		Severity:   SeverityHigh,
+		Summary:    "Some vulnerability",
+		References: []string{},
+		// CVSSScore, Details, FixedVersion omitted
+	}
+
+	testutil.AssertJSONOmitsField(t, vuln, "cvss_score")
+	testutil.AssertJSONOmitsField(t, vuln, "details")
+	testutil.AssertJSONOmitsField(t, vuln, "fixed_version")
+}
+
+func TestSeverityThreshold_Ordering(t *testing.T) {
+	// Verify severity levels are properly ordered
+	if SeverityThreshold[SeverityCritical] <= SeverityThreshold[SeverityHigh] {
+		t.Error("CRITICAL should be higher than HIGH")
+	}
+	if SeverityThreshold[SeverityHigh] <= SeverityThreshold[SeverityMedium] {
+		t.Error("HIGH should be higher than MEDIUM")
+	}
+	if SeverityThreshold[SeverityMedium] <= SeverityThreshold[SeverityLow] {
+		t.Error("MEDIUM should be higher than LOW")
+	}
+	if SeverityThreshold[SeverityLow] <= SeverityThreshold[SeverityUnknown] {
+		t.Error("LOW should be higher than UNKNOWN")
+	}
+}
+
+func TestValidSeverityThresholds_Completeness(t *testing.T) {
+	expected := []string{"critical", "high", "medium", "low"}
+	for _, sev := range expected {
+		if !ValidSeverityThresholds[sev] {
+			t.Errorf("expected %q to be a valid severity threshold", sev)
+		}
+	}
+	// "unknown" should NOT be a valid threshold
+	if ValidSeverityThresholds["unknown"] {
+		t.Error("unknown should not be a valid severity threshold")
+	}
+}
+
+// ============================================================================
+// Struct Field Tests (continued)
+// ============================================================================
+
 func TestCommitInfo_ShortHashLength(t *testing.T) {
 	commit := CommitInfo{
 		Hash:      "abc123def456789012345678901234567890abcd",
