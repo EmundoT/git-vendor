@@ -888,7 +888,7 @@ func TestVerify_PositionExtraction_WholeFileDest(t *testing.T) {
 			Positions: []types.PositionLock{{
 				From:       "src/a.go:L5-L10",
 				To:         destFile,
-				SourceHash: wholeHash, // source content = whole file content
+				SourceHash: "sha256:" + wholeHash, // ExtractPosition always uses "sha256:" prefix
 			}},
 		}},
 	}, nil)
