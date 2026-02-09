@@ -42,9 +42,15 @@ func (s *ValidationService) ValidateConfig() error {
 		return fmt.Errorf("no vendors configured. Run 'git-vendor add' to add your first dependency")
 	}
 
-	// Check for duplicate vendor names
+	// Check for duplicate vendor names and validate name safety
 	names := make(map[string]bool)
 	for _, vendor := range config.Vendors {
+		// SEC-001: Reject vendor names containing path traversal sequences.
+		// Vendor names are used in filesystem paths (license files, cache files).
+		if err := ValidateVendorName(vendor.Name); err != nil {
+			return fmt.Errorf("vendor config rejected: %w", err)
+		}
+
 		if names[vendor.Name] {
 			return fmt.Errorf("duplicate vendor name: %s", vendor.Name)
 		}
