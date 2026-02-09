@@ -9,6 +9,110 @@ import (
 )
 
 // ============================================================================
+// Shared Service Stubs
+// ============================================================================
+// These stubs implement service interfaces with no-op or configurable behavior.
+// They are used in tests that construct SyncService directly (bypassing
+// VendorSyncer/createMockSyncer) to control specific dependencies like CacheStore.
+// Gomock mocks are not generated for HookExecutor, FileCopyServiceInterface,
+// or LicenseServiceInterface because these interfaces are only mocked at this
+// level — the existing gomock mocks target lower-level infrastructure (GitClient,
+// FileSystem, ConfigStore, LockStore, LicenseChecker).
+
+// stubHookExecutor is a no-op HookExecutor for tests that don't exercise hooks.
+type stubHookExecutor struct{}
+
+func (s *stubHookExecutor) ExecutePreSync(_ *types.VendorSpec, _ *types.HookContext) error {
+	return nil
+}
+func (s *stubHookExecutor) ExecutePostSync(_ *types.VendorSpec, _ *types.HookContext) error {
+	return nil
+}
+
+// stubFileCopyService returns configurable CopyStats from CopyMappings.
+type stubFileCopyService struct {
+	stats CopyStats
+	err   error
+}
+
+func (s *stubFileCopyService) CopyMappings(_ string, _ *types.VendorSpec, spec types.BranchSpec) (CopyStats, error) {
+	if s.err != nil {
+		return CopyStats{}, s.err
+	}
+	stats := s.stats
+	if stats.FileCount == 0 {
+		stats.FileCount = len(spec.Mapping)
+	}
+	return stats, nil
+}
+
+// stubLicenseService is a no-op LicenseServiceInterface for tests.
+type stubLicenseService struct{}
+
+func (s *stubLicenseService) CheckCompliance(_ string) (string, error) { return "MIT", nil }
+func (s *stubLicenseService) CopyLicense(_, _ string) error            { return nil }
+func (s *stubLicenseService) GetLicensePath(_ string) string           { return "" }
+func (s *stubLicenseService) CheckLicense(_ string) (string, error)    { return "MIT", nil }
+
+// errCacheStore wraps mockCacheStore to inject a Load error.
+type errCacheStore struct {
+	*mockCacheStore
+	loadErr error
+	saved   []*types.IncrementalSyncCache // tracks Save calls
+}
+
+func (e *errCacheStore) Load(vendorName, ref string) (types.IncrementalSyncCache, error) {
+	if e.loadErr != nil {
+		return types.IncrementalSyncCache{}, e.loadErr
+	}
+	return e.mockCacheStore.Load(vendorName, ref)
+}
+
+func (e *errCacheStore) Save(cache *types.IncrementalSyncCache) error {
+	e.saved = append(e.saved, cache)
+	return e.mockCacheStore.Save(cache)
+}
+
+// trackingCacheStore wraps mockCacheStore and records whether Load/Save were called.
+type trackingCacheStore struct {
+	*mockCacheStore
+	loadCalled bool
+	saveCalled bool
+}
+
+func (t *trackingCacheStore) Load(vendorName, ref string) (types.IncrementalSyncCache, error) {
+	t.loadCalled = true
+	return t.mockCacheStore.Load(vendorName, ref)
+}
+
+func (t *trackingCacheStore) Save(cache *types.IncrementalSyncCache) error {
+	t.saveCalled = true
+	return t.mockCacheStore.Save(cache)
+}
+
+// newSyncServiceWithCache creates a SyncService with a custom CacheStore,
+// using gomock for GitClient/FileSystem and stubs for other deps.
+func newSyncServiceWithCache(
+	git GitClient,
+	fs FileSystem,
+	cache CacheStore,
+	rootDir string,
+) *SyncService {
+	return NewSyncService(
+		nil, // configStore (unused in SyncVendor)
+		nil, // lockStore (unused in SyncVendor)
+		git,
+		fs,
+		&stubFileCopyService{stats: CopyStats{FileCount: 1, ByteCount: 100}},
+		&stubLicenseService{},
+		cache,
+		&stubHookExecutor{},
+		&SilentUICallback{},
+		rootDir,
+	)
+}
+
+// ============================================================================
 // Gomock Test Helpers
 // ============================================================================
 
