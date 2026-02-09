@@ -61,7 +61,7 @@ func (s *LicenseService) CheckCompliance(url string) (string, error) {
 	return detectedLicense, nil
 }
 
-// CopyLicense copies license file from temp repo to vendor/licenses
+// CopyLicense copies license file from temp repo to .git-vendor/licenses
 func (s *LicenseService) CopyLicense(tempDir, vendorName string) error {
 	// Find license file in temp directory
 	var licenseSrc string

@@ -188,17 +188,17 @@ PositionSpec (internal/types/position.go)
 
 ### File System Structure
 
-All vendor-related files live in `./vendor/`:
+All vendor-related files live in `./.git-vendor/`:
 
 ```text
-vendor/
+.git-vendor/
 ├── vendor.yml       # Configuration file
 ├── vendor.lock      # Lock file with commit hashes
 └── licenses/        # Cached license files
     └── {name}.txt
 ```
 
-Vendored files are copied to paths specified in the configuration (outside vendor/ directory).
+Vendored files are copied to paths specified in the configuration (outside .git-vendor/ directory).
 
 ## Key Operations
 
@@ -241,7 +241,7 @@ Automatic license detection via `GitHubLicenseChecker` (github_client.go:33):
 - Queries GitHub API `/repos/:owner/:repo/license` endpoint
 - Allowed by default: MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Unlicense, CC0-1.0
 - Other licenses prompt user confirmation via `tui.AskToOverrideCompliance()`
-- License files are automatically copied to `vendor/licenses/{name}.txt`
+- License files are automatically copied to `.git-vendor/licenses/{name}.txt`
 
 ### Position Extraction (Spec 071)
 
@@ -545,7 +545,7 @@ go test -v ./...
 9. **Edit mode**: Changes aren't saved until user selects "💾 Save & Exit"
 10. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing
 11. **Branch names with slashes**: Cannot parse from URL due to ambiguity - use base URL and enter ref manually
-12. **Incremental sync cache**: Stored in vendor/.cache/, auto-invalidates on commit hash changes, 1000 file limit per vendor
+12. **Incremental sync cache**: Stored in .git-vendor/.cache/, auto-invalidates on commit hash changes, 1000 file limit per vendor
 13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts
 14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
 15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
@@ -561,7 +561,7 @@ go test -v ./...
 ### Available Commands
 
 ```bash
-git-vendor init                      # Initialize vendor directory
+git-vendor init                      # Initialize .git-vendor directory
 git-vendor add                       # Add vendor (interactive)
 git-vendor edit                      # Edit vendor (interactive)
 git-vendor remove <name>             # Remove vendor
@@ -653,10 +653,10 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 ### File Paths
 
-- Config: `vendor/vendor.yml`
-- Lock: `vendor/vendor.lock`
-- Licenses: `vendor/licenses/<name>.txt`
-- Vendored files: User-specified paths (outside vendor/)
+- Config: `.git-vendor/vendor.yml`
+- Lock: `.git-vendor/vendor.lock`
+- Licenses: `.git-vendor/licenses/<name>.txt`
+- Vendored files: User-specified paths (outside .git-vendor/)
 
 ### Important Functions by File
 
