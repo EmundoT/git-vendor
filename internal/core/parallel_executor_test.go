@@ -352,3 +352,219 @@ func TestParallelExecutor_ForceOption(t *testing.T) {
 		t.Errorf("Expected nil lockedRefs with Force option, got %v", receivedLockedRefs)
 	}
 }
+
+// ============================================================================
+// Parallel Executor Edge Cases
+// ============================================================================
+
+func TestParallelExecutor_MultipleVendorsFailing(t *testing.T) {
+	// When multiple vendors fail, only the first error (by collection order) is returned,
+	// but all results should still be present.
+	vendors := []types.VendorSpec{
+		{Name: "fail-1", URL: "https://github.com/test/f1", License: "MIT"},
+		{Name: "fail-2", URL: "https://github.com/test/f2", License: "MIT"},
+		{Name: "ok-3", URL: "https://github.com/test/ok3", License: "MIT"},
+		{Name: "fail-4", URL: "https://github.com/test/f4", License: "MIT"},
+	}
+
+	syncFunc := func(v types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+		time.Sleep(5 * time.Millisecond)
+		if v.Name != "ok-3" {
+			return nil, CopyStats{}, errors.New("sync error for " + v.Name)
+		}
+		return map[string]RefMetadata{"main": {CommitHash: "ok"}}, CopyStats{FileCount: 1}, nil
+	}
+
+	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 2}, &SilentUICallback{})
+	results, err := executor.ExecuteParallelSync(vendors, nil, SyncOptions{}, syncFunc)
+
+	if err == nil {
+		t.Fatal("Expected error when multiple vendors fail, got nil")
+	}
+
+	// All 4 results should be present even with errors
+	if len(results) != 4 {
+		t.Errorf("Expected 4 results, got %d", len(results))
+	}
+
+	// Count errors
+	errorCount := 0
+	for _, r := range results {
+		if r.Error != nil {
+			errorCount++
+		}
+	}
+	if errorCount != 3 {
+		t.Errorf("Expected 3 vendor errors, got %d", errorCount)
+	}
+}
+
+func TestParallelExecutor_WorkerCountEdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxWorkers  int
+		wantWorkers int
+	}{
+		{name: "worker count 1", maxWorkers: 1, wantWorkers: 1},
+		{name: "worker count 8 (cap)", maxWorkers: 8, wantWorkers: 8},
+		{name: "worker count 9 (capped to 8)", maxWorkers: 9, wantWorkers: 8},
+		{name: "worker count 1000 (capped to 8)", maxWorkers: 1000, wantWorkers: 8},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: tt.maxWorkers}, &SilentUICallback{})
+			if executor.maxWorkers != tt.wantWorkers {
+				t.Errorf("maxWorkers = %d, want %d", executor.maxWorkers, tt.wantWorkers)
+			}
+		})
+	}
+}
+
+func TestParallelExecutor_WorkersLimitedByVendorCount(t *testing.T) {
+	// When vendor count < worker count, only vendor-count goroutines should process work.
+	vendors := []types.VendorSpec{
+		{Name: "only-one", URL: "https://github.com/test/repo", License: "MIT"},
+	}
+
+	var processedCount int
+	var mu sync.Mutex
+
+	syncFunc := func(_ types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+		mu.Lock()
+		processedCount++
+		mu.Unlock()
+		return map[string]RefMetadata{"main": {CommitHash: "h"}}, CopyStats{}, nil
+	}
+
+	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 8}, &SilentUICallback{})
+	results, err := executor.ExecuteParallelSync(vendors, nil, SyncOptions{}, syncFunc)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("Expected 1 result, got %d", len(results))
+	}
+	if processedCount != 1 {
+		t.Errorf("Expected 1 processed, got %d", processedCount)
+	}
+}
+
+func TestParallelExecutor_NilLockMap(t *testing.T) {
+	// Passing nil lockMap should not panic; lockedRefs should be nil for all vendors.
+	vendors := []types.VendorSpec{
+		{Name: "v1", URL: "https://github.com/test/v1", License: "MIT"},
+	}
+
+	var receivedLockedRefs map[string]string
+
+	syncFunc := func(_ types.VendorSpec, lockedRefs map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+		receivedLockedRefs = lockedRefs
+		return map[string]RefMetadata{"main": {CommitHash: "h"}}, CopyStats{}, nil
+	}
+
+	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 1}, &SilentUICallback{})
+	_, err := executor.ExecuteParallelSync(vendors, nil, SyncOptions{}, syncFunc)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if receivedLockedRefs != nil {
+		t.Errorf("Expected nil lockedRefs with nil lockMap, got %v", receivedLockedRefs)
+	}
+}
+
+func TestParallelExecutor_UpdateMultipleFailures(t *testing.T) {
+	// Test that ExecuteParallelUpdate handles multiple failures correctly.
+	vendors := []types.VendorSpec{
+		{Name: "upd-1", URL: "https://github.com/test/u1", License: "MIT"},
+		{Name: "upd-2", URL: "https://github.com/test/u2", License: "MIT"},
+		{Name: "upd-3", URL: "https://github.com/test/u3", License: "MIT"},
+	}
+
+	updateFunc := func(v types.VendorSpec, _ SyncOptions) (map[string]RefMetadata, error) {
+		time.Sleep(5 * time.Millisecond)
+		if v.Name == "upd-1" || v.Name == "upd-3" {
+			return nil, errors.New("update failed: " + v.Name)
+		}
+		return map[string]RefMetadata{"main": {CommitHash: "ok"}}, nil
+	}
+
+	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 2}, &SilentUICallback{})
+	results, err := executor.ExecuteParallelUpdate(vendors, updateFunc)
+
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	// All results should be present
+	if len(results) != 3 {
+		t.Errorf("Expected 3 results, got %d", len(results))
+	}
+
+	// Count errors
+	errorCount := 0
+	successCount := 0
+	for _, r := range results {
+		if r.Error != nil {
+			errorCount++
+		} else {
+			successCount++
+		}
+	}
+	if errorCount != 2 {
+		t.Errorf("Expected 2 errors, got %d", errorCount)
+	}
+	if successCount != 1 {
+		t.Errorf("Expected 1 success, got %d", successCount)
+	}
+}
+
+func TestParallelExecutor_UpdateEmptyVendors(t *testing.T) {
+	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 2}, &SilentUICallback{})
+
+	updateFunc := func(_ types.VendorSpec, _ SyncOptions) (map[string]RefMetadata, error) {
+		t.Fatal("update function should not be called for empty vendor list")
+		return nil, nil
+	}
+
+	results, err := executor.ExecuteParallelUpdate([]types.VendorSpec{}, updateFunc)
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+	if results != nil {
+		t.Errorf("Expected nil results, got %d results", len(results))
+	}
+}
+
+func TestParallelExecutor_AllVendorsFail(t *testing.T) {
+	// When every vendor fails, the returned error should wrap the first one collected.
+	vendors := []types.VendorSpec{
+		{Name: "bad-1", URL: "https://github.com/test/b1", License: "MIT"},
+		{Name: "bad-2", URL: "https://github.com/test/b2", License: "MIT"},
+	}
+
+	syncFunc := func(v types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+		return nil, CopyStats{}, errors.New("total failure: " + v.Name)
+	}
+
+	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 2}, &SilentUICallback{})
+	results, err := executor.ExecuteParallelSync(vendors, nil, SyncOptions{}, syncFunc)
+
+	if err == nil {
+		t.Fatal("Expected error when all vendors fail")
+	}
+
+	// All results should still be returned
+	if len(results) != 2 {
+		t.Errorf("Expected 2 results, got %d", len(results))
+	}
+
+	// Both should have errors
+	for _, r := range results {
+		if r.Error == nil {
+			t.Errorf("Expected error for vendor %s", r.Vendor.Name)
+		}
+	}
+}
