@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -840,7 +841,7 @@ func TestClearCache(t *testing.T) {
 	os.WriteFile(cacheFile, []byte("{}"), 0644)
 
 	// Verify file exists
-	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+	if _, err := os.Stat(cacheFile); errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Cache file should exist before clear")
 	}
 
@@ -850,7 +851,7 @@ func TestClearCache(t *testing.T) {
 	}
 
 	// Verify cache directory is removed
-	if _, err := os.Stat(cacheDir); !os.IsNotExist(err) {
+	if _, err := os.Stat(cacheDir); !errors.Is(err, os.ErrNotExist) {
 		t.Error("Cache directory should be removed after clear")
 	}
 }
@@ -1105,7 +1106,7 @@ func TestLoadFromCache_CorruptFile(t *testing.T) {
 	}
 
 	// Verify file exists before
-	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+	if _, err := os.Stat(cacheFile); errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Cache file should exist before load attempt")
 	}
 
@@ -1119,7 +1120,7 @@ func TestLoadFromCache_CorruptFile(t *testing.T) {
 	}
 
 	// Verify corrupt file was removed
-	if _, err := os.Stat(cacheFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(cacheFile); !errors.Is(err, os.ErrNotExist) {
 		t.Error("Corrupt cache file should be removed after load attempt")
 	}
 }

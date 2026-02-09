@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -458,7 +459,7 @@ func TestCacheStore_LargeCacheLimit(t *testing.T) {
 	var files []string
 	for i := 0; i < 1500; i++ {
 		filePath := filepath.Join(tempDir, "file"+string(rune('0'+i%10))+".txt")
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
 			err = os.WriteFile(filePath, []byte("content"), 0644)
 			if err != nil {
 				t.Fatalf("Failed to create test file: %v", err)
