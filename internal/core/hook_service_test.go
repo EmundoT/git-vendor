@@ -6,11 +6,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )
-
-// No need for testUICallback - use existing SilentUICallback
 
 // TestHookService_PreSyncExecution tests basic pre-sync hook execution
 func TestHookService_PreSyncExecution(t *testing.T) {
@@ -203,7 +202,7 @@ func TestHookService_MultilineCommand(t *testing.T) {
 	}
 }
 
-// TestHookService_CommandFailure tests that hook failures are properly reported
+// TestHookService_CommandFailure tests that hook failures return HookError with context
 func TestHookService_CommandFailure(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -221,16 +220,16 @@ func TestHookService_CommandFailure(t *testing.T) {
 		RootDir:    tempDir,
 	}
 
-	// Execute
 	err := hookService.ExecutePreSync(vendor, ctx)
-
-	// Assert
 	if err == nil {
 		t.Fatal("Expected error for failing command, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "hook failed") {
-		t.Errorf("Expected 'hook failed' error, got: %v", err)
+	if !IsHookError(err) {
+		t.Errorf("Expected HookError, got: %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "pre-sync") {
+		t.Errorf("Expected 'pre-sync' in error, got: %v", err)
 	}
 }
 
@@ -355,5 +354,194 @@ func TestHookService_WorkingDirectory(t *testing.T) {
 
 	if actualDirResolved != expectedDir {
 		t.Errorf("Expected working directory %s, got %s", expectedDir, actualDirResolved)
+	}
+}
+
+// TestHookService_CommandFailure_ReturnsHookError verifies that hook failures produce HookError
+func TestHookService_CommandFailure_ReturnsHookError(t *testing.T) {
+	ui := &SilentUICallback{}
+	hookService := NewHookService(ui)
+
+	vendor := &types.VendorSpec{
+		Name: "hook-err-test",
+		Hooks: &types.HookConfig{
+			PreSync: "exit 42",
+		},
+	}
+
+	tempDir := t.TempDir()
+	ctx := &types.HookContext{
+		VendorName: "hook-err-test",
+		RootDir:    tempDir,
+	}
+
+	err := hookService.ExecutePreSync(vendor, ctx)
+	if err == nil {
+		t.Fatal("Expected error for failing command, got nil")
+	}
+
+	// Verify HookError type is returned
+	if !IsHookError(err) {
+		t.Errorf("Expected HookError, got: %T: %v", err, err)
+	}
+
+	// Verify error message contains useful context
+	errStr := err.Error()
+	if !strings.Contains(errStr, "pre-sync") {
+		t.Errorf("Expected error to mention 'pre-sync' phase, got: %s", errStr)
+	}
+	if !strings.Contains(errStr, "hook-err-test") {
+		t.Errorf("Expected error to mention vendor name, got: %s", errStr)
+	}
+}
+
+// TestHookService_PostSyncFailure_ReturnsHookError verifies post-sync HookError
+func TestHookService_PostSyncFailure_ReturnsHookError(t *testing.T) {
+	ui := &SilentUICallback{}
+	hookService := NewHookService(ui)
+
+	vendor := &types.VendorSpec{
+		Name: "post-err-test",
+		Hooks: &types.HookConfig{
+			PostSync: "exit 1",
+		},
+	}
+
+	tempDir := t.TempDir()
+	ctx := &types.HookContext{
+		VendorName: "post-err-test",
+		RootDir:    tempDir,
+	}
+
+	err := hookService.ExecutePostSync(vendor, ctx)
+	if err == nil {
+		t.Fatal("Expected error for failing command, got nil")
+	}
+
+	if !IsHookError(err) {
+		t.Errorf("Expected HookError, got: %T: %v", err, err)
+	}
+
+	errStr := err.Error()
+	if !strings.Contains(errStr, "post-sync") {
+		t.Errorf("Expected error to mention 'post-sync' phase, got: %s", errStr)
+	}
+}
+
+// TestHookService_Timeout verifies that executeHook kills hooks after the timeout
+// and produces the "hook timed out" error message wrapped in HookError.
+// Uses the configurable timeout field set to 200ms for fast test execution.
+func TestHookService_Timeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Timeout test uses Unix sleep command")
+	}
+
+	ui := &SilentUICallback{}
+	hs := NewHookService(ui).(*hookService)
+	hs.timeout = 200 * time.Millisecond // Override for fast test
+
+	vendor := &types.VendorSpec{
+		Name: "timeout-test",
+		Hooks: &types.HookConfig{
+				// Use "exec sleep" so sh replaces itself with sleep,
+			// ensuring SIGKILL from context reaches the process directly.
+			PreSync: "exec sleep 60",
+		},
+	}
+
+	hookCtx := &types.HookContext{
+		VendorName: "timeout-test",
+		RootDir:    t.TempDir(),
+	}
+
+	start := time.Now()
+	err := hs.ExecutePreSync(vendor, hookCtx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("Expected timeout error, got nil")
+	}
+
+	// Verify HookError wrapping
+	if !IsHookError(err) {
+		t.Errorf("Expected HookError, got: %T: %v", err, err)
+	}
+
+	// Verify the timeout-specific error message from executeHook
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("Expected 'timed out' in error message, got: %v", err)
+	}
+
+	// Verify command was killed quickly (well under 60s)
+	if elapsed > 5*time.Second {
+		t.Errorf("Hook should have timed out quickly, took %v", elapsed)
+	}
+}
+
+// TestHookService_EnvironmentSanitization verifies that newlines in env values are stripped
+func TestHookService_EnvironmentSanitization(t *testing.T) {
+	ui := &SilentUICallback{}
+	hookService := NewHookService(ui)
+
+	tempDir := t.TempDir()
+	outputFile := filepath.Join(tempDir, "sanitized_env.txt")
+
+	// Build platform-appropriate command
+	var command string
+	if runtime.GOOS == "windows" {
+		command = "set | findstr GIT_VENDOR_NAME > " + outputFile
+	} else {
+		command = "env | grep GIT_VENDOR_NAME > " + outputFile
+	}
+
+	vendor := &types.VendorSpec{
+		Name: "sanitize-test",
+		Hooks: &types.HookConfig{
+			PreSync: command,
+		},
+	}
+
+	// Inject newlines and null bytes into vendor name via context
+	ctx := &types.HookContext{
+		VendorName: "evil\nINJECTED=true\r\x00name",
+		VendorURL:  "https://github.com/test/repo\nnewline",
+		RootDir:    tempDir,
+	}
+
+	err := hookService.ExecutePreSync(vendor, ctx)
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	content, err := os.ReadFile(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to read output file: %v", err)
+	}
+
+	output := string(content)
+
+	// Verify newlines were sanitized (replaced with spaces)
+	if strings.Contains(output, "\nINJECTED=true") {
+		t.Errorf("Newline injection not sanitized in environment variable:\n%s", output)
+	}
+
+	// Verify the sanitized name is a single line containing the vendor name
+	if !strings.Contains(output, "GIT_VENDOR_NAME=evil") {
+		t.Errorf("Expected sanitized vendor name in env output:\n%s", output)
+	}
+}
+
+// TestHookService_LongCommandInError verifies that long commands are truncated in HookError
+func TestHookService_LongCommandInError(t *testing.T) {
+	longCmd := strings.Repeat("a", 200)
+	err := NewHookError("vendor", "pre-sync", longCmd, nil)
+
+	errStr := err.Error()
+	// Command should be truncated to 80 chars + "..."
+	if strings.Contains(errStr, strings.Repeat("a", 100)) {
+		t.Errorf("Expected long command to be truncated, got full command in error message")
+	}
+	if !strings.Contains(errStr, "...") {
+		t.Errorf("Expected '...' in truncated command, got: %s", errStr)
 	}
 }
