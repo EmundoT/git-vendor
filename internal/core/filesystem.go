@@ -172,6 +172,12 @@ func ValidateDestPath(destPath string) error {
 	}
 	destPath = pathPart
 
+	// Reject embedded null bytes — defense in depth (OS also rejects at syscall level,
+	// but fail early with a clear message instead of relying on EINVAL).
+	if strings.ContainsRune(destPath, 0) {
+		return fmt.Errorf("invalid destination path: (null bytes are not allowed)")
+	}
+
 	// Clean the path to normalize it
 	cleaned := filepath.Clean(destPath)
 
@@ -197,5 +203,25 @@ func ValidateDestPath(destPath string) error {
 		return fmt.Errorf("invalid destination path: %s (path traversal with .. is not allowed)", destPath)
 	}
 
+	return nil
+}
+
+// ValidateVendorName ensures a vendor name is safe for use in filesystem paths.
+// Rejects names containing path separators, traversal sequences, or null bytes.
+// Called during config validation and before license file copy to block malicious
+// vendor.yml entries before they reach any filesystem operation.
+func ValidateVendorName(name string) error {
+	if name == "" {
+		return fmt.Errorf("vendor name must not be empty")
+	}
+	if strings.ContainsRune(name, 0) {
+		return fmt.Errorf("invalid vendor name %q: null bytes are not allowed", name)
+	}
+	if strings.ContainsAny(name, "/\\") {
+		return fmt.Errorf("invalid vendor name %q: path separators are not allowed", name)
+	}
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("invalid vendor name %q: path traversal sequences are not allowed", name)
+	}
 	return nil
 }

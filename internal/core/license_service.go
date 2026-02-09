@@ -61,8 +61,16 @@ func (s *LicenseService) CheckCompliance(url string) (string, error) {
 	return detectedLicense, nil
 }
 
-// CopyLicense copies license file from temp repo to vendor/licenses
+// CopyLicense copies license file from temp repo to vendor/licenses.
+// Validates vendorName to prevent path traversal via malicious vendor.yml entries.
 func (s *LicenseService) CopyLicense(tempDir, vendorName string) error {
+	// SEC-001: Validate vendorName before constructing filesystem path.
+	// Without this check, a malicious vendor.yml with name: "../../../etc/cron.d/evil"
+	// would write the license file outside the project directory.
+	if err := ValidateVendorName(vendorName); err != nil {
+		return fmt.Errorf("license copy blocked: %w", err)
+	}
+
 	// Find license file in temp directory
 	var licenseSrc string
 	for _, name := range LicenseFileNames {
