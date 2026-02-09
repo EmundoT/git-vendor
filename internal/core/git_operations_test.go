@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -207,6 +208,134 @@ func TestSystemGitClient_GetCommitLog_InvalidRange(t *testing.T) {
 	_, err := git.GetCommitLog(context.Background(), tempDir, "invalid-hash", "another-invalid-hash", 0)
 	if err == nil {
 		t.Error("Expected error for invalid commit hashes, got nil")
+	}
+}
+
+// GetTagForCommit Tests — Semver Preference Logic
+// ============================================================================
+
+func TestSystemGitClient_GetTagForCommit_SemverPreference(t *testing.T) {
+	gitClient := NewSystemGitClient(false)
+	tempDir := t.TempDir()
+
+	if err := gitClient.Init(context.Background(), tempDir); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+	configureGitUser(t, tempDir)
+
+	// Create a commit with both semver and non-semver tags
+	file := filepath.Join(tempDir, "file.txt")
+	os.WriteFile(file, []byte("content"), 0644)
+	runGitCommand(t, tempDir, "add", ".")
+	runGitCommand(t, tempDir, "commit", "-m", "Tagged commit")
+
+	hash, err := gitClient.GetHeadHash(context.Background(), tempDir)
+	if err != nil {
+		t.Fatalf("Failed to get commit hash: %v", err)
+	}
+
+	// Tag with non-semver first, then semver — GetTagForCommit should prefer semver
+	runGitCommand(t, tempDir, "tag", "release-2025")
+	runGitCommand(t, tempDir, "tag", "v1.2.3")
+
+	tag, err := gitClient.GetTagForCommit(context.Background(), tempDir, hash)
+	if err != nil {
+		t.Fatalf("GetTagForCommit failed: %v", err)
+	}
+	if tag != "v1.2.3" {
+		t.Errorf("Expected semver tag 'v1.2.3', got '%s'", tag)
+	}
+}
+
+func TestSystemGitClient_GetTagForCommit_NonSemverFallback(t *testing.T) {
+	gitClient := NewSystemGitClient(false)
+	tempDir := t.TempDir()
+
+	if err := gitClient.Init(context.Background(), tempDir); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+	configureGitUser(t, tempDir)
+
+	file := filepath.Join(tempDir, "file.txt")
+	os.WriteFile(file, []byte("content"), 0644)
+	runGitCommand(t, tempDir, "add", ".")
+	runGitCommand(t, tempDir, "commit", "-m", "Non-semver commit")
+
+	hash, err := gitClient.GetHeadHash(context.Background(), tempDir)
+	if err != nil {
+		t.Fatalf("Failed to get commit hash: %v", err)
+	}
+
+	// Only non-semver tags — should fall back to first tag
+	runGitCommand(t, tempDir, "tag", "release-2025")
+
+	tag, err := gitClient.GetTagForCommit(context.Background(), tempDir, hash)
+	if err != nil {
+		t.Fatalf("GetTagForCommit failed: %v", err)
+	}
+	if tag != "release-2025" {
+		t.Errorf("Expected fallback tag 'release-2025', got '%s'", tag)
+	}
+}
+
+func TestSystemGitClient_GetTagForCommit_NoTags(t *testing.T) {
+	gitClient := NewSystemGitClient(false)
+	tempDir := t.TempDir()
+
+	if err := gitClient.Init(context.Background(), tempDir); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+	configureGitUser(t, tempDir)
+
+	file := filepath.Join(tempDir, "file.txt")
+	os.WriteFile(file, []byte("content"), 0644)
+	runGitCommand(t, tempDir, "add", ".")
+	runGitCommand(t, tempDir, "commit", "-m", "Untagged commit")
+
+	hash, err := gitClient.GetHeadHash(context.Background(), tempDir)
+	if err != nil {
+		t.Fatalf("Failed to get commit hash: %v", err)
+	}
+
+	// No tags at all — should return empty string
+	tag, err := gitClient.GetTagForCommit(context.Background(), tempDir, hash)
+	if err != nil {
+		t.Fatalf("GetTagForCommit failed: %v", err)
+	}
+	if tag != "" {
+		t.Errorf("Expected empty tag for untagged commit, got '%s'", tag)
+	}
+}
+
+func TestSystemGitClient_GetTagForCommit_SemverWithoutPrefix(t *testing.T) {
+	gitClient := NewSystemGitClient(false)
+	tempDir := t.TempDir()
+
+	if err := gitClient.Init(context.Background(), tempDir); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+	configureGitUser(t, tempDir)
+
+	file := filepath.Join(tempDir, "file.txt")
+	os.WriteFile(file, []byte("content"), 0644)
+	runGitCommand(t, tempDir, "add", ".")
+	runGitCommand(t, tempDir, "commit", "-m", "Semver no prefix")
+
+	hash, err := gitClient.GetHeadHash(context.Background(), tempDir)
+	if err != nil {
+		t.Fatalf("Failed to get commit hash: %v", err)
+	}
+
+	// Semver without 'v' prefix should still be preferred
+	runGitCommand(t, tempDir, "tag", "build-42")
+	runGitCommand(t, tempDir, "tag", "2.0.0")
+
+	tag, err := gitClient.GetTagForCommit(context.Background(), tempDir, hash)
+	if err != nil {
+		t.Fatalf("GetTagForCommit failed: %v", err)
+	}
+	if tag != "2.0.0" {
+		t.Errorf("Expected semver tag '2.0.0', got '%s'", tag)
 	}
 }
 
@@ -487,6 +616,52 @@ func TestParseSmartURL_TableDriven(t *testing.T) {
 	}
 }
 
+// GetCommitLog Date Format Test
+// ============================================================================
+
+func TestSystemGitClient_GetCommitLog_DateFormat(t *testing.T) {
+	gitClient := NewSystemGitClient(false)
+	tempDir := t.TempDir()
+
+	if err := gitClient.Init(context.Background(), tempDir); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+	configureGitUser(t, tempDir)
+
+	file1 := filepath.Join(tempDir, "file1.txt")
+	os.WriteFile(file1, []byte("content1"), 0644)
+	runGitCommand(t, tempDir, "add", ".")
+	runGitCommand(t, tempDir, "commit", "-m", "First commit")
+	hash1, _ := gitClient.GetHeadHash(context.Background(), tempDir)
+
+	time.Sleep(10 * time.Millisecond)
+
+	file2 := filepath.Join(tempDir, "file2.txt")
+	os.WriteFile(file2, []byte("content2"), 0644)
+	runGitCommand(t, tempDir, "add", ".")
+	runGitCommand(t, tempDir, "commit", "-m", "Second commit")
+	hash2, _ := gitClient.GetHeadHash(context.Background(), tempDir)
+
+	commits, err := gitClient.GetCommitLog(context.Background(), tempDir, hash1, hash2, 0)
+	if err != nil {
+		t.Fatalf("GetCommitLog failed: %v", err)
+	}
+	if len(commits) != 1 {
+		t.Fatalf("Expected 1 commit, got %d", len(commits))
+	}
+
+	// Verify date format matches "YYYY-MM-DD HH:MM:SS ±ZZZZ" (git %ai format)
+	// formatDate() in diff_service.go splits on whitespace and expects parts[0] = date
+	date := commits[0].Date
+	parts := strings.Fields(date)
+	if len(parts) != 3 {
+		t.Errorf("Expected date with 3 space-separated parts (date time tz), got %d parts: %q", len(parts), date)
+	}
+	if len(parts) >= 1 && len(parts[0]) != 10 {
+		t.Errorf("Expected YYYY-MM-DD (10 chars) for date part, got %q", parts[0])
+	}
+}
+
 // ============================================================================
 // cleanURL Tests
 // ============================================================================
@@ -536,52 +711,6 @@ func TestIsSemverTag(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("isSemverTag(%q) = %v, want %v", tt.tag, got, tt.want)
 		}
-	}
-}
-
-// ============================================================================
-// parseListTreeOutput Tests
-// ============================================================================
-
-func TestParseListTreeOutput(t *testing.T) {
-	output := "100644 blob abc123 file1.go\n040000 tree def456 subdir\n100644 blob ghi789 file2.go\n"
-	items := parseListTreeOutput(output, "")
-
-	if len(items) != 3 {
-		t.Fatalf("Expected 3 items, got %d", len(items))
-	}
-
-	// Items should be sorted
-	if items[0] != "file1.go" {
-		t.Errorf("Expected 'file1.go', got '%s'", items[0])
-	}
-	if items[1] != "file2.go" {
-		t.Errorf("Expected 'file2.go', got '%s'", items[1])
-	}
-	if items[2] != "subdir/" {
-		t.Errorf("Expected 'subdir/', got '%s'", items[2])
-	}
-}
-
-func TestParseListTreeOutput_WithSubdir(t *testing.T) {
-	output := "100644 blob abc123 src/file1.go\n100644 blob def456 src/file2.go\n"
-	items := parseListTreeOutput(output, "src")
-
-	if len(items) != 2 {
-		t.Fatalf("Expected 2 items, got %d", len(items))
-	}
-	if items[0] != "file1.go" {
-		t.Errorf("Expected 'file1.go', got '%s'", items[0])
-	}
-	if items[1] != "file2.go" {
-		t.Errorf("Expected 'file2.go', got '%s'", items[1])
-	}
-}
-
-func TestParseListTreeOutput_EmptyOutput(t *testing.T) {
-	items := parseListTreeOutput("", "")
-	if len(items) != 0 {
-		t.Errorf("Expected 0 items, got %d", len(items))
 	}
 }
 

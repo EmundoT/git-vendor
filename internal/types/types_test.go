@@ -309,7 +309,7 @@ func TestVendorLock_YAML_RoundTrip(t *testing.T) {
 						Name:             "test-vendor",
 						Ref:              "main",
 						CommitHash:       "abc123def456789",
-						LicensePath:      "vendor/licenses/test-vendor.txt",
+						LicensePath:      ".git-vendor/licenses/test-vendor.txt",
 						Updated:          "2024-01-15T10:30:00Z",
 						FileHashes:       map[string]string{"lib/file.go": "sha256:abc123"},
 						LicenseSPDX:      "MIT",
@@ -360,7 +360,7 @@ func TestLockDetails_YAML_OmitEmpty(t *testing.T) {
 		Name:        "minimal-vendor",
 		Ref:         "main",
 		CommitHash:  "abc123",
-		LicensePath: "vendor/licenses/minimal-vendor.txt",
+		LicensePath: ".git-vendor/licenses/minimal-vendor.txt",
 		Updated:     "2024-01-15T10:30:00Z",
 		// All omitempty fields left empty/nil
 	}
