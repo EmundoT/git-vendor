@@ -32,13 +32,15 @@ type HookExecutor interface {
 
 // hookService implements HookExecutor for shell command execution
 type hookService struct {
-	ui UICallback
+	ui      UICallback
+	timeout time.Duration // overridable for testing; defaults to hookTimeout
 }
 
 // NewHookService creates a new hook executor
 func NewHookService(ui UICallback) HookExecutor {
 	return &hookService{
-		ui: ui,
+		ui:      ui,
+		timeout: hookTimeout,
 	}
 }
 
@@ -77,7 +79,7 @@ func (h *hookService) executeHook(command string, hookCtx *types.HookContext) er
 	env := h.buildEnvironment(hookCtx)
 
 	// Create context with timeout to prevent hanging hooks
-	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
 	defer cancel()
 
 	// Execute command via platform-appropriate shell with timeout context
@@ -103,7 +105,7 @@ func (h *hookService) executeHook(command string, hookCtx *types.HookContext) er
 	if err != nil {
 		// Distinguish timeout from other failures for clearer error messages
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("hook timed out after %s: %w", hookTimeout, err)
+			return fmt.Errorf("hook timed out after %s: %w", h.timeout, err)
 		}
 		return fmt.Errorf("hook failed: %w", err)
 	}
