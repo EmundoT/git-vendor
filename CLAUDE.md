@@ -747,6 +747,16 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `copyWithPosition()` - Position-aware file copy (extract → place → track)
 - `checkLocalModifications()` - Detect local changes at target position before overwrite
 
+**hook_service.go:**
+
+- `ExecutePreSync()` / `ExecutePostSync()` - Run pre/post sync shell hooks with timeout and env injection
+- `sanitizeEnvValue()` - Strip newlines/null bytes from environment variable values
+
+**errors.go:**
+
+- `NewHookError()` / `IsHookError()` - Structured error for hook failures with phase/command context
+- `NewOSVAPIError()` / `IsOSVAPIError()` - Structured error for OSV.dev API HTTP errors
+
 **git_operations.go:**
 
 - `ParseSmartURL()` - Extract repo/ref/path from GitHub URLs

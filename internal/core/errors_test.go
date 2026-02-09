@@ -618,7 +618,7 @@ func TestOSVAPIError_Format(t *testing.T) {
 			"Client error with body",
 			400,
 			"bad request",
-			[]string{"HTTP 400", "Client error", "bad request"},
+			[]string{"HTTP 400", "Client error", "bad request", "Fix:"},
 		},
 	}
 
