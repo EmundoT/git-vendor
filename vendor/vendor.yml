@@ -1,0 +1,37 @@
+vendors:
+  - name: git-plumbing
+    url: https://github.com/EmundoT/git-plumbing
+    license: MIT
+    specs:
+      - ref: main
+        mapping:
+          - from: go.mod
+            to: pkg/git-plumbing/go.mod
+          - from: git.go
+            to: pkg/git-plumbing/git.go
+          - from: errors.go
+            to: pkg/git-plumbing/errors.go
+          - from: remote.go
+            to: pkg/git-plumbing/remote.go
+          - from: refs.go
+            to: pkg/git-plumbing/refs.go
+          - from: log.go
+            to: pkg/git-plumbing/log.go
+          - from: tag.go
+            to: pkg/git-plumbing/tag.go
+          - from: tree.go
+            to: pkg/git-plumbing/tree.go
+          - from: config.go
+            to: pkg/git-plumbing/config.go
+          - from: commit.go
+            to: pkg/git-plumbing/commit.go
+          - from: branch.go
+            to: pkg/git-plumbing/branch.go
+          - from: status.go
+            to: pkg/git-plumbing/status.go
+          - from: diff.go
+            to: pkg/git-plumbing/diff.go
+          - from: testutil/repo.go
+            to: pkg/git-plumbing/testutil/repo.go
+          - from: testutil/fixtures.go
+            to: pkg/git-plumbing/testutil/fixtures.go
