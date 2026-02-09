@@ -184,6 +184,32 @@ PositionSpec (internal/types/position.go)
   ├─ StartCol: int (1-indexed, 0 = no column)
   ├─ EndCol: int (1-indexed inclusive, 0 = no column)
   └─ ToEOF: bool (true = extract to end of file)
+
+VerifyResult (verify output)
+  ├─ SchemaVersion: "1.0"
+  ├─ Timestamp: RFC3339
+  ├─ Summary: VerifySummary
+  │   ├─ TotalFiles: int (total entries including positions)
+  │   ├─ Verified / Modified / Added / Deleted: int
+  │   └─ Result: "PASS" | "FAIL" | "WARN"
+  └─ Files: []FileStatus
+      └─ FileStatus
+          ├─ Path: display path (includes :L range for position entries)
+          ├─ Vendor: *string
+          ├─ Status: "verified" | "modified" | "added" | "deleted"
+          ├─ Type: "file" | "position"
+          ├─ ExpectedHash / ActualHash: *string (omitempty)
+          └─ Position: *PositionDetail (omitempty, present for type="position")
+              ├─ From: source path with position
+              ├─ To: destination path with optional position
+              └─ SourceHash: SHA-256 at sync time
+
+VendorStatus (status output)
+  ├─ Name / Ref: string
+  ├─ IsSynced: bool
+  ├─ MissingPaths: []string
+  ├─ FileCount: int (file-level mappings)
+  └─ PositionCount: int (position-level mappings from lockfile)
 ```
 
 ### File System Structure
