@@ -61,7 +61,7 @@ func (s *LicenseService) CheckCompliance(url string) (string, error) {
 	return detectedLicense, nil
 }
 
-// CopyLicense copies license file from temp repo to vendor/licenses.
+// CopyLicense copies license file from temp repo to .git-vendor/licenses.
 // Validates vendorName to prevent path traversal via malicious vendor.yml entries.
 func (s *LicenseService) CopyLicense(tempDir, vendorName string) error {
 	// SEC-001: Validate vendorName before constructing filesystem path.
@@ -89,7 +89,7 @@ func (s *LicenseService) CopyLicense(tempDir, vendorName string) error {
 	// Ensure license directory exists
 	licenseDir := filepath.Join(s.rootDir, LicensesDir)
 	if err := s.fs.MkdirAll(licenseDir, 0755); err != nil {
-		return err
+		return fmt.Errorf("CopyLicense: create license directory: %w", err)
 	}
 
 	// Copy license file

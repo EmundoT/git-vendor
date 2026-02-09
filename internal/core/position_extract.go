@@ -12,10 +12,15 @@ import (
 
 // ExtractPosition reads a file and extracts the content specified by a PositionSpec.
 // Returns the extracted content as a string and the SHA-256 hash of that content.
+// Returns an error if the file appears to be binary (contains null bytes).
 func ExtractPosition(filePath string, pos *types.PositionSpec) (string, string, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", "", fmt.Errorf("read file %s: %w", filePath, err)
+	}
+
+	if isBinaryContent(data) {
+		return "", "", fmt.Errorf("position extraction on binary file %s is not supported", filePath)
 	}
 
 	content, err := extractFromContent(string(data), pos, filePath)
@@ -29,7 +34,9 @@ func ExtractPosition(filePath string, pos *types.PositionSpec) (string, string, 
 
 // extractFromContent extracts a position range from file content.
 // filePath is used only for error messages.
+// CRLF line endings are normalized to LF before processing (see PositionSpec docs).
 func extractFromContent(data string, pos *types.PositionSpec, filePath string) (string, error) {
+	data = normalizeCRLF(data)
 	lines := strings.Split(data, "\n")
 	totalLines := len(lines)
 
@@ -137,6 +144,10 @@ func PlaceContent(filePath string, content string, pos *types.PositionSpec) erro
 		return fmt.Errorf("read target file %s: %w", filePath, err)
 	}
 
+	if isBinaryContent(data) {
+		return fmt.Errorf("position placement into binary file %s is not supported", filePath)
+	}
+
 	result, err := placeInContent(string(data), content, pos, filePath)
 	if err != nil {
 		return err
@@ -146,7 +157,9 @@ func PlaceContent(filePath string, content string, pos *types.PositionSpec) erro
 }
 
 // placeInContent replaces a range in existing content with new content.
+// CRLF line endings are normalized to LF before processing (see PositionSpec docs).
 func placeInContent(existing, replacement string, pos *types.PositionSpec, filePath string) (string, error) {
+	existing = normalizeCRLF(existing)
 	lines := strings.Split(existing, "\n")
 	totalLines := len(lines)
 
@@ -216,4 +229,28 @@ func placeColumns(lines []string, replacement string, pos *types.PositionSpec, f
 	result = append(result, lines[pos.EndLine:]...)
 
 	return strings.Join(result, "\n"), nil
+}
+
+// isBinaryContent checks whether data appears to be binary by scanning for null
+// bytes in the first 8000 bytes. Matches git's binary detection heuristic
+// (xdiff/xutils.c:xdl_mmfile_istext). Position extraction on binary files
+// produces garbage output, so ExtractPosition and PlaceContent reject binary
+// content with a clear error.
+func isBinaryContent(data []byte) bool {
+	limit := 8000
+	if len(data) < limit {
+		limit = len(data)
+	}
+	for i := 0; i < limit; i++ {
+		if data[i] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeCRLF replaces Windows-style \r\n line endings with \n.
+// Normalization ensures consistent line splitting and column offsets across platforms.
+func normalizeCRLF(s string) string {
+	return strings.ReplaceAll(s, "\r\n", "\n")
 }

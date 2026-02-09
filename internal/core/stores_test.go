@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,7 +183,7 @@ func TestSaveConfig(t *testing.T) {
 
 		// Verify file exists
 		configPath := filepath.Join(m.RootDir, "vendor.yml")
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
 			t.Error("saveConfig() did not create vendor.yml file")
 		}
 	})
@@ -383,7 +384,7 @@ func TestSaveLock(t *testing.T) {
 
 		// Verify file exists
 		lockPath := filepath.Join(m.RootDir, "vendor.lock")
-		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 			t.Error("saveLock() did not create vendor.lock file")
 		}
 	})
@@ -633,7 +634,7 @@ func TestLoadLock_EdgeCases(t *testing.T) {
   - name: "complete"
     ref: "v1.0.0"
     commit_hash: "abc123def456"
-    license_path: "vendor/licenses/complete.txt"
+    license_path: ".git-vendor/licenses/complete.txt"
     updated: "2025-01-15T12:30:45Z"`,
 			wantErr:   false,
 			wantCount: 1,

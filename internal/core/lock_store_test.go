@@ -172,7 +172,7 @@ func TestFileLockStore_LoadAndSave(t *testing.T) {
 				Ref:         "main",
 				CommitHash:  "abc123",
 				Updated:     "2024-01-01T00:00:00Z",
-				LicensePath: "vendor/licenses/test-vendor.txt",
+				LicensePath: VendorDir + "/licenses/test-vendor.txt",
 			},
 		},
 	}
