@@ -7,18 +7,31 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // CopyStats tracks file copy statistics
 type CopyStats struct {
 	FileCount int
 	ByteCount int64
+	Positions []positionRecord // Position-extracted mappings (for lockfile tracking)
+	Warnings  []string         // Non-fatal warnings generated during copy
+}
+
+// positionRecord tracks a single position extraction during copy
+type positionRecord struct {
+	From       string // Source path with position specifier
+	To         string // Destination path with optional position specifier
+	SourceHash string // SHA-256 hash of extracted content
 }
 
 // Add adds another CopyStats to this one
 func (s *CopyStats) Add(other CopyStats) {
 	s.FileCount += other.FileCount
 	s.ByteCount += other.ByteCount
+	s.Positions = append(s.Positions, other.Positions...)
+	s.Warnings = append(s.Warnings, other.Warnings...)
 }
 
 // FileSystem abstracts file system operations for testing
@@ -148,8 +161,17 @@ func (fs *OSFileSystem) RemoveAll(path string) error {
 	return os.RemoveAll(path)
 }
 
-// ValidateDestPath ensures destination path is safe and doesn't allow path traversal
+// ValidateDestPath ensures destination path is safe and doesn't allow path traversal.
+// ValidateDestPath strips any position specifier (e.g., ":L5-L10") before validation,
+// so paths like "config.go:L5-L10" are accepted if the file path part is valid.
 func ValidateDestPath(destPath string) error {
+	// Strip position specifier before validation — only validate the file path part
+	pathPart, _, parseErr := types.ParsePathPosition(destPath)
+	if parseErr != nil {
+		pathPart = destPath // Fallback to raw path if position parsing fails
+	}
+	destPath = pathPart
+
 	// Clean the path to normalize it
 	cleaned := filepath.Clean(destPath)
 

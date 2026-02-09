@@ -130,6 +130,7 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 				VendoredAt:       vendoredAt,
 				VendoredBy:       vendoredBy,
 				LastSyncedAt:     now,
+				Positions:        toPositionLocks(metadata.Positions),
 			})
 
 			s.ui.ShowSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, metadata.CommitHash[:7]))
@@ -229,12 +230,29 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 				VendoredAt:       vendoredAt,
 				VendoredBy:       vendoredBy,
 				LastSyncedAt:     now,
+				Positions:        toPositionLocks(metadata.Positions),
 			})
 		}
 	}
 
 	// Save the new lockfile
 	return s.lockStore.Save(lock)
+}
+
+// toPositionLocks converts internal position records to lockfile-safe types.
+func toPositionLocks(records []positionRecord) []types.PositionLock {
+	if len(records) == 0 {
+		return nil
+	}
+	locks := make([]types.PositionLock, len(records))
+	for i, r := range records {
+		locks[i] = types.PositionLock{
+			From:       r.From,
+			To:         r.To,
+			SourceHash: r.SourceHash,
+		}
+	}
+	return locks
 }
 
 // computeFileHashes calculates SHA-256 hashes for all destination files of a vendor
@@ -258,14 +276,24 @@ func (s *UpdateService) computeFileHashes(vendor *types.VendorSpec, ref string) 
 	for _, mapping := range matchingSpec.Mapping {
 		destPath := mapping.To
 		if destPath == "" {
-			// Use auto-computed path
-			destPath = ComputeAutoPath(mapping.From, matchingSpec.DefaultTarget, vendor.Name)
+			// Use auto-computed path — strip position from source for auto-naming
+			srcFile, _, err := types.ParsePathPosition(mapping.From)
+			if err != nil {
+				srcFile = mapping.From
+			}
+			destPath = ComputeAutoPath(srcFile, matchingSpec.DefaultTarget, vendor.Name)
+		}
+
+		// Strip position specifier from destination path for file system access
+		destFile, _, err := types.ParsePathPosition(destPath)
+		if err != nil {
+			destFile = destPath
 		}
 
 		// Compute hash for this file
-		hash, err := s.cache.ComputeFileChecksum(destPath)
+		hash, err := s.cache.ComputeFileChecksum(destFile)
 		if err == nil {
-			fileHashes[destPath] = hash
+			fileHashes[destFile] = hash
 		}
 	}
 

@@ -52,6 +52,16 @@ type LockDetails struct {
 	VendoredAt       string `yaml:"vendored_at,omitempty"`        // ISO 8601 timestamp of initial vendoring
 	VendoredBy       string `yaml:"vendored_by,omitempty"`        // Git user identity who vendored it
 	LastSyncedAt     string `yaml:"last_synced_at,omitempty"`     // ISO 8601 timestamp of most recent sync
+
+	// Position extraction metadata (spec 071)
+	Positions []PositionLock `yaml:"positions,omitempty"` // Position-extracted mappings with source hashes
+}
+
+// PositionLock records a position-extracted mapping in the lockfile for auditing and verification.
+type PositionLock struct {
+	From       string `yaml:"from"`        // Source path with position (e.g., "api/constants.go:L4-L6")
+	To         string `yaml:"to"`          // Destination path with optional position
+	SourceHash string `yaml:"source_hash"` // SHA-256 of extracted content
 }
 
 // PathConflict represents a conflict between two vendors mapping to overlapping paths

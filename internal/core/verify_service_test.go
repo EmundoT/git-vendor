@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -679,4 +680,297 @@ func TestVerify_IntegrationWithRealFiles(t *testing.T) {
 	if result.Summary.Modified != 1 {
 		t.Errorf("Expected 1 modified file, got %d", result.Summary.Modified)
 	}
+}
+
+// ============================================================================
+// Position Verification Tests (gap #3)
+// ============================================================================
+
+func TestVerify_PositionExtraction_Verified(t *testing.T) {
+	// Create temp dir with a dest file that has the expected content at a specific position
+	tmpDir := t.TempDir()
+
+	destFile := filepath.Join(tmpDir, "lib", "config.ts")
+	if err := os.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Write file: lines 10-12 contain the vendored content
+	var lines []string
+	for i := 1; i <= 15; i++ {
+		if i >= 10 && i <= 12 {
+			lines = append(lines, fmt.Sprintf("vendored-line-%d", i))
+		} else {
+			lines = append(lines, fmt.Sprintf("local-line-%d", i))
+		}
+	}
+	content := joinLines(lines)
+	if err := os.WriteFile(destFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compute the hash of the extracted position (lines 10-12)
+	_, sourceHash, err := ExtractPosition(destFile, &types.PositionSpec{StartLine: 10, EndLine: 12})
+	if err != nil {
+		t.Fatalf("failed to compute position hash: %v", err)
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "api-constants",
+			URL:  "https://github.com/owner/repo",
+			Specs: []types.BranchSpec{{
+				Ref:     "main",
+				Mapping: []types.PathMapping{{From: "api/constants.go:L4-L6", To: destFile + ":L10-L12"}},
+			}},
+		}},
+	}, nil)
+
+	realCache := NewFileCacheStore(NewOSFileSystem(), tmpDir)
+	wholeFileHash, _ := realCache.ComputeFileChecksum(destFile)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name:       "api-constants",
+			Ref:        "main",
+			CommitHash: "abc123",
+			FileHashes: map[string]string{destFile: wholeFileHash},
+			Positions: []types.PositionLock{{
+				From:       "api/constants.go:L4-L6",
+				To:         destFile + ":L10-L12",
+				SourceHash: sourceHash,
+			}},
+		}},
+	}, nil)
+
+	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
+	result, err := service.Verify()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// 1 verified for whole-file hash, 1 verified for position hash
+	if result.Summary.Verified != 2 {
+		t.Errorf("Expected 2 verified (whole + position), got %d", result.Summary.Verified)
+	}
+	if result.Summary.Result != "PASS" {
+		t.Errorf("Expected PASS, got %s", result.Summary.Result)
+	}
+}
+
+func TestVerify_PositionExtraction_Modified(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	destFile := filepath.Join(tmpDir, "lib", "config.ts")
+	if err := os.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write file with original content
+	original := "line1\nline2\nvendored-a\nvendored-b\nline5\n"
+	if err := os.WriteFile(destFile, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compute source hash from the original vendored content
+	_, sourceHash, err := ExtractPosition(destFile, &types.PositionSpec{StartLine: 3, EndLine: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	realCache := NewFileCacheStore(NewOSFileSystem(), tmpDir)
+	wholeFileHash, _ := realCache.ComputeFileChecksum(destFile)
+
+	// Now modify ONLY the vendored lines (position 3-4)
+	modified := "line1\nline2\nMODIFIED-a\nMODIFIED-b\nline5\n"
+	if err := os.WriteFile(destFile, []byte(modified), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "test-vendor",
+			URL:  "https://github.com/owner/repo",
+			Specs: []types.BranchSpec{{
+				Ref:     "main",
+				Mapping: []types.PathMapping{{From: "src/a.go:L3-L4", To: destFile + ":L3-L4"}},
+			}},
+		}},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name:       "test-vendor",
+			Ref:        "main",
+			CommitHash: "abc123",
+			FileHashes: map[string]string{destFile: wholeFileHash}, // old hash
+			Positions: []types.PositionLock{{
+				From:       "src/a.go:L3-L4",
+				To:         destFile + ":L3-L4",
+				SourceHash: sourceHash,
+			}},
+		}},
+	}, nil)
+
+	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
+	result, err := service.Verify()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "FAIL" {
+		t.Errorf("Expected FAIL, got %s", result.Summary.Result)
+	}
+	// Both whole-file and position should be modified
+	if result.Summary.Modified < 1 {
+		t.Errorf("Expected at least 1 modified, got %d", result.Summary.Modified)
+	}
+
+	// Find the position-level entry
+	found := false
+	for _, f := range result.Files {
+		if f.Path == destFile+":L3-L4" && f.Status == "modified" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected a position-level 'modified' entry for destFile:L3-L4")
+	}
+}
+
+func TestVerify_PositionExtraction_WholeFileDest(t *testing.T) {
+	// Position extraction to whole file (no dest position) — verify by whole-file hash
+	tmpDir := t.TempDir()
+
+	destFile := filepath.Join(tmpDir, "lib", "snippet.go")
+	if err := os.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destFile, []byte("extracted content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	realCache := NewFileCacheStore(NewOSFileSystem(), tmpDir)
+	wholeHash, _ := realCache.ComputeFileChecksum(destFile)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "test-vendor",
+			URL:  "https://github.com/owner/repo",
+			Specs: []types.BranchSpec{{
+				Ref:     "main",
+				Mapping: []types.PathMapping{{From: "src/a.go:L5-L10", To: destFile}},
+			}},
+		}},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name:       "test-vendor",
+			Ref:        "main",
+			CommitHash: "abc123",
+			FileHashes: map[string]string{destFile: wholeHash},
+			Positions: []types.PositionLock{{
+				From:       "src/a.go:L5-L10",
+				To:         destFile,
+				SourceHash: wholeHash, // source content = whole file content
+			}},
+		}},
+	}, nil)
+
+	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
+	result, err := service.Verify()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Both whole-file and position-level should verify
+	if result.Summary.Result != "PASS" {
+		t.Errorf("Expected PASS, got %s", result.Summary.Result)
+	}
+	if result.Summary.Verified != 2 {
+		t.Errorf("Expected 2 verified, got %d", result.Summary.Verified)
+	}
+}
+
+func TestVerify_PositionExtraction_DeletedFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	destFile := filepath.Join(tmpDir, "lib", "missing.go")
+	// Don't create the file — it's been deleted
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "test-vendor",
+			URL:  "https://github.com/owner/repo",
+			Specs: []types.BranchSpec{{
+				Ref:     "main",
+				Mapping: []types.PathMapping{{From: "src/a.go:L5-L10", To: destFile + ":L2-L5"}},
+			}},
+		}},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name:       "test-vendor",
+			Ref:        "main",
+			CommitHash: "abc123",
+			FileHashes: map[string]string{destFile: "somehash"},
+			Positions: []types.PositionLock{{
+				From:       "src/a.go:L5-L10",
+				To:         destFile + ":L2-L5",
+				SourceHash: "sha256:abc",
+			}},
+		}},
+	}, nil)
+
+	// Whole-file hash check finds the file deleted
+	// cache.ComputeFileChecksum returns os.ErrNotExist (file not in cache.files)
+
+	// Mock fs.Stat for findAddedFiles
+	fs.EXPECT().Stat(destFile).Return(nil, os.ErrNotExist)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, tmpDir)
+	result, err := service.Verify()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "FAIL" {
+		t.Errorf("Expected FAIL, got %s", result.Summary.Result)
+	}
+	// Should have 2 deleted entries: whole-file + position
+	if result.Summary.Deleted < 2 {
+		t.Errorf("Expected at least 2 deleted (whole + position), got %d", result.Summary.Deleted)
+	}
+}
+
+// joinLines joins strings with newlines and adds trailing newline
+func joinLines(lines []string) string {
+	result := ""
+	for _, l := range lines {
+		result += l + "\n"
+	}
+	return result
 }
