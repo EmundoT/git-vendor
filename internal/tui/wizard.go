@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -54,31 +53,17 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 		Placeholder("https://github.com/owner/repo or https://gitlab.com/group/project").
 		Description("Paste a full repo URL or a specific file link (GitHub, GitLab, Bitbucket, or any git URL)").
 		Value(&rawURL).
-		Validate(func(s string) error {
-			if s == "" {
-				return fmt.Errorf("URL cannot be empty")
-			}
-			s = strings.TrimSpace(s)
-			// Allow any git URL - provider registry handles platform detection
-			if !isValidGitURL(s) {
-				return fmt.Errorf("invalid git URL format")
-			}
-			return nil
-		}).
+		Validate(validateURL).
 		Run()
 	check(err)
 
 	baseURL, smartRef, smartPath := manager.ParseSmartURL(rawURL)
 	url = baseURL
-	ref = core.DefaultRef
-	if smartRef != "" {
-		ref = smartRef
-	}
+	ref = resolveRef(smartRef, core.DefaultRef)
 
-	baseName := path.Base(url)
-	name = strings.TrimSuffix(baseName, ".git")
+	name = inferVendorName(url)
 
-	existing, exists := existingVendors[url]
+	existing, exists := isExistingVendor(url, existingVendors)
 	isAppending := false
 
 	if exists {
@@ -103,29 +88,18 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 		check(err)
 	}
 
-	// Create base spec
-	spec := types.VendorSpec{
-		Name: name,
-		URL:  url,
-		Specs: []types.BranchSpec{
-			{Ref: ref, Mapping: []types.PathMapping{}},
-		},
-	}
+	spec := newBaseSpec(name, url, ref)
 
 	// Handle deep link path if present
-	if smartPath != "" {
+	if isRootSmartPath(smartPath) {
 		useDeep := true
 		err = huh.NewConfirm().Title("Track specific path?").Description(smartPath).Value(&useDeep).Run()
 		check(err)
 		if useDeep {
 			var dest string
-			autoName := path.Base(smartPath)
-			if autoName == "" || autoName == "." || autoName == "/" {
-				autoName = "(repository root)"
-			}
-			description := fmt.Sprintf("Leave empty for automatic naming (will use: %s)", autoName)
+			description := deepLinkDescription(smartPath)
 			_ = huh.NewInput().Title("Local Target").Description(description).Value(&dest).Run()
-			spec.Specs[0].Mapping = append(spec.Specs[0].Mapping, types.PathMapping{From: smartPath, To: dest})
+			addMappingToFirstSpec(&spec, smartPath, dest)
 		}
 	}
 
@@ -143,21 +117,8 @@ func RunEditVendorWizard(mgr interface{}, vendor *types.VendorSpec) *types.Vendo
 		// 1. Select Ref (Branch) to Edit
 		var branchOpts []huh.Option[string]
 		for i, s := range vendor.Specs {
-			// Get lock status
-			status := "not synced"
-			if hash := manager.GetLockHash(vendor.Name, s.Ref); hash != "" {
-				status = fmt.Sprintf("locked: %s", hash[:7])
-			}
-
-			// Show number of paths instead of "mappings"
-			pathCount := "no paths"
-			if len(s.Mapping) == 1 {
-				pathCount = "1 path"
-			} else if len(s.Mapping) > 1 {
-				pathCount = fmt.Sprintf("%d paths", len(s.Mapping))
-			}
-
-			label := fmt.Sprintf("%s (%s, %s)", s.Ref, pathCount, status)
+			lockHash := manager.GetLockHash(vendor.Name, s.Ref)
+			label := formatBranchLabel(s.Ref, len(s.Mapping), lockHash)
 			branchOpts = append(branchOpts, huh.NewOption(label, fmt.Sprintf("%d", i)))
 		}
 		branchOpts = append(branchOpts, huh.NewOption("+ Add New Branch", "new"))
@@ -207,11 +168,7 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 	for {
 		var opts []huh.Option[string]
 		for i, m := range branch.Mapping {
-			dest := m.To
-			if dest == "" {
-				dest = "(auto)"
-			}
-			label := fmt.Sprintf("%-20s → %s", truncate(m.From, 20), dest)
+			label := formatMappingLabel(m.From, m.To)
 			opts = append(opts, huh.NewOption(label, fmt.Sprintf("%d", i)))
 		}
 		opts = append(opts, huh.NewOption("+ Add Path", "add"))
@@ -261,7 +218,7 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 				Value(&confirmDelete).
 				Run()
 			if confirmDelete {
-				branch.Mapping = append(branch.Mapping[:idx], branch.Mapping[idx+1:]...)
+				branch.Mapping = deleteMapping(branch.Mapping, idx)
 			}
 		case "edit":
 			_ = huh.NewInput().
@@ -271,13 +228,7 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 				Validate(validateFromPath).
 				Run()
 
-			// Show auto-naming preview — strip position specifier for preview
-			fromFile, _, _ := types.ParsePathPosition(branch.Mapping[idx].From)
-			autoName := path.Base(fromFile)
-			if autoName == "" || autoName == "." || autoName == "/" {
-				autoName = "(repository root)"
-			}
-			description := fmt.Sprintf("Leave empty for automatic naming (will use: %s). Supports :L5-L10 position syntax", autoName)
+			description := autoTargetDescription(branch.Mapping[idx].From)
 			_ = huh.NewInput().
 				Title("Local Target").
 				Description(description).
@@ -332,13 +283,7 @@ func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 			return nil
 		} // User cancelled
 	} else {
-		// Show preview of auto-generated name — strip position specifier for preview
-		fromFile, _, _ := types.ParsePathPosition(m.From)
-		autoName := path.Base(fromFile)
-		if autoName == "" || autoName == "." || autoName == "/" {
-			autoName = "(repository root)"
-		}
-		description := fmt.Sprintf("Leave empty for automatic naming (will use: %s). Supports :L5-L10 position syntax", autoName)
+		description := autoTargetDescription(m.From)
 		_ = huh.NewInput().
 			Title("Local Target").
 			Description(description).
@@ -354,9 +299,7 @@ func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 // runRemoteBrowser uses VendorManager.FetchRepoDir to list contents via git ls-tree.
 // Returns the selected file/directory path, or empty string if cancelled.
 func runRemoteBrowser(mgr VendorManager, url, ref string) string {
-	// Extract repo name from URL for breadcrumb
-	repoName := path.Base(url)
-	repoName = strings.TrimSuffix(repoName, ".git")
+	repoName := repoNameFromURL(url)
 
 	currentDir := ""
 	for {
@@ -369,27 +312,15 @@ func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 		var opts []huh.Option[string]
 		if currentDir != "" {
 			opts = append(opts, huh.NewOption(".. (Go Up)", ".."))
-			opts = append(opts, huh.NewOption(fmt.Sprintf("✔ Select '/%s'", currentDir), "SELECT_CURRENT"))
-		} else {
-			opts = append(opts, huh.NewOption("✔ Select Root", "SELECT_CURRENT"))
 		}
+		opts = append(opts, huh.NewOption(selectCurrentLabel(currentDir), "SELECT_CURRENT"))
 
 		for _, item := range items {
-			var label string
-			if strings.HasSuffix(item, "/") {
-				label = "📂 " + item
-			} else {
-				label = "📄 " + item
-			}
-			opts = append(opts, huh.NewOption(label, item))
+			opts = append(opts, huh.NewOption(itemLabel(item), item))
 		}
 		opts = append(opts, huh.NewOption("❌ Cancel", "CANCEL"))
 
-		// Build breadcrumb trail
-		breadcrumb := repoName + " @ " + ref
-		if currentDir != "" {
-			breadcrumb += " / " + strings.ReplaceAll(currentDir, "/", " / ")
-		}
+		breadcrumb := buildBreadcrumb(repoName, ref, currentDir)
 
 		var selection string
 		_ = huh.NewSelect[string]().
@@ -407,25 +338,15 @@ func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 			return currentDir
 		}
 		if selection == ".." {
-			currentDir = path.Dir(strings.TrimSuffix(currentDir, "/"))
-			if currentDir == "." {
-				currentDir = ""
-			}
+			currentDir = navigateUp(currentDir)
 			continue
 		}
-		if strings.HasSuffix(selection, "/") {
-			if currentDir == "" {
-				currentDir = strings.TrimSuffix(selection, "/")
-			} else {
-				currentDir = currentDir + "/" + strings.TrimSuffix(selection, "/")
-			}
-		} else {
-			full := selection
-			if currentDir != "" {
-				full = currentDir + "/" + selection
-			}
-			return full
+
+		newDir, file, isFile := resolveRemoteSelection(selection, currentDir)
+		if isFile {
+			return file
 		}
+		currentDir = newDir
 	}
 }
 
@@ -442,25 +363,19 @@ func runLocalBrowser(mgr VendorManager) string {
 		}
 
 		var opts []huh.Option[string]
-		if currentDir != "." {
+		if hasLocalParent(currentDir) {
 			opts = append(opts, huh.NewOption(".. (Go Up)", ".."))
 		}
-		opts = append(opts, huh.NewOption(fmt.Sprintf("✔ Select '%s'", currentDir), "SELECT_CURRENT"))
+		opts = append(opts, huh.NewOption(selectCurrentLabel(currentDir), "SELECT_CURRENT"))
 
 		for _, item := range items {
-			var label string
-			if strings.HasSuffix(item, "/") {
-				label = "📂 " + item
-			} else {
-				label = "📄 " + item
-			}
-			opts = append(opts, huh.NewOption(label, item))
+			opts = append(opts, huh.NewOption(itemLabel(item), item))
 		}
 		opts = append(opts, huh.NewOption("❌ Cancel", "CANCEL"))
 
 		var selection string
 		_ = huh.NewSelect[string]().
-			Title(fmt.Sprintf("Local: %s", currentDir)).
+			Title(selectLocalLabel(currentDir)).
 			Description("Navigate: ↑↓ | Select file/folder: Enter | Cancel: Ctrl+C").
 			Options(opts...).
 			Value(&selection).
@@ -474,14 +389,14 @@ func runLocalBrowser(mgr VendorManager) string {
 			return currentDir
 		}
 		if selection == ".." {
-			currentDir = path.Dir(currentDir)
+			currentDir = navigateLocalUp(currentDir)
 			continue
 		}
-		if strings.HasSuffix(selection, "/") {
-			currentDir = path.Join(currentDir, selection)
-		} else {
-			return path.Join(currentDir, selection)
+		newDir, file, isFile := resolveLocalSelection(selection, currentDir)
+		if isFile {
+			return file
 		}
+		currentDir = newDir
 	}
 }
 
@@ -643,24 +558,13 @@ func ShowConflictWarnings(mgr VendorManager, vendorName string) {
 		return // Silently skip if detection fails
 	}
 
-	// Filter conflicts for this vendor
-	var vendorConflicts []types.PathConflict
-	for _, c := range conflicts {
-		if c.Vendor1 == vendorName || c.Vendor2 == vendorName {
-			vendorConflicts = append(vendorConflicts, c)
-		}
-	}
+	vendorConflicts := filterConflictsForVendor(conflicts, vendorName)
 
 	if len(vendorConflicts) > 0 {
 		fmt.Println()
 		PrintWarning("Path Conflicts Detected", fmt.Sprintf("Found %s with this vendor", core.Pluralize(len(vendorConflicts), "conflict", "conflicts")))
-		for _, c := range vendorConflicts {
-			fmt.Printf("  ⚠ %s\n", c.Path)
-			other := c.Vendor2
-			if c.Vendor2 == vendorName {
-				other = c.Vendor1
-			}
-			fmt.Printf("    Conflicts with vendor: %s\n", other)
+		for i := range vendorConflicts {
+			fmt.Println(formatConflictDetail(vendorConflicts[i].Path, otherVendorInConflict(&vendorConflicts[i], vendorName)))
 		}
 		fmt.Println()
 		fmt.Println("  Run 'git-vendor validate' for full details")
