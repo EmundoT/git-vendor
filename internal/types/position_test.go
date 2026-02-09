@@ -605,3 +605,255 @@ func TestPositionLock_OmittedWhenEmpty(t *testing.T) {
 		t.Errorf("YAML should omit positions when empty, got:\n%s", string(data))
 	}
 }
+
+// ============================================================================
+// Edge Case Tests — Malformed Specs and Boundary Conditions
+// ============================================================================
+
+func TestParsePathPosition_MalformedSpecs(t *testing.T) {
+	// Specs that almost match a valid pattern but should fail or return no position.
+	tests := []struct {
+		name      string
+		path      string
+		wantErr   bool
+		wantNoPos bool // true = expect no position (path returned as-is)
+	}{
+		// Malformed: digit after L but incomplete range syntax
+		{name: "L5-L (no end digit)", path: "file.go:L5-L", wantErr: true},
+		// Malformed: column specifier missing digit after C
+		{name: "L5C:L10C3 (C with no start col)", path: "file.go:L5C:L10C3", wantErr: true},
+		// Malformed: trailing garbage after valid single line
+		{name: "L5XYZ (trailing garbage)", path: "file.go:L5XYZ", wantErr: true},
+		// Malformed: EOF but with extra text
+		{name: "L5-EOFX (extra after EOF)", path: "file.go:L5-EOFX", wantErr: true},
+		// Malformed: dash without second L
+		{name: "L5-10 (dash without L prefix)", path: "file.go:L5-10", wantErr: true},
+		// Malformed: colon range without second L
+		{name: "L5:10 (colon without L prefix)", path: "file.go:L5:10", wantErr: true},
+		// No position: colon followed by L but no digit
+		{name: ":L no digit", path: "file.go:L", wantNoPos: true},
+		// No position: colon followed by lowercase l + digit
+		{name: "lowercase l5", path: "file.go:l5", wantNoPos: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file, pos, err := ParsePathPosition(tt.path)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got file=%q pos=%+v", file, pos)
+				}
+				return
+			}
+			if tt.wantNoPos {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if pos != nil {
+					t.Errorf("expected nil position, got %+v", pos)
+				}
+				if file != tt.path {
+					t.Errorf("file = %q, want %q (full path unchanged)", file, tt.path)
+				}
+				return
+			}
+		})
+	}
+}
+
+func TestParsePathPosition_DoubleColonPaths(t *testing.T) {
+	// Double-colon in path: the first ":L<digit>" wins
+	tests := []struct {
+		name      string
+		path      string
+		wantFile  string
+		wantStart int
+		wantNoPos bool
+	}{
+		{
+			name:      "double colon then position",
+			path:      "host::path:L5",
+			wantFile:  "host::path",
+			wantStart: 5,
+		},
+		{
+			name:      "adjacent colon before L",
+			path:      "file.go::L10",
+			wantFile:  "file.go:",
+			wantStart: 10,
+		},
+		{
+			name:      "double colon no position",
+			path:      "host::port::data",
+			wantNoPos: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file, pos, err := ParsePathPosition(tt.path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantNoPos {
+				if pos != nil {
+					t.Errorf("expected no position, got %+v", pos)
+				}
+				return
+			}
+			if file != tt.wantFile {
+				t.Errorf("file = %q, want %q", file, tt.wantFile)
+			}
+			if pos == nil {
+				t.Fatalf("expected position, got nil")
+			}
+			if pos.StartLine != tt.wantStart {
+				t.Errorf("StartLine = %d, want %d", pos.StartLine, tt.wantStart)
+			}
+		})
+	}
+}
+
+func TestParsePathPosition_OverflowLineNumbers(t *testing.T) {
+	// Numbers that overflow int should produce a strconv error, not a panic
+	_, _, err := ParsePathPosition("file.go:L99999999999999999999")
+	if err == nil {
+		t.Error("expected error for overflow line number, got nil")
+	}
+
+	_, _, err = ParsePathPosition("file.go:L99999999999999999999-L99999999999999999999")
+	if err == nil {
+		t.Error("expected error for overflow line range, got nil")
+	}
+
+	_, _, err = ParsePathPosition("file.go:L99999999999999999999-EOF")
+	if err == nil {
+		t.Error("expected error for overflow EOF range, got nil")
+	}
+
+	_, _, err = ParsePathPosition("file.go:L99999999999999999999C1:L99999999999999999999C1")
+	if err == nil {
+		t.Error("expected error for overflow column range, got nil")
+	}
+}
+
+func TestParsePathPosition_ShortStrings(t *testing.T) {
+	// Test strings near the boundary of findPositionStart's i < len(path)-2 guard.
+	tests := []struct {
+		name      string
+		path      string
+		wantFile  string
+		wantNoPos bool
+		wantErr   bool
+	}{
+		{name: "len 0 (empty)", path: "", wantFile: "", wantNoPos: true},
+		{name: "len 1", path: "x", wantFile: "x", wantNoPos: true},
+		{name: "len 2 :L", path: ":L", wantFile: ":L", wantNoPos: true},     // no digit after L
+		{name: "len 3 :L1", path: ":L1", wantErr: true},                      // empty file path
+		{name: "len 4 a:L1", path: "a:L1", wantFile: "a"},                    // minimal valid
+		{name: "len 3 L5X", path: "L5X", wantFile: "L5X", wantNoPos: true},   // no colon
+		{name: "len 2 :5", path: ":5", wantFile: ":5", wantNoPos: true},      // no L
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file, pos, err := ParsePathPosition(tt.path)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantNoPos {
+				if pos != nil {
+					t.Errorf("expected nil position, got %+v", pos)
+				}
+				if file != tt.wantFile {
+					t.Errorf("file = %q, want %q", file, tt.wantFile)
+				}
+				return
+			}
+			if file != tt.wantFile {
+				t.Errorf("file = %q, want %q", file, tt.wantFile)
+			}
+			if pos == nil {
+				t.Error("expected position, got nil")
+			}
+		})
+	}
+}
+
+func TestParsePathPosition_ColumnZeroValueFields(t *testing.T) {
+	// Zero-value column fields should be rejected
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "zero start col", path: "file.go:L1C0:L1C5"},
+		{name: "zero end col", path: "file.go:L1C1:L1C0"},
+		{name: "zero both cols", path: "file.go:L1C0:L1C0"},
+		{name: "zero start line with cols", path: "file.go:L0C1:L5C10"},
+		{name: "end line before start with cols", path: "file.go:L10C1:L5C10"},
+		{name: "end col before start col same line", path: "file.go:L5C20:L5C10"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := ParsePathPosition(tt.path)
+			if err == nil {
+				t.Error("expected error for invalid column spec, got nil")
+			}
+		})
+	}
+}
+
+func TestParsePathPosition_WindowsDoubleColonDriveLetter(t *testing.T) {
+	// Windows UNC and paths with multiple colons combined with position specs
+	tests := []struct {
+		name      string
+		path      string
+		wantFile  string
+		wantStart int
+		wantNoPos bool
+	}{
+		{
+			name:      "UNC-like path with position",
+			path:      `\\server\share\file.go:L15`,
+			wantFile:  `\\server\share\file.go`,
+			wantStart: 15,
+		},
+		{
+			name:      "double backslash no position",
+			path:      `\\server\share\file.go`,
+			wantFile:  `\\server\share\file.go`,
+			wantNoPos: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file, pos, err := ParsePathPosition(tt.path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantNoPos {
+				if pos != nil {
+					t.Errorf("expected nil position, got %+v", pos)
+				}
+				return
+			}
+			if file != tt.wantFile {
+				t.Errorf("file = %q, want %q", file, tt.wantFile)
+			}
+			if pos == nil {
+				t.Fatalf("expected position, got nil")
+			}
+			if pos.StartLine != tt.wantStart {
+				t.Errorf("StartLine = %d, want %d", pos.StartLine, tt.wantStart)
+			}
+		})
+	}
+}
