@@ -45,6 +45,7 @@ func createTestRepository(t *testing.T, name string) string {
 	runGit(t, repoDir, "init")
 	runGit(t, repoDir, "config", "user.email", "test@example.com")
 	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "config", "commit.gpgsign", "false")
 
 	return repoDir
 }
