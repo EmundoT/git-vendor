@@ -482,10 +482,12 @@ func (s *VendorSyncer) CheckSyncStatus() (types.SyncStatus, error) {
 		}
 
 		vendorStatuses = append(vendorStatuses, types.VendorStatus{
-			Name:         lockEntry.Name,
-			Ref:          lockEntry.Ref,
-			IsSynced:     isSynced,
-			MissingPaths: missingPaths,
+			Name:          lockEntry.Name,
+			Ref:           lockEntry.Ref,
+			IsSynced:      isSynced,
+			MissingPaths:  missingPaths,
+			FileCount:     len(matchingSpec.Mapping),
+			PositionCount: len(lockEntry.Positions),
 		})
 	}
 

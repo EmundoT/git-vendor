@@ -139,6 +139,10 @@ func TestVerify_AllPass(t *testing.T) {
 	if result.Summary.TotalFiles != 1 {
 		t.Errorf("Expected 1 total file, got %d", result.Summary.TotalFiles)
 	}
+
+	if result.Files[0].Type != "file" {
+		t.Errorf("Expected type 'file', got '%s'", result.Files[0].Type)
+	}
 }
 
 func TestVerify_ModifiedFile(t *testing.T) {
@@ -211,6 +215,10 @@ func TestVerify_ModifiedFile(t *testing.T) {
 
 	if result.Files[0].Status != "modified" {
 		t.Errorf("Expected status 'modified', got '%s'", result.Files[0].Status)
+	}
+
+	if result.Files[0].Type != "file" {
+		t.Errorf("Expected type 'file', got '%s'", result.Files[0].Type)
 	}
 
 	if result.Files[0].ExpectedHash == nil || *result.Files[0].ExpectedHash != "original123hash" {
@@ -291,6 +299,10 @@ func TestVerify_DeletedFile(t *testing.T) {
 
 	if result.Files[0].Status != "deleted" {
 		t.Errorf("Expected status 'deleted', got '%s'", result.Files[0].Status)
+	}
+
+	if result.Files[0].Type != "file" {
+		t.Errorf("Expected type 'file', got '%s'", result.Files[0].Type)
 	}
 
 	if result.Files[0].ActualHash != nil {
@@ -475,6 +487,11 @@ func TestVerify_JSONOutput(t *testing.T) {
 
 	if parsed.Summary.Result != "PASS" {
 		t.Errorf("Expected PASS in parsed JSON, got %s", parsed.Summary.Result)
+	}
+
+	// Verify type field is present in JSON roundtrip
+	if len(parsed.Files) > 0 && parsed.Files[0].Type != "file" {
+		t.Errorf("Expected type 'file' in parsed JSON, got '%s'", parsed.Files[0].Type)
 	}
 }
 
@@ -761,6 +778,30 @@ func TestVerify_PositionExtraction_Verified(t *testing.T) {
 	if result.Summary.Result != "PASS" {
 		t.Errorf("Expected PASS, got %s", result.Summary.Result)
 	}
+
+	// Verify type fields are set correctly
+	fileFound, posFound := false, false
+	for _, f := range result.Files {
+		switch f.Type {
+		case "file":
+			fileFound = true
+		case "position":
+			posFound = true
+			if f.Position == nil {
+				t.Error("Expected Position detail to be set for position-type entry")
+			} else {
+				if f.Position.From != "api/constants.go:L4-L6" {
+					t.Errorf("Expected Position.From 'api/constants.go:L4-L6', got '%s'", f.Position.From)
+				}
+			}
+		}
+	}
+	if !fileFound {
+		t.Error("Expected a file-type entry in results")
+	}
+	if !posFound {
+		t.Error("Expected a position-type entry in results")
+	}
 }
 
 func TestVerify_PositionExtraction_Modified(t *testing.T) {
@@ -840,6 +881,12 @@ func TestVerify_PositionExtraction_Modified(t *testing.T) {
 	for _, f := range result.Files {
 		if f.Path == destFile+":L3-L4" && f.Status == "modified" {
 			found = true
+			if f.Type != "position" {
+				t.Errorf("Expected type 'position' for position entry, got '%s'", f.Type)
+			}
+			if f.Position == nil {
+				t.Error("Expected Position detail for position-type modified entry")
+			}
 			break
 		}
 	}
@@ -906,6 +953,13 @@ func TestVerify_PositionExtraction_WholeFileDest(t *testing.T) {
 	if result.Summary.Verified != 2 {
 		t.Errorf("Expected 2 verified, got %d", result.Summary.Verified)
 	}
+
+	// Verify type fields
+	for _, f := range result.Files {
+		if f.Type != "file" && f.Type != "position" {
+			t.Errorf("Unexpected type '%s'", f.Type)
+		}
+	}
 }
 
 func TestVerify_PositionExtraction_DeletedFile(t *testing.T) {
@@ -963,6 +1017,26 @@ func TestVerify_PositionExtraction_DeletedFile(t *testing.T) {
 	// Should have 2 deleted entries: whole-file + position
 	if result.Summary.Deleted < 2 {
 		t.Errorf("Expected at least 2 deleted (whole + position), got %d", result.Summary.Deleted)
+	}
+
+	// Verify both types are represented
+	hasFile, hasPos := false, false
+	for _, f := range result.Files {
+		if f.Type == "file" {
+			hasFile = true
+		}
+		if f.Type == "position" {
+			hasPos = true
+			if f.Position == nil {
+				t.Error("Expected Position detail on position-type deleted entry")
+			}
+		}
+	}
+	if !hasFile {
+		t.Error("Expected a file-type deleted entry")
+	}
+	if !hasPos {
+		t.Error("Expected a position-type deleted entry")
 	}
 }
 
