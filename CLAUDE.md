@@ -509,6 +509,38 @@ go test -v ./...
 
 **Note:** Mock files (`*_mock_test.go`) are auto-generated and git-ignored. Generate them locally before running tests.
 
+### Testing Boundaries (git-vendor vs git-plumbing)
+
+git-vendor delegates all git operations to `git-plumbing` via the `SystemGitClient.gitFor()` adapter pattern. Understanding what each layer tests prevents duplication and focuses effort correctly.
+
+**What git-plumbing tests (do NOT re-test here):**
+
+git-plumbing integration tests cover all git CLI primitives with real repos:
+
+- Git operations: `Clone()`, `Fetch()`, `Init()`, `Checkout()`, `Add()`, `Commit()`, `Log()`, `TagsAt()`, `ListTree()`, `Branches()`, `DiffStat()`, `Status()`, `ShowRef()`, `ForEachRef()`, `AddNote()`, `GetNote()`
+- Error sentinels: `ErrNotRepo`, `ErrDirtyTree`, `ErrDetachedHead`, `ErrRefNotFound`, `ErrConflict`
+- `GitError` wrapping with stderr capture, `IsNotRepo()` helper
+- Parsing: null-byte delimited log format, trailer extraction, numstat parsing
+- Edge cases: empty repos, detached HEAD, merge conflicts, invalid refs, shallow clones
+
+**What git-vendor MUST test (its own orchestration layer):**
+
+- **Mock-based service tests**: Sync orchestration, update flow, config validation, license compliance, diff computation, file copy logic, parallel execution, hook execution, position extraction/placement, verification — all via mocked `GitClient`, `FileSystem`, `ConfigStore`, `LockStore` interfaces
+- **SystemGitClient adapter logic**: Type conversions between git-plumbing's types and git-vendor's types (e.g., `git.Commit` → `types.CommitInfo`). Semver tag preference logic (`isSemverTag`) in `GetTagForCommit()`. Date format handling.
+- **URL parsing**: `ParseSmartURL()`, `cleanURL()` — pure string parsing, not git operations
+- **Position extraction**: `ParsePathPosition()`, `ExtractPosition()`, `PlaceContent()` — file content manipulation unique to git-vendor
+- **Error types**: Structured error formatting (`VendorNotFoundError`, `ErrNotInitialized`, etc.) with `Error()`, `Is()`, `As()` chains
+
+**What is intentionally untested:**
+
+- `main.go` CLI dispatch — too coupled to TUI/stdout/os.Exit
+- TUI wizard interactions — `charmbracelet/huh` forms not amenable to unit testing
+- `internal/version/` — trivial var set via ldflags
+
+**Known duplication (acceptable):**
+
+`git_operations_test.go` and `integration_test.go` contain some tests that exercise raw git behavior (Clone, ListTree, Fetch chains) already covered by git-plumbing. These exist as smoke tests for the adapter layer and are gated behind `//go:build integration`. They MAY be pruned if git-plumbing's coverage proves sufficient, but are low-cost to maintain.
+
 ### Dependencies
 
 **Runtime:**
