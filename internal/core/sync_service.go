@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -568,18 +569,24 @@ func (s *SyncService) fetchWithFallback(tempDir, ref string) error {
 	return nil
 }
 
-// canSkipSync checks if a vendor@ref can skip sync based on cache
+// canSkipSync checks if a vendor@ref can skip sync based on cache.
+// Returns false (forcing a re-sync) on any cache error, missing files, or checksum mismatch.
 func (s *SyncService) canSkipSync(vendorName, ref, commitHash string, mappings []types.PathMapping) bool {
 	// Load cache for this vendor@ref
 	cache, err := s.cache.Load(vendorName, ref)
-	if err != nil || cache.CommitHash == "" {
-		// Cache miss or error - can't skip
+	if err != nil {
+		// Log corrupted cache so the user knows why cache was skipped
+		fmt.Printf("  ⚠ Warning: cache error for %s@%s: %v\n", vendorName, ref, err)
+		return false
+	}
+	if cache.CommitHash == "" {
+		// Cache miss - can't skip
 		return false
 	}
 
 	// Check if commit hash matches
 	if cache.CommitHash != commitHash {
-		// Commit hash changed - invalidate cache
+		// Commit hash changed - cache is stale
 		return false
 	}
 
@@ -603,9 +610,11 @@ func (s *SyncService) canSkipSync(vendorName, ref, commitHash string, mappings [
 			destFile = destPath
 		}
 
-		// Check if file exists
+		// Check if file exists.
+		// Uses errors.Is instead of os.IsNotExist to correctly handle wrapped errors
+		// (see Legacy Trap in CLAUDE.md: "os.IsNotExist for wrapped errors").
 		fullPath := filepath.Join(s.rootDir, destFile)
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		if _, err := os.Stat(fullPath); errors.Is(err, os.ErrNotExist) {
 			// File missing - can't skip
 			return false
 		}
