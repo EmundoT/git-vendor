@@ -111,7 +111,7 @@ The codebase follows clean architecture principles with proper separation of con
    - **verify_service.go**: `VerifyService` - verification against lockfile hashes + position-level checks
    - **validation_service.go**: `ValidationService` - config validation, conflict detection
    - **position_extract.go**: Position extraction and placement (ExtractPosition, PlaceContent)
-   - **git_operations.go**: `GitClient` interface - Git command operations
+   - **git_operations.go**: `GitClient` interface + `SystemGitClient` (delegates to git-plumbing via `gitFor()` helper)
    - **filesystem.go**: `FileSystem` interface - File I/O operations, CopyStats, ValidateDestPath
    - **github_client.go**: `LicenseChecker` interface - GitHub API license detection
    - **config_store.go**: `ConfigStore` interface - vendor.yml I/O
@@ -435,13 +435,16 @@ Display patterns:
 
 ### Git Operations
 
-Git operations use the `GitClient` interface (git_operations.go):
+Git operations use the `GitClient` interface (git_operations.go), delegating to git-plumbing:
 
 - `SystemGitClient` implements `GitClient` for production
-- Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`
-- Internal `run()` method executes git commands via `exec.Command`
-- Verbose mode logs commands to stderr when `--verbose` flag is used
-- Temp directories cleaned up with `defer fs.RemoveAll(tempDir)`
+- Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`, `GetCommitLog`, `GetTagForCommit`
+- `gitFor(dir)` helper creates `*git.Git` instances per-call (cheap allocation, no I/O)
+- All git execution delegated to git-plumbing (`github.com/emundoT/git-plumbing`) — no direct `exec.Command` calls
+- `GetCommitLog` adapter converts `git.Commit` → `types.CommitInfo` with date formatting (`time.Time` → `"2006-01-02 15:04:05 -0700"`)
+- `GetTagForCommit` adapter calls `TagsAt()` then applies local semver preference via `isSemverTag()`
+- Standalone: `GetGitUserIdentity()` → `git.Git{}.UserIdentity()`, `IsGitInstalled()` → `git.IsInstalled()`
+- Verbose mode propagated via `git.Git{Verbose: true}` which logs commands to stderr
 
 ## Development Notes
 
@@ -510,6 +513,7 @@ go test -v ./...
 
 **Runtime:**
 
+- `github.com/emundoT/git-plumbing` - Git CLI wrapper (self-vendored via git-vendor to `pkg/git-plumbing/`)
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
@@ -736,6 +740,10 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 **git_operations.go:**
 
+- `gitFor(dir)` - Create `*git.Git` instance for given directory (delegates to git-plumbing)
+- `GetCommitLog()` - Retrieve commit log between two refs (adapter: `git.Commit` → `types.CommitInfo`)
+- `GetTagForCommit()` - Get tag for commit with semver preference (wraps `TagsAt()`)
+- `GetGitUserIdentity()` - Get git user identity string (delegates to `git.Git{}.UserIdentity()`)
 - `ParseSmartURL()` - Extract repo/ref/path from GitHub URLs
 - `GitClient.ListTree()` - Browse remote directories via git ls-tree
 

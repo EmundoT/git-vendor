@@ -31,6 +31,10 @@ vendors:
             to: pkg/git-plumbing/status.go
           - from: diff.go
             to: pkg/git-plumbing/diff.go
+          - from: notes.go
+            to: pkg/git-plumbing/notes.go
+          - from: custom_refs.go
+            to: pkg/git-plumbing/custom_refs.go
           - from: testutil/repo.go
             to: pkg/git-plumbing/testutil/repo.go
           - from: testutil/fixtures.go

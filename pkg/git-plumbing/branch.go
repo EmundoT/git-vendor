@@ -52,3 +52,24 @@ func (g *Git) Branches(ctx context.Context) ([]BranchInfo, error) {
 	}
 	return branches, nil
 }
+
+// CreateBranch creates a new branch at the given start point without checking it out.
+// If startPoint is empty, CreateBranch creates the branch at HEAD.
+func (g *Git) CreateBranch(ctx context.Context, name, startPoint string) error {
+	args := []string{"branch", name}
+	if startPoint != "" {
+		args = append(args, startPoint)
+	}
+	return g.RunSilent(ctx, args...)
+}
+
+// DeleteBranch deletes a local branch.
+// If force is true, DeleteBranch uses -D (force delete even if not fully merged).
+// If force is false, DeleteBranch uses -d (safe delete, fails if not merged).
+func (g *Git) DeleteBranch(ctx context.Context, name string, force bool) error {
+	flag := "-d"
+	if force {
+		flag = "-D"
+	}
+	return g.RunSilent(ctx, "branch", flag, name)
+}
