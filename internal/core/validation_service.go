@@ -52,7 +52,7 @@ func (s *ValidationService) ValidateConfig() error {
 
 		// Validate vendor
 		if err := s.validateVendor(&vendor); err != nil {
-			return err
+			return fmt.Errorf("ValidateConfig: %w", err)
 		}
 	}
 
@@ -74,7 +74,7 @@ func (s *ValidationService) validateVendor(vendor *types.VendorSpec) error {
 	// Validate each spec
 	for _, spec := range vendor.Specs {
 		if err := s.validateSpec(vendor.Name, spec); err != nil {
-			return err
+			return fmt.Errorf("validateVendor: %w", err)
 		}
 	}
 
@@ -105,7 +105,7 @@ func (s *ValidationService) validateSpec(vendorName string, spec types.BranchSpe
 func (s *ValidationService) DetectConflicts() ([]types.PathConflict, error) {
 	config, err := s.configStore.Load()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("DetectConflicts: load config: %w", err)
 	}
 
 	// Build path ownership map

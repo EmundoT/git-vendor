@@ -35,7 +35,7 @@ func FindVendorIndex(vendors []types.VendorSpec, name string) int {
 func ForEachVendor(config types.VendorConfig, fn func(types.VendorSpec) error) error {
 	for _, v := range config.Vendors {
 		if err := fn(v); err != nil {
-			return err
+			return fmt.Errorf("ForEachVendor: vendor %s: %w", v.Name, err)
 		}
 	}
 	return nil
@@ -47,7 +47,7 @@ func ForEachMapping(vendor *types.VendorSpec, fn func(spec types.BranchSpec, map
 	for _, spec := range vendor.Specs {
 		for _, mapping := range spec.Mapping {
 			if err := fn(spec, mapping); err != nil {
-				return err
+				return fmt.Errorf("ForEachMapping: %w", err)
 			}
 		}
 	}
