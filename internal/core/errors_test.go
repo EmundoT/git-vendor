@@ -464,6 +464,8 @@ func TestAllIsHelpers_ReturnFalseForNil(t *testing.T) {
 		{"IsStaleCommit", IsStaleCommit},
 		{"IsCheckoutError", IsCheckoutError},
 		{"IsValidationError", IsValidationError},
+		{"IsHookError", IsHookError},
+		{"IsOSVAPIError", IsOSVAPIError},
 	}
 
 	for _, tt := range tests {
@@ -488,6 +490,8 @@ func TestAllIsHelpers_ReturnFalseForUnrelatedError(t *testing.T) {
 		{"IsStaleCommit", IsStaleCommit},
 		{"IsCheckoutError", IsCheckoutError},
 		{"IsValidationError", IsValidationError},
+		{"IsHookError", IsHookError},
+		{"IsOSVAPIError", IsOSVAPIError},
 	}
 
 	for _, tt := range tests {
@@ -507,7 +511,159 @@ func TestErrorTypes_ImplementErrorInterface(t *testing.T) {
 	var _ error = &StaleCommitError{}
 	var _ error = &CheckoutError{}
 	var _ error = &ValidationError{}
+	var _ error = &HookError{}
+	var _ error = &OSVAPIError{}
 
 	// Use t to satisfy linter
 	t.Log("All error types implement error interface")
+}
+
+// =============================================================================
+// HookError Tests
+// =============================================================================
+
+func TestHookError_Format(t *testing.T) {
+	cause := errors.New("exit status 1")
+	err := NewHookError("my-vendor", "pre-sync", "npm install", cause)
+
+	msg := err.Error()
+
+	if !strings.HasPrefix(msg, "Error:") {
+		t.Error("Error message should start with 'Error:'")
+	}
+	if !strings.Contains(msg, "pre-sync") {
+		t.Error("Error message should contain phase")
+	}
+	if !strings.Contains(msg, "my-vendor") {
+		t.Error("Error message should contain vendor name")
+	}
+	if !strings.Contains(msg, "exit status 1") {
+		t.Error("Error message should contain cause")
+	}
+	if !strings.Contains(msg, "npm install") {
+		t.Error("Error message should contain command")
+	}
+	if !strings.Contains(msg, "Fix:") {
+		t.Error("Error message should contain 'Fix:'")
+	}
+}
+
+func TestHookError_LongCommandTruncation(t *testing.T) {
+	longCmd := strings.Repeat("x", 200)
+	err := NewHookError("vendor", "post-sync", longCmd, nil)
+
+	msg := err.Error()
+	if strings.Contains(msg, strings.Repeat("x", 100)) {
+		t.Error("Long command should be truncated")
+	}
+	if !strings.Contains(msg, "...") {
+		t.Error("Truncated command should end with '...'")
+	}
+}
+
+func TestHookError_Unwrap(t *testing.T) {
+	cause := errors.New("underlying error")
+	err := NewHookError("v", "pre-sync", "cmd", cause)
+
+	if !errors.Is(err, cause) {
+		t.Error("errors.Is should find cause through Unwrap")
+	}
+}
+
+func TestHookError_IsHelper(t *testing.T) {
+	err := NewHookError("v", "pre-sync", "cmd", nil)
+
+	if !IsHookError(err) {
+		t.Error("IsHookError should return true for HookError")
+	}
+
+	wrapped := fmt.Errorf("sync: %w", err)
+	if !IsHookError(wrapped) {
+		t.Error("IsHookError should return true for wrapped HookError")
+	}
+
+	if IsHookError(errors.New("other")) {
+		t.Error("IsHookError should return false for other errors")
+	}
+
+	if IsHookError(nil) {
+		t.Error("IsHookError should return false for nil")
+	}
+}
+
+// =============================================================================
+// OSVAPIError Tests
+// =============================================================================
+
+func TestOSVAPIError_Format(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantIn     []string
+	}{
+		{
+			"Rate limit",
+			429,
+			"",
+			[]string{"HTTP 429", "Rate limited"},
+		},
+		{
+			"Server error",
+			500,
+			"",
+			[]string{"HTTP 500", "transient"},
+		},
+		{
+			"Client error with body",
+			400,
+			"bad request",
+			[]string{"HTTP 400", "Client error", "bad request", "Fix:"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := NewOSVAPIError(tt.statusCode, tt.body)
+			msg := err.Error()
+			for _, want := range tt.wantIn {
+				if !strings.Contains(msg, want) {
+					t.Errorf("Expected %q in error message, got: %s", want, msg)
+				}
+			}
+		})
+	}
+}
+
+func TestOSVAPIError_BodyTruncation(t *testing.T) {
+	longBody := strings.Repeat("a", 500)
+	err := NewOSVAPIError(400, longBody)
+
+	if len(err.Body) > 204 { // 200 + "..."
+		t.Errorf("Body should be truncated, got length %d", len(err.Body))
+	}
+	if !strings.HasSuffix(err.Body, "...") {
+		t.Error("Truncated body should end with '...'")
+	}
+}
+
+func TestOSVAPIError_IsHelper(t *testing.T) {
+	err := NewOSVAPIError(500, "error")
+
+	if !IsOSVAPIError(err) {
+		t.Error("IsOSVAPIError should return true for OSVAPIError")
+	}
+
+	wrapped := fmt.Errorf("scan: %w", err)
+	if !IsOSVAPIError(wrapped) {
+		t.Error("IsOSVAPIError should return true for wrapped OSVAPIError")
+	}
+
+	if IsOSVAPIError(errors.New("other")) {
+		t.Error("IsOSVAPIError should return false for other errors")
+	}
+
+	if IsOSVAPIError(nil) {
+		t.Error("IsOSVAPIError should return false for nil")
+	}
 }

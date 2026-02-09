@@ -1542,6 +1542,194 @@ func TestSync_GroupFilter_EmptyGroupName(t *testing.T) {
 }
 
 // ============================================================================
+// Sync Cache Behavior Tests - canSkipSync, NoCache flag, cache invalidation
+// ============================================================================
+// Test stubs (stubHookExecutor, stubFileCopyService, stubLicenseService) and
+// cache wrappers (errCacheStore, trackingCacheStore, newSyncServiceWithCache)
+// live in testhelpers_gomock_test.go alongside other shared test infrastructure.
+
+// TestSyncVendor_CacheError_ForcesResync verifies that canSkipSync returns false
+// when cache.Load() returns an error, causing a full re-sync.
+func TestSyncVendor_CacheError_ForcesResync(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	git := NewMockGitClient(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	cache := &errCacheStore{
+		mockCacheStore: newMockCacheStore(),
+		loadErr:        fmt.Errorf("corrupted cache file: unexpected end of JSON input"),
+	}
+
+	svc := newSyncServiceWithCache(git, fs, cache, "/project")
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/owner/mylib", "main")
+	lockedRefs := map[string]string{"main": "abc123def456"}
+
+	// canSkipSync returns false (cache error) → falls through to clone path
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/sync-test", nil)
+	fs.EXPECT().RemoveAll("/tmp/sync-test").Return(nil)
+	git.EXPECT().Init(gomock.Any(), "/tmp/sync-test").Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), "/tmp/sync-test", "origin", "https://github.com/owner/mylib").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/sync-test", 1, "main").Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), "/tmp/sync-test", "abc123def456").Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/sync-test").Return("abc123def456", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	result, stats, err := svc.SyncVendor(&vendor, lockedRefs, SyncOptions{})
+
+	if err != nil {
+		t.Fatalf("Expected success despite cache error, got: %v", err)
+	}
+	if result["main"].CommitHash != "abc123def456" {
+		t.Errorf("Expected commit hash abc123def456, got %s", result["main"].CommitHash)
+	}
+	if stats.FileCount == 0 {
+		t.Error("Expected files to be copied (full sync path)")
+	}
+}
+
+// TestSyncVendor_CacheHit_DestFileDeleted verifies that canSkipSync returns false
+// when the cache is valid but destination files no longer exist on disk.
+func TestSyncVendor_CacheHit_DestFileDeleted(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	git := NewMockGitClient(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	cache := newMockCacheStore()
+	// Populate cache with valid entry matching the lock
+	cache.caches["mylib@main"] = types.IncrementalSyncCache{
+		VendorName: "mylib",
+		Ref:        "main",
+		CommitHash: "abc123def456",
+		Files: []types.FileChecksum{
+			{Path: "lib/file.go", Hash: "sha256_aaa"},
+		},
+	}
+	// Do NOT populate cache.files for "lib/file.go" — ComputeFileChecksum will return os.ErrNotExist
+
+	svc := newSyncServiceWithCache(git, fs, cache, "/project")
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/owner/mylib", "main")
+	lockedRefs := map[string]string{"main": "abc123def456"}
+
+	// canSkipSync: cache loads OK, commit matches, but os.Stat on dest file fails
+	// The os.Stat call uses the real os package in canSkipSync, so we need to handle it.
+	// canSkipSync joins rootDir + destFile: /project/lib/file.go → os.Stat will fail (not exist)
+	// This triggers canSkipSync to return false → clone path
+
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/sync-test", nil)
+	fs.EXPECT().RemoveAll("/tmp/sync-test").Return(nil)
+	git.EXPECT().Init(gomock.Any(), "/tmp/sync-test").Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), "/tmp/sync-test", "origin", "https://github.com/owner/mylib").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/sync-test", 1, "main").Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), "/tmp/sync-test", "abc123def456").Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/sync-test").Return("abc123def456", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	result, stats, err := svc.SyncVendor(&vendor, lockedRefs, SyncOptions{})
+
+	if err != nil {
+		t.Fatalf("Expected success (re-sync after cache miss), got: %v", err)
+	}
+	if result["main"].CommitHash != "abc123def456" {
+		t.Errorf("Expected commit hash abc123def456, got %s", result["main"].CommitHash)
+	}
+	if stats.FileCount == 0 {
+		t.Error("Expected files to be copied (full sync path, not cache hit)")
+	}
+}
+
+// TestSyncVendor_CommitHashMismatch_ForcesResync verifies that canSkipSync returns false
+// when the cached commit hash doesn't match the locked commit hash.
+func TestSyncVendor_CommitHashMismatch_ForcesResync(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	git := NewMockGitClient(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	cache := newMockCacheStore()
+	// Cache has an old commit hash that doesn't match the lock
+	cache.caches["mylib@main"] = types.IncrementalSyncCache{
+		VendorName: "mylib",
+		Ref:        "main",
+		CommitHash: "old_stale_hash_000",
+		Files: []types.FileChecksum{
+			{Path: "lib/file.go", Hash: "sha256_old"},
+		},
+	}
+
+	svc := newSyncServiceWithCache(git, fs, cache, "/project")
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/owner/mylib", "main")
+	lockedRefs := map[string]string{"main": "new_commit_hash_999"}
+
+	// canSkipSync: cache loads OK, but commit hash differs → returns false → clone path
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/sync-test", nil)
+	fs.EXPECT().RemoveAll("/tmp/sync-test").Return(nil)
+	git.EXPECT().Init(gomock.Any(), "/tmp/sync-test").Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), "/tmp/sync-test", "origin", "https://github.com/owner/mylib").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/sync-test", 1, "main").Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), "/tmp/sync-test", "new_commit_hash_999").Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/sync-test").Return("new_commit_hash_999", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	result, _, err := svc.SyncVendor(&vendor, lockedRefs, SyncOptions{})
+
+	if err != nil {
+		t.Fatalf("Expected success (re-sync after hash mismatch), got: %v", err)
+	}
+	if result["main"].CommitHash != "new_commit_hash_999" {
+		t.Errorf("Expected new commit hash, got %s", result["main"].CommitHash)
+	}
+}
+
+// TestSyncVendor_NoCacheFlag_BypassesCacheEntirely verifies that NoCache=true
+// prevents cache reads (canSkipSync) and cache writes (updateCache).
+func TestSyncVendor_NoCacheFlag_BypassesCacheEntirely(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	git := NewMockGitClient(ctrl)
+	fs := NewMockFileSystem(ctrl)
+
+	cache := &trackingCacheStore{
+		mockCacheStore: newMockCacheStore(),
+	}
+
+	svc := newSyncServiceWithCache(git, fs, cache, "/project")
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/owner/mylib", "main")
+	lockedRefs := map[string]string{"main": "abc123def456"}
+
+	// With NoCache=true, canSkipSync is never called and updateCache is skipped
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/sync-test", nil)
+	fs.EXPECT().RemoveAll("/tmp/sync-test").Return(nil)
+	git.EXPECT().Init(gomock.Any(), "/tmp/sync-test").Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), "/tmp/sync-test", "origin", "https://github.com/owner/mylib").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/sync-test", 1, "main").Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), "/tmp/sync-test", "abc123def456").Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/sync-test").Return("abc123def456", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	_, _, err := svc.SyncVendor(&vendor, lockedRefs, SyncOptions{NoCache: true})
+
+	if err != nil {
+		t.Fatalf("Expected success, got: %v", err)
+	}
+	if cache.loadCalled {
+		t.Error("Expected cache.Load() to NOT be called when NoCache=true")
+	}
+	if cache.saveCalled {
+		t.Error("Expected cache.Save() to NOT be called when NoCache=true")
+	}
+}
+
+// ============================================================================
 // fetchWithFallback Tests — Shallow clone fallback paths
 // ============================================================================
 

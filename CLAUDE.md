@@ -381,6 +381,7 @@ vendors:
 - `GIT_VENDOR_COMMIT`: Resolved commit hash
 - `GIT_VENDOR_ROOT`: Project root directory
 - `GIT_VENDOR_FILES_COPIED`: Number of files copied
+- `GIT_VENDOR_DIRS_CREATED`: Number of directories created
 
 **Behavior:**
 
@@ -410,7 +411,12 @@ Error handling follows Go conventions (see ROADMAP.md section 9.5 for details):
 
 - **`fmt.Errorf`**: Default for most errors (informational, wrapping with `%w`)
 - **Sentinel errors**: `ErrNotInitialized`, `ErrComplianceFailed` — use with `errors.Is()`
-- **Custom types**: `VendorNotFoundError`, `StaleCommitError`, etc. — use with `errors.As()` or `Is*()` helpers
+- **Custom types**: `VendorNotFoundError`, `StaleCommitError`, `HookError`, `OSVAPIError`, etc. — use with `errors.As()` or `Is*()` helpers
+
+Service-specific error handling:
+- **Hooks**: `HookError` wraps hook failures with vendor name, phase (pre/post-sync), and command context. Hooks have a 5-minute timeout (configurable via `hookService.timeout` field for testing) via `context.WithTimeout` to prevent hangs. Environment variable values are sanitized to strip newlines/null bytes.
+- **Sync cache**: `canSkipSync()` logs a warning and forces re-sync on cache corruption. Uses `errors.Is(err, os.ErrNotExist)` for file existence checks (not `os.IsNotExist`).
+- **Vuln scanner**: `OSVAPIError` wraps HTTP error responses with status code and truncated body. Response bodies are size-limited to 10 MB via `io.LimitReader`. Rate limit (HTTP 429), server error (5xx), and client error (4xx) produce distinct error messages.
 
 Display patterns:
 - TUI functions use `check(err)` helper that prints "Aborted." and exits
@@ -546,7 +552,7 @@ go test -v ./...
 10. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing
 11. **Branch names with slashes**: Cannot parse from URL due to ambiguity - use base URL and enter ref manually
 12. **Incremental sync cache**: Stored in .git-vendor/.cache/, auto-invalidates on commit hash changes, 1000 file limit per vendor
-13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts
+13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts. 5-minute timeout kills hanging hooks (override `hookService.timeout` in tests). Environment variable values are sanitized (newlines/null bytes stripped). Timeout tests MUST use `exec sleep` (not bare `sleep`) to prevent orphaned child processes when `sh -c` is killed
 14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
 15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
 16. **Sentinel errors with tui.PrintError**: Sentinel errors like `ErrNotInitialized` are `error` types, not strings. Call `.Error()` when passing to `tui.PrintError(title, err.Error())`
@@ -694,9 +700,10 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 **vuln_scanner.go:**
 
 - `Scan()` - Core vulnerability scanning against OSV.dev
-- `queryOSV()` - Query OSV.dev for individual dependency
+- `batchQuery()` - Batch queries to OSV.dev (up to 1000 per request, auto-paginated)
 - `CVSSToSeverity()` - Convert CVSS score to severity level
-- `BatchQuery()` - Efficient batch queries (up to 1000 packages)
+- `isRateLimitError()` - Detect rate-limit errors via OSVAPIError or string matching
+- `isNetworkError()` - Detect transient network errors for stale-cache fallback
 
 **verify_service.go:**
 
@@ -716,6 +723,16 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `CopyMappings()` - Orchestrate all file copy operations for a vendor ref
 - `copyWithPosition()` - Position-aware file copy (extract → place → track)
 - `checkLocalModifications()` - Detect local changes at target position before overwrite
+
+**hook_service.go:**
+
+- `ExecutePreSync()` / `ExecutePostSync()` - Run pre/post sync shell hooks with timeout and env injection
+- `sanitizeEnvValue()` - Strip newlines/null bytes from environment variable values
+
+**errors.go:**
+
+- `NewHookError()` / `IsHookError()` - Structured error for hook failures with phase/command context
+- `NewOSVAPIError()` / `IsOSVAPIError()` - Structured error for OSV.dev API HTTP errors
 
 **git_operations.go:**
 
