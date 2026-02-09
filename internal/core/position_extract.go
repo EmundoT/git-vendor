@@ -111,6 +111,12 @@ func extractColumns(lines []string, pos *types.PositionSpec, filePath string) (s
 // PlaceContent writes extracted content into a target file at the specified position.
 // If pos is nil, the content replaces the entire file.
 // If pos specifies a range, only that range in the target is replaced.
+//
+// Security: PlaceContent does NOT validate filePath internally because it is called
+// with both validated relative paths (production via copyWithPosition) and absolute
+// temp-dir paths (tests, internal tooling). Callers MUST call ValidateDestPath(filePath)
+// before invoking PlaceContent with any user-controlled path.
+// See file_copy_service.go:copyMapping (line 66) for the production validation call site.
 func PlaceContent(filePath string, content string, pos *types.PositionSpec) error {
 	if pos == nil {
 		// Replace entire file

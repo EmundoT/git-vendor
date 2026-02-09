@@ -216,22 +216,21 @@ func TestValidateDestPath_WindowsAbsolutePaths(t *testing.T) {
 //
 // Audit scope: Verify ValidateDestPath blocks all known path traversal vectors.
 //
-// Findings summary (SEC-001):
+// Findings summary (SEC-001) — updated after fixes:
 //
 //   PASS — file_copy_service.go:copyMapping calls ValidateDestPath(destFile) at line 66
 //          before all CopyFile/CopyDir/PlaceContent operations.
 //   PASS — cache_store.go:Save uses sanitizeFilename() which strips path separators.
 //   PASS — ValidateDestPath strips position specifiers before validation (../x:L1 caught).
-//   FAIL — license_service.go:CopyLicense does NOT validate vendorName before constructing
-//          the license destination path. A malicious vendor.yml with
-//          name: "../../../tmp/evil" would write outside the project directory.
-//          (Fix deferred to follow-up — this file is audit-only.)
+//   FIXED — license_service.go:CopyLicense now calls ValidateVendorName before path construction.
+//   FIXED — validation_service.go:ValidateConfig now calls ValidateVendorName at parse time.
+//   FIXED — ValidateDestPath now rejects embedded null bytes (defense in depth).
+//   DOCUMENTED — PlaceContent/CopyFile/CopyDir doc comments specify caller MUST validate.
+//              Self-validation rejected (A2→doc) because these functions are called with
+//              both relative user paths and absolute temp-dir paths internally.
 //   N/A  — vendor_syncer.go:Init uses hardcoded paths (vendor/, vendor/licenses/).
 //   N/A  — hook_service.go executes shell commands by design (same model as npm scripts).
 //   N/A  — update_service.go:computeFileHashes is read-only.
-//   INFO — PlaceContent (public) and CopyFile/CopyDir (public) do not self-validate.
-//          Currently only reachable through validated CopyMappings chain,
-//          but future callers could bypass validation.
 
 // TestValidateDestPath_PositionSpecifierTraversal verifies that position specifiers
 // appended to traversal paths do NOT bypass ValidateDestPath.
@@ -749,3 +748,4 @@ func TestValidateVendorName_LicensePathSafety(t *testing.T) {
 		})
 	}
 }
+

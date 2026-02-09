@@ -54,7 +54,12 @@ func NewOSFileSystem() *OSFileSystem {
 	return &OSFileSystem{}
 }
 
-// CopyFile copies a single file from src to dst
+// CopyFile copies a single file from src to dst.
+//
+// Security: CopyFile does NOT validate dst — callers MUST call ValidateDestPath(dst)
+// before invoking CopyFile with user-controlled destination paths. This is intentional:
+// CopyFile is also used with absolute temp-dir paths where ValidateDestPath would reject.
+// See file_copy_service.go:copyMapping (line 66) for the validation call site.
 func (fs *OSFileSystem) CopyFile(src, dst string) (CopyStats, error) {
 	source, err := os.Open(src)
 	if err != nil {
@@ -76,7 +81,11 @@ func (fs *OSFileSystem) CopyFile(src, dst string) (CopyStats, error) {
 	return CopyStats{FileCount: 1, ByteCount: bytes}, nil
 }
 
-// CopyDir recursively copies a directory from src to dst
+// CopyDir recursively copies a directory from src to dst.
+//
+// Security: CopyDir does NOT validate dst — callers MUST call ValidateDestPath(dst)
+// before invoking CopyDir with user-controlled destination paths. Same rationale as
+// CopyFile: dst may be an absolute temp-dir path in legitimate internal use.
 func (fs *OSFileSystem) CopyDir(src, dst string) (CopyStats, error) {
 	var stats CopyStats
 
