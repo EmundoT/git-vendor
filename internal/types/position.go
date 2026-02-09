@@ -8,11 +8,40 @@ import (
 
 // PositionSpec represents a line/column range extracted from a path specifier.
 // Supports: L5, L5-L20, L5:L20, L5-EOF, L5C10:L10C30
+//
+// Column semantics (byte-offset based):
+// Columns use Go string byte indexing, NOT Unicode rune offsets.
+// For ASCII content the two are identical. For multi-byte characters (emoji,
+// CJK, accented characters), users MUST count bytes, not visible characters.
+// Example: in "café", é occupies bytes 4-5, so L1C4:L1C5 extracts "é".
+// Extracting a partial multi-byte character (e.g., L1C4:L1C4 on "café")
+// produces invalid UTF-8. This is by design — byte-offset semantics are
+// consistent with Go string indexing and avoid hidden rune-counting costs.
+//
+// Line ending normalization:
+// CRLF (\r\n) is normalized to LF (\n) before extraction and placement.
+// Extracted content always uses LF regardless of the source file's original
+// line endings. This ensures deterministic hashing across platforms.
+// Standalone \r (classic Mac line endings) is NOT normalized.
+//
+// Trailing newline behavior:
+// strings.Split splits on \n, so a file ending with \n produces an empty
+// trailing element that counts as a line. For a 5-line file ending with \n,
+// the internal line count is 6 (5 content lines + 1 empty). L5-EOF on such
+// a file extracts "line5\n" (including the trailing newline). On a file
+// without a trailing newline, L5-EOF extracts just "line5".
+//
+// Empty file behavior:
+// A 0-byte file splits to [""] (1 empty line). L1 extracts "". L2+ errors.
+//
+// L1-EOF hash equivalence:
+// L1-EOF on any file produces content identical to the raw file bytes (after
+// CRLF normalization), so the extracted hash matches sha256(normalized_file).
 type PositionSpec struct {
 	StartLine int // 1-indexed
 	EndLine   int // 1-indexed, 0 means same as StartLine (single line)
-	StartCol  int // 1-indexed, 0 means no column specified
-	EndCol    int // 1-indexed inclusive, 0 means no column specified
+	StartCol  int // 1-indexed byte offset, 0 means no column specified
+	EndCol    int // 1-indexed inclusive byte offset, 0 means no column specified
 	ToEOF     bool
 }
 
