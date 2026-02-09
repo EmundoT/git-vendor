@@ -538,6 +538,24 @@ func TestCheckLocalModifications_Position_Modified(t *testing.T) {
 	}
 }
 
+func TestCheckLocalModifications_WholeFile_CRLF_NoSpuriousWarning(t *testing.T) {
+	tempDir := t.TempDir()
+	destFile := filepath.Join(tempDir, "dest.go")
+	// Destination file has CRLF line endings
+	if err := os.WriteFile(destFile, []byte("same\r\ncontent\r\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &OSFileSystem{}
+	svc := &FileCopyService{fs: fs}
+
+	// Incoming content is LF-normalized (as produced by ExtractPosition)
+	w := svc.checkLocalModifications(destFile, nil, "same\ncontent\n")
+	if w != "" {
+		t.Errorf("expected no warning when content differs only in line endings, got %q", w)
+	}
+}
+
 func TestCopyStats_WarningsAggregation(t *testing.T) {
 	s1 := CopyStats{Warnings: []string{"warn1"}}
 	s2 := CopyStats{Warnings: []string{"warn2", "warn3"}}

@@ -153,11 +153,12 @@ func (s *FileCopyService) checkLocalModifications(destFile string, destPos *type
 		}
 	} else {
 		// Destination is whole-file — compare entire content
+		// Normalize CRLF to match incoming content (which was CRLF-normalized during extraction)
 		data, err := os.ReadFile(destFile)
 		if err != nil {
 			return "" // File doesn't exist yet — no warning needed
 		}
-		if string(data) != incomingContent {
+		if normalizeCRLF(string(data)) != incomingContent {
 			return fmt.Sprintf("%s has local modifications that will be overwritten", destFile)
 		}
 	}
