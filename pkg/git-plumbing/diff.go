@@ -33,6 +33,29 @@ func (g *Git) DiffCachedNames(ctx context.Context) ([]string, error) {
 	return g.RunLines(ctx, "diff", "--cached", "--name-only")
 }
 
+// DiffStat returns line-change stats for unstaged (working directory) changes.
+func (g *Git) DiffStat(ctx context.Context) (*DiffStat, error) {
+	lines, err := g.RunLines(ctx, "diff", "--numstat")
+	if err != nil {
+		return nil, err
+	}
+	return parseNumstat(lines), nil
+}
+
+// DiffNames returns file paths with unstaged changes.
+func (g *Git) DiffNames(ctx context.Context) ([]string, error) {
+	return g.RunLines(ctx, "diff", "--name-only")
+}
+
+// DiffBetween returns line-change stats between two refs (commits, branches, tags).
+func (g *Git) DiffBetween(ctx context.Context, from, to string) (*DiffStat, error) {
+	lines, err := g.RunLines(ctx, "diff", "--numstat", from, to)
+	if err != nil {
+		return nil, err
+	}
+	return parseNumstat(lines), nil
+}
+
 // parseNumstat parses git diff --numstat output into a DiffStat.
 func parseNumstat(lines []string) *DiffStat {
 	stat := &DiffStat{}
