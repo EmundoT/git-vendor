@@ -1135,3 +1135,317 @@ func TestExtractThenPlace_ColumnRoundTrip(t *testing.T) {
 		t.Errorf("hash mismatch after round-trip: %q != %q", reHash, hash)
 	}
 }
+
+// ============================================================================
+// ExtractPosition — Binary and Adversarial Input
+// ============================================================================
+
+// TestExtractPosition_BinaryFileInput verifies that ExtractPosition operates on binary
+// data without error. The output is garbage (documented non-goal), but no panic/error.
+func TestExtractPosition_BinaryFileInput(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "binary.bin")
+	// Binary data with null bytes, high bytes, and embedded newlines
+	data := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG header
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+		0xFF, 0xFE, 0xFD, 0x0A, // embedded \n
+		0x01, 0x02, 0x03, 0x0A, // embedded \n
+		0x04, 0x05, 0x06}
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Extract line 1 — should succeed even on binary data
+	extracted, hash, err := ExtractPosition(filePath, &types.PositionSpec{StartLine: 1})
+	if err != nil {
+		t.Fatalf("unexpected error on binary input: %v", err)
+	}
+	if extracted == "" {
+		t.Error("expected non-empty extraction from binary data")
+	}
+	if !strings.HasPrefix(hash, "sha256:") {
+		t.Errorf("hash = %q, want sha256: prefix", hash)
+	}
+
+	// Extract line range spanning binary newlines
+	_, _, err = ExtractPosition(filePath, &types.PositionSpec{StartLine: 1, EndLine: 2})
+	if err != nil {
+		t.Fatalf("unexpected error on binary line range: %v", err)
+	}
+}
+
+// TestExtractPosition_BinaryColumnExtraction verifies column extraction on binary data.
+func TestExtractPosition_BinaryColumnExtraction(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "bin_col.bin")
+	// Single line of binary data (no newlines except trailing)
+	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0A}
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// L1C2:L1C4 — extract 3 bytes from binary line
+	extracted, _, err := ExtractPosition(filePath, &types.PositionSpec{
+		StartLine: 1, EndLine: 1, StartCol: 2, EndCol: 4,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(extracted) != 3 {
+		t.Errorf("extracted length = %d, want 3", len(extracted))
+	}
+}
+
+// ============================================================================
+// ExtractPosition — Position Past EOF
+// ============================================================================
+
+// TestExtractPosition_StartLinePastEOF_ErrorMessage verifies the error message
+// includes the file path and line count.
+func TestExtractPosition_StartLinePastEOF_ErrorMessage(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "short.go")
+	if err := os.WriteFile(filePath, []byte("one\ntwo\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// File has 3 lines ("one", "two", ""). L10 is past EOF.
+	_, _, err := ExtractPosition(filePath, &types.PositionSpec{StartLine: 10})
+	if err == nil {
+		t.Fatal("expected error for startLine past EOF")
+	}
+	if !strings.Contains(err.Error(), "line 10") {
+		t.Errorf("error should mention line 10: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "3 lines") {
+		t.Errorf("error should mention file has 3 lines: %q", err.Error())
+	}
+}
+
+// TestExtractPosition_ToEOF_SingleLineFIle verifies L1-EOF on a single-line file.
+func TestExtractPosition_ToEOF_SingleLineFile(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "single.go")
+	if err := os.WriteFile(filePath, []byte("sole line"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	extracted, _, err := ExtractPosition(filePath, &types.PositionSpec{StartLine: 1, ToEOF: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if extracted != "sole line" {
+		t.Errorf("extracted = %q, want %q", extracted, "sole line")
+	}
+}
+
+// ============================================================================
+// ExtractPosition — Column Boundary Cases
+// ============================================================================
+
+// TestExtractPosition_ColumnAtLineBoundary_FirstChar extracts the first character.
+func TestExtractPosition_ColumnAtLineBoundary_FirstChar(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "boundary.go")
+	if err := os.WriteFile(filePath, []byte("ABCDEF\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// L1C1:L1C1 → "A"
+	extracted, _, err := ExtractPosition(filePath, &types.PositionSpec{
+		StartLine: 1, EndLine: 1, StartCol: 1, EndCol: 1,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if extracted != "A" {
+		t.Errorf("extracted = %q, want %q", extracted, "A")
+	}
+}
+
+// TestExtractPosition_ColumnAtLineBoundary_LastChar extracts the last character.
+func TestExtractPosition_ColumnAtLineBoundary_LastChar(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "boundary2.go")
+	if err := os.WriteFile(filePath, []byte("ABCDEF\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// L1C6:L1C6 → "F"
+	extracted, _, err := ExtractPosition(filePath, &types.PositionSpec{
+		StartLine: 1, EndLine: 1, StartCol: 6, EndCol: 6,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if extracted != "F" {
+		t.Errorf("extracted = %q, want %q", extracted, "F")
+	}
+}
+
+// TestExtractPosition_MultiLineColumn_AdjacentLines verifies column extraction
+// across exactly two lines (no middle lines).
+func TestExtractPosition_MultiLineColumn_AdjacentLines(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "adjacent.go")
+	if err := os.WriteFile(filePath, []byte("AAABBB\nCCCDDD\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// L1C4:L2C3 → first line from col 4: "BBB", last line to col 3: "CCC"
+	extracted, _, err := ExtractPosition(filePath, &types.PositionSpec{
+		StartLine: 1, EndLine: 2, StartCol: 4, EndCol: 3,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if extracted != "BBB\nCCC" {
+		t.Errorf("extracted = %q, want %q", extracted, "BBB\nCCC")
+	}
+}
+
+// ============================================================================
+// PlaceContent — Empty File and Edge Cases
+// ============================================================================
+
+// TestPlaceContent_NilPos_IntoEmptyFile writes content into an empty file with nil pos.
+func TestPlaceContent_NilPos_IntoEmptyFile(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "empty.go")
+	if err := os.WriteFile(filePath, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := PlaceContent(filePath, "brand new content", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, _ := os.ReadFile(filePath)
+	if string(got) != "brand new content" {
+		t.Errorf("content = %q, want %q", string(got), "brand new content")
+	}
+}
+
+// TestPlaceContent_NilPos_CreatesNewFile creates a file that doesn't exist.
+func TestPlaceContent_NilPos_CreatesNewFile(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "subdir", "new.go")
+	// Ensure parent dir exists
+	if err := os.MkdirAll(filepath.Join(tempDir, "subdir"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := PlaceContent(filePath, "new file content", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, _ := os.ReadFile(filePath)
+	if string(got) != "new file content" {
+		t.Errorf("content = %q, want %q", string(got), "new file content")
+	}
+}
+
+// TestPlaceContent_WithPos_IntoEmptyFile_L1 places content at L1 into an empty file.
+// An empty file has 1 line (the empty string), so L1 is valid.
+func TestPlaceContent_WithPos_IntoEmptyFile_L1(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "empty_place.go")
+	if err := os.WriteFile(filePath, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pos := &types.PositionSpec{StartLine: 1}
+	if err := PlaceContent(filePath, "inserted", pos); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, _ := os.ReadFile(filePath)
+	if string(got) != "inserted" {
+		t.Errorf("content = %q, want %q", string(got), "inserted")
+	}
+}
+
+// TestPlaceContent_OverlappingRanges_ExpandsFile verifies that replacing a range
+// with more lines than the original range expands the file.
+func TestPlaceContent_OverlappingRanges_ExpandsFile(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "expand.go")
+	if err := os.WriteFile(filePath, []byte("a\nb\nc\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Replace line 2 (single line "b") with 3 lines
+	pos := &types.PositionSpec{StartLine: 2}
+	if err := PlaceContent(filePath, "x\ny\nz", pos); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, _ := os.ReadFile(filePath)
+	want := "a\nx\ny\nz\nc\n"
+	if string(got) != want {
+		t.Errorf("content = %q, want %q", string(got), want)
+	}
+}
+
+// TestPlaceContent_OverlappingRanges_ShrinksFile verifies that replacing a range
+// with fewer lines than the original range shrinks the file.
+func TestPlaceContent_OverlappingRanges_ShrinksFile(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "shrink.go")
+	if err := os.WriteFile(filePath, []byte("a\nb\nc\nd\ne\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Replace lines 2-4 ("b\nc\nd") with single line
+	pos := &types.PositionSpec{StartLine: 2, EndLine: 4}
+	if err := PlaceContent(filePath, "REPLACED", pos); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, _ := os.ReadFile(filePath)
+	want := "a\nREPLACED\ne\n"
+	if string(got) != want {
+		t.Errorf("content = %q, want %q", string(got), want)
+	}
+}
+
+// TestPlaceContent_ColumnReplace_EmptyReplacement verifies that replacing a column
+// range with an empty string deletes those characters.
+func TestPlaceContent_ColumnReplace_EmptyReplacement(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "delete_cols.go")
+	if err := os.WriteFile(filePath, []byte("HelloWorld\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete cols 6-10 ("World") → "Hello"
+	pos := &types.PositionSpec{StartLine: 1, EndLine: 1, StartCol: 6, EndCol: 10}
+	if err := PlaceContent(filePath, "", pos); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, _ := os.ReadFile(filePath)
+	if string(got) != "Hello\n" {
+		t.Errorf("content = %q, want %q", string(got), "Hello\n")
+	}
+}
+
+// TestPlaceContent_LastLine verifies replacing the very last line of a file.
+func TestPlaceContent_LastLine(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "lastline.go")
+	// No trailing newline — 3 lines: "a", "b", "c"
+	if err := os.WriteFile(filePath, []byte("a\nb\nc"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pos := &types.PositionSpec{StartLine: 3}
+	if err := PlaceContent(filePath, "C_REPLACED", pos); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, _ := os.ReadFile(filePath)
+	if string(got) != "a\nb\nC_REPLACED" {
+		t.Errorf("content = %q, want %q", string(got), "a\nb\nC_REPLACED")
+	}
+}
