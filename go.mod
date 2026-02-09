@@ -36,3 +36,5 @@ require (
 	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 )
+
+replace github.com/emundoT/git-plumbing => ./pkg/git-plumbing
