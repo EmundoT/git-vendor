@@ -464,6 +464,8 @@ func TestAllIsHelpers_ReturnFalseForNil(t *testing.T) {
 		{"IsStaleCommit", IsStaleCommit},
 		{"IsCheckoutError", IsCheckoutError},
 		{"IsValidationError", IsValidationError},
+		{"IsHookError", IsHookError},
+		{"IsOSVAPIError", IsOSVAPIError},
 	}
 
 	for _, tt := range tests {
@@ -488,6 +490,8 @@ func TestAllIsHelpers_ReturnFalseForUnrelatedError(t *testing.T) {
 		{"IsStaleCommit", IsStaleCommit},
 		{"IsCheckoutError", IsCheckoutError},
 		{"IsValidationError", IsValidationError},
+		{"IsHookError", IsHookError},
+		{"IsOSVAPIError", IsOSVAPIError},
 	}
 
 	for _, tt := range tests {

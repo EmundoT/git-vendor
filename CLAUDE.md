@@ -408,6 +408,7 @@ vendors:
 - `GIT_VENDOR_COMMIT`: Resolved commit hash
 - `GIT_VENDOR_ROOT`: Project root directory
 - `GIT_VENDOR_FILES_COPIED`: Number of files copied
+- `GIT_VENDOR_DIRS_CREATED`: Number of directories created
 
 **Behavior:**
 
@@ -722,9 +723,10 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 **vuln_scanner.go:**
 
 - `Scan()` - Core vulnerability scanning against OSV.dev
-- `queryOSV()` - Query OSV.dev for individual dependency
+- `batchQuery()` - Batch queries to OSV.dev (up to 1000 per request, auto-paginated)
 - `CVSSToSeverity()` - Convert CVSS score to severity level
-- `BatchQuery()` - Efficient batch queries (up to 1000 packages)
+- `isRateLimitError()` - Detect rate-limit errors via OSVAPIError or string matching
+- `isNetworkError()` - Detect transient network errors for stale-cache fallback
 
 **verify_service.go:**
 
