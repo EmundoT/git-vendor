@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -1325,5 +1326,106 @@ func TestNormalizeCRLF(t *testing.T) {
 				t.Errorf("normalizeCRLF(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+// ============================================================================
+// Edge Case 8: Binary File Detection
+// Position extraction on binary files is rejected with a clear error.
+// Detection uses git's heuristic: null byte in first 8000 bytes.
+// ============================================================================
+
+func TestIsBinaryContent(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"empty", []byte{}, false},
+		{"plain text", []byte("hello world\n"), false},
+		{"text with high bytes", []byte("café 你好 🌍"), false},
+		{"null at start", []byte{0x00, 'a', 'b'}, true},
+		{"null in middle", []byte("abc\x00def"), true},
+		{"null at byte 7999", append(bytes.Repeat([]byte{'x'}, 7999), 0x00), true},
+		{"null beyond scan limit", append(append(bytes.Repeat([]byte{'x'}, 8000), 0x00), 'x'), false},
+		{"PNG header", []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00}, true},
+		{"ELF header", []byte{0x7f, 0x45, 0x4C, 0x46, 0x00}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isBinaryContent(tt.data)
+			if got != tt.want {
+				t.Errorf("isBinaryContent(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractPosition_BinaryFile_Error(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "binary.dat")
+	// Binary content with null bytes
+	data := []byte("line1\nline2\x00binary\nline3\n")
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := ExtractPosition(filePath, &types.PositionSpec{StartLine: 1})
+	if err == nil {
+		t.Fatal("expected error for binary file")
+	}
+	if !strings.Contains(err.Error(), "binary file") {
+		t.Errorf("error = %q, want message about binary file", err.Error())
+	}
+}
+
+func TestExtractPosition_TextFile_NoFalsePositive(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "text.go")
+	// Valid text with various Unicode — no null bytes
+	content := "package main\n\n// café 你好 🌍\nfunc main() {}\n"
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	extracted, _, err := ExtractPosition(filePath, &types.PositionSpec{StartLine: 3})
+	if err != nil {
+		t.Fatalf("false positive: text file rejected as binary: %v", err)
+	}
+	if extracted != "// café 你好 🌍" {
+		t.Errorf("extracted = %q, want %q", extracted, "// café 你好 🌍")
+	}
+}
+
+func TestPlaceContent_BinaryTarget_Error(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "binary.dat")
+	data := []byte("line1\nline2\x00binary\nline3\n")
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Position-based placement into binary file should error
+	err := PlaceContent(filePath, "replacement", &types.PositionSpec{StartLine: 1})
+	if err == nil {
+		t.Fatal("expected error for binary target")
+	}
+	if !strings.Contains(err.Error(), "binary file") {
+		t.Errorf("error = %q, want message about binary file", err.Error())
+	}
+}
+
+func TestPlaceContent_BinaryTarget_NilPos_Allowed(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "output.dat")
+	// Whole-file replacement (nil pos) bypasses binary check — writing new content
+	if err := PlaceContent(filePath, "new text content", nil); err != nil {
+		t.Fatalf("nil-pos placement should succeed regardless: %v", err)
+	}
+
+	got, _ := os.ReadFile(filePath)
+	if string(got) != "new text content" {
+		t.Errorf("content = %q, want %q", string(got), "new text content")
 	}
 }

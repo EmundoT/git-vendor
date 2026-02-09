@@ -402,7 +402,7 @@ vendors:
 ### Legacy Traps (Non-Goals)
 
 - **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
-- **Binary file detection for position extraction**: Explicitly deferred. Position extraction on binary files produces garbage but is not guarded. If needed later, use `net/http.DetectContentType` check before extraction.
+- **`net/http.DetectContentType` for binary detection**: Rejected in favor of git's null-byte heuristic (scan first 8000 bytes for `\x00`). `DetectContentType` only inspects 512 bytes and can misclassify source code as `application/octet-stream`. The null-byte approach matches git's own `xdl_mmfile_istext` and has no false positives on valid text files including multi-byte UTF-8.
 
 ### Error Handling
 
@@ -553,7 +553,7 @@ go test -v ./...
 17. **Position syntax and Windows paths**: Position parser uses first `:L<digit>` occurrence to split, avoiding false matches on Windows drive letters like `C:\path`
 18. **EndCol is 1-indexed inclusive byte offset**: `L1C5:L1C10` extracts bytes 5-10 (6 bytes). Maps to Go slice `line[StartCol-1 : EndCol]` because Go's exclusive upper bound equals the 1-indexed inclusive bound. See gotcha #22 for multi-byte character implications
 19. **errors.Is vs os.IsNotExist**: `os.IsNotExist()` does NOT unwrap `fmt.Errorf("%w")`-wrapped errors. MUST use `errors.Is(err, os.ErrNotExist)` when checking errors from functions that wrap (e.g., `ExtractPosition`)
-20. **Position extraction on binary files**: No binary detection — extracting positions from binary files produces garbage. Not currently guarded
+20. **Binary file detection**: `ExtractPosition` and `PlaceContent` (with position) reject binary files by scanning the first 8000 bytes for null bytes (git's heuristic). Null byte beyond 8000 bytes is NOT detected. Whole-file replacement (`PlaceContent` with nil pos) bypasses the check
 21. **Verify produces separate position-level and whole-file results**: A file with both types of lockfile entries gets two verification results; position-level can fail independently of whole-file
 22. **Position column semantics are byte-offset, not rune-offset**: Column numbers in `L1C5:L1C10` refer to byte positions in the Go string, not Unicode codepoints. For ASCII this is identical, but multi-byte characters (emoji=4 bytes, CJK=3 bytes, accented=2 bytes) require counting bytes. Extracting a partial multi-byte character produces invalid UTF-8.
 23. **CRLF normalized to LF in position extraction**: `extractFromContent` and `placeInContent` normalize `\r\n` → `\n` before processing. Extracted content always uses LF. Files with CRLF will have their line endings changed to LF after `PlaceContent`. Standalone `\r` (classic Mac) is NOT normalized.
