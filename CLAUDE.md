@@ -428,7 +428,7 @@ vendors:
 
 ### Legacy Traps (Non-Goals)
 
-- **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
+- **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` — always use `errors.Is(err, os.ErrNotExist)`. Go's `os.IsNotExist` does not unwrap `fmt.Errorf("%w")` chains. Codebase fully migrated; zero instances remain.
 - **Binary file detection for position extraction**: Explicitly deferred. Position extraction on binary files produces garbage but is not guarded. If needed later, use `net/http.DetectContentType` check before extraction.
 
 ### Error Handling
