@@ -718,6 +718,8 @@ func main() {
 			fmt.Println("Verifying vendored dependencies...")
 			fmt.Println()
 
+			fileCount := 0
+			posCount := 0
 			for _, f := range result.Files {
 				var symbol, status string
 				switch f.Status {
@@ -734,11 +736,21 @@ func main() {
 					symbol = "\u2717" // x mark
 					status = "[DELETED]"
 				}
-				fmt.Printf("%s %-50s %s\n", symbol, f.Path, status)
+				typeLabel := "file"
+				if f.Type == "position" {
+					typeLabel = "pos "
+					posCount++
+				} else {
+					fileCount++
+				}
+				fmt.Printf("%s %-8s %-50s %s\n", symbol, typeLabel, f.Path, status)
 			}
 
 			fmt.Println()
-			fmt.Printf("Summary: %d files checked\n", result.Summary.TotalFiles)
+			fmt.Printf("Summary: %d checked (%s, %s)\n",
+				result.Summary.TotalFiles,
+				core.Pluralize(fileCount, "file", "files"),
+				core.Pluralize(posCount, "position", "positions"))
 			fmt.Printf("  \u2713 %d verified\n", result.Summary.Verified)
 			if result.Summary.Modified > 0 || result.Summary.Deleted > 0 {
 				fmt.Printf("  \u2717 %d errors (%d modified, %d deleted)\n",
@@ -926,15 +938,25 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Compute aggregate file/position counts
+		totalFiles := 0
+		totalPositions := 0
+		for _, vs := range status.VendorStatuses {
+			totalFiles += vs.FileCount
+			totalPositions += vs.PositionCount
+		}
+
 		if flags.Mode == core.OutputJSON {
 			// JSON output mode
 			vendorStatusData := make([]map[string]interface{}, 0, len(status.VendorStatuses))
 			for _, vs := range status.VendorStatuses {
 				vendorStatusData = append(vendorStatusData, map[string]interface{}{
-					"name":          vs.Name,
-					"ref":           vs.Ref,
-					"is_synced":     vs.IsSynced,
-					"missing_paths": vs.MissingPaths,
+					"name":           vs.Name,
+					"ref":            vs.Ref,
+					"is_synced":      vs.IsSynced,
+					"missing_paths":  vs.MissingPaths,
+					"file_count":     vs.FileCount,
+					"position_count": vs.PositionCount,
 				})
 			}
 
@@ -954,6 +976,8 @@ func main() {
 				Data: map[string]interface{}{
 					"all_synced":      status.AllSynced,
 					"vendor_statuses": vendorStatusData,
+					"total_files":     totalFiles,
+					"total_positions": totalPositions,
 				},
 			})
 
@@ -963,7 +987,11 @@ func main() {
 		} else {
 			// Normal output mode
 			if status.AllSynced {
-				callback.ShowSuccess("All vendors synced")
+				detail := core.Pluralize(totalFiles, "file", "files")
+				if totalPositions > 0 {
+					detail += ", " + core.Pluralize(totalPositions, "position", "positions")
+				}
+				callback.ShowSuccess(fmt.Sprintf("All vendors synced (%s)", detail))
 			} else {
 				// Show which vendors need syncing
 				callback.ShowWarning("Vendors Need Syncing", fmt.Sprintf("%s out of sync",
@@ -972,7 +1000,11 @@ func main() {
 
 				for _, vs := range status.VendorStatuses {
 					if !vs.IsSynced {
-						fmt.Printf("⚠ %s @ %s\n", vs.Name, vs.Ref)
+						detail := core.Pluralize(vs.FileCount, "file", "files")
+						if vs.PositionCount > 0 {
+							detail += ", " + core.Pluralize(vs.PositionCount, "position", "positions")
+						}
+						fmt.Printf("⚠ %s @ %s (%s)\n", vs.Name, vs.Ref, detail)
 						for _, path := range vs.MissingPaths {
 							fmt.Printf("  • Missing: %s\n", path)
 						}
