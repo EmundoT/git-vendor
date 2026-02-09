@@ -274,6 +274,7 @@ file.go:L5C10:L10C30  # Line 5 col 10 through line 10 col 30 (1-indexed inclusiv
 - `verifyPositions()` reads destination file locally, extracts target range, hashes, compares to stored `SourceHash`
 - No network access required — purely local verification
 - Position entries produce separate verification results from whole-file entries
+- Each FileStatus entry carries `Type` ("file" or "position") and position entries include a `Position` detail with from/to/source_hash
 
 **Key files:** `internal/types/position.go` (parser), `internal/core/position_extract.go` (extract/place), `internal/core/file_copy_service.go` (integration)
 
@@ -612,6 +613,8 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - **Deleted files**: Files in lockfile but missing from disk
 - **Added files**: Files in vendor directories but not in lockfile
 - **Position-level drift**: For position-extracted mappings, verifies the target range hash matches the stored `source_hash` (local-only, no cloning)
+
+**Output:** Each result entry includes a `type` field ("file" or "position"). Table output shows a type column; JSON output includes `type` and `position` (with from/to/source_hash) for position entries. Summary shows "N checked (M files, P positions)".
 
 ### Scan Command Flags
 
