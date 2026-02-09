@@ -82,10 +82,12 @@ type CloneOptions struct {
 
 // VendorStatus represents the sync status of a vendor
 type VendorStatus struct {
-	Name         string
-	Ref          string
-	IsSynced     bool
-	MissingPaths []string // Paths that should exist but don't
+	Name          string
+	Ref           string
+	IsSynced      bool
+	MissingPaths  []string // Paths that should exist but don't
+	FileCount     int      // Number of file-level mappings
+	PositionCount int      // Number of position-level mappings from lockfile
 }
 
 // SyncStatus represents the overall sync status
@@ -197,11 +199,21 @@ type VerifySummary struct {
 	Result     string `json:"result"` // PASS, FAIL, WARN
 }
 
+// PositionDetail provides position-level metadata for FileStatus entries
+// that originate from position-extracted mappings.
+type PositionDetail struct {
+	From       string `json:"from"`        // Source path with position (e.g., "api/constants.go:L4-L6")
+	To         string `json:"to"`          // Destination path with optional position
+	SourceHash string `json:"source_hash"` // SHA-256 of extracted content at sync time
+}
+
 // FileStatus represents the verification status of a single file
 type FileStatus struct {
-	Path         string  `json:"path"`
-	Vendor       *string `json:"vendor"`
-	Status       string  `json:"status"` // verified, modified, added, deleted
-	ExpectedHash *string `json:"expected_hash,omitempty"`
-	ActualHash   *string `json:"actual_hash,omitempty"`
+	Path         string          `json:"path"`
+	Vendor       *string         `json:"vendor"`
+	Status       string          `json:"status"`             // verified, modified, added, deleted
+	Type         string          `json:"type"`               // "file" or "position"
+	ExpectedHash *string         `json:"expected_hash,omitempty"`
+	ActualHash   *string         `json:"actual_hash,omitempty"`
+	Position     *PositionDetail `json:"position,omitempty"` // Present only for type="position"
 }

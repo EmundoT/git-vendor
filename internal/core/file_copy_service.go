@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -104,7 +105,7 @@ func (s *FileCopyService) copyWithPosition(srcPath, destFile string, srcPos, des
 	// Extract content from source at the specified position
 	content, hash, err := ExtractPosition(srcPath, srcPos)
 	if err != nil {
-		if strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "does not exist") {
+		if errors.Is(err, os.ErrNotExist) {
 			return CopyStats{}, NewPathNotFoundError(srcClean, vendorName, ref)
 		}
 		return CopyStats{}, fmt.Errorf("extract position from %s: %w", srcClean, err)
