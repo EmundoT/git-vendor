@@ -28,11 +28,7 @@ func ExtractPosition(filePath string, pos *types.PositionSpec) (string, string, 
 
 // extractFromContent extracts a position range from file content.
 // filePath is used only for error messages.
-//
-// CRLF normalization: extractFromContent normalizes Windows-style \r\n line
-// endings to \n before processing. Extracted content always uses LF line endings
-// regardless of the source file's original line ending style. This ensures
-// deterministic hashing across platforms.
+// CRLF line endings are normalized to LF before processing (see PositionSpec docs).
 func extractFromContent(data string, pos *types.PositionSpec, filePath string) (string, error) {
 	data = normalizeCRLF(data)
 	lines := strings.Split(data, "\n")
@@ -138,10 +134,7 @@ func PlaceContent(filePath string, content string, pos *types.PositionSpec) erro
 }
 
 // placeInContent replaces a range in existing content with new content.
-//
-// CRLF normalization: placeInContent normalizes \r\n to \n in existing content
-// before processing. The output always uses LF line endings. If the original file
-// used CRLF, the result will be LF-normalized.
+// CRLF line endings are normalized to LF before processing (see PositionSpec docs).
 func placeInContent(existing, replacement string, pos *types.PositionSpec, filePath string) (string, error) {
 	existing = normalizeCRLF(existing)
 	lines := strings.Split(existing, "\n")
@@ -216,7 +209,7 @@ func placeColumns(lines []string, replacement string, pos *types.PositionSpec, f
 }
 
 // normalizeCRLF replaces Windows-style \r\n line endings with \n.
-// This ensures consistent line splitting and column offsets across platforms.
+// Normalization ensures consistent line splitting and column offsets across platforms.
 func normalizeCRLF(s string) string {
 	return strings.ReplaceAll(s, "\r\n", "\n")
 }
