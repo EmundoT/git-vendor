@@ -1,9 +1,7 @@
 package core
 
 import (
-	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -12,9 +10,6 @@ import (
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )
-
-
-// No need for testUICallback - use existing SilentUICallback
 
 // TestHookService_PreSyncExecution tests basic pre-sync hook execution
 func TestHookService_PreSyncExecution(t *testing.T) {
@@ -207,7 +202,7 @@ func TestHookService_MultilineCommand(t *testing.T) {
 	}
 }
 
-// TestHookService_CommandFailure tests that hook failures are properly reported
+// TestHookService_CommandFailure tests that hook failures return HookError with context
 func TestHookService_CommandFailure(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -225,16 +220,16 @@ func TestHookService_CommandFailure(t *testing.T) {
 		RootDir:    tempDir,
 	}
 
-	// Execute
 	err := hookService.ExecutePreSync(vendor, ctx)
-
-	// Assert
 	if err == nil {
 		t.Fatal("Expected error for failing command, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "hook failed") {
-		t.Errorf("Expected 'hook failed' error, got: %v", err)
+	if !IsHookError(err) {
+		t.Errorf("Expected HookError, got: %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "pre-sync") {
+		t.Errorf("Expected 'pre-sync' in error, got: %v", err)
 	}
 }
 
@@ -433,8 +428,9 @@ func TestHookService_PostSyncFailure_ReturnsHookError(t *testing.T) {
 	}
 }
 
-// TestHookService_Timeout verifies that hooks are killed after the timeout period.
-// Uses a short-lived context to avoid long test runs.
+// TestHookService_Timeout verifies that executeHook kills hooks after the timeout
+// and produces the "hook timed out" error message wrapped in HookError.
+// Uses the configurable timeout field set to 200ms for fast test execution.
 func TestHookService_Timeout(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Timeout test uses Unix sleep command")
@@ -442,6 +438,16 @@ func TestHookService_Timeout(t *testing.T) {
 
 	ui := &SilentUICallback{}
 	hs := NewHookService(ui).(*hookService)
+	hs.timeout = 200 * time.Millisecond // Override for fast test
+
+	vendor := &types.VendorSpec{
+		Name: "timeout-test",
+		Hooks: &types.HookConfig{
+				// Use "exec sleep" so sh replaces itself with sleep,
+			// ensuring SIGKILL from context reaches the process directly.
+			PreSync: "exec sleep 60",
+		},
+	}
 
 	hookCtx := &types.HookContext{
 		VendorName: "timeout-test",
@@ -449,27 +455,21 @@ func TestHookService_Timeout(t *testing.T) {
 	}
 
 	start := time.Now()
-
-	// Directly test the timeout mechanism using a short context.
-	// Invoke sleep directly (not via sh -c) to ensure SIGKILL reaches the process.
-	env := hs.buildEnvironment(hookCtx)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "sleep", "60")
-	cmd.Env = env
-	cmd.Dir = hookCtx.RootDir
-	_, err := cmd.CombinedOutput()
-
+	err := hs.ExecutePreSync(vendor, hookCtx)
 	elapsed := time.Since(start)
 
 	if err == nil {
 		t.Fatal("Expected timeout error, got nil")
 	}
 
-	if ctx.Err() != context.DeadlineExceeded {
-		t.Errorf("Expected context deadline exceeded, got: %v", ctx.Err())
+	// Verify HookError wrapping
+	if !IsHookError(err) {
+		t.Errorf("Expected HookError, got: %T: %v", err, err)
+	}
+
+	// Verify the timeout-specific error message from executeHook
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("Expected 'timed out' in error message, got: %v", err)
 	}
 
 	// Verify command was killed quickly (well under 60s)
