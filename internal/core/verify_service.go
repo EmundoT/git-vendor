@@ -199,7 +199,13 @@ func (s *VerifyService) verifyPositions(lock types.VendorLock, result *types.Ver
 				_, actualHash, err = ExtractPosition(destFile, destPos)
 			} else {
 				displayPath = destFile
-				actualHash, err = s.cache.ComputeFileChecksum(destFile)
+				// ComputeFileChecksum returns bare hex; normalize to "sha256:" prefix
+				// to match SourceHash format from ExtractPosition.
+				var hexHash string
+				hexHash, err = s.cache.ComputeFileChecksum(destFile)
+				if err == nil {
+					actualHash = fmt.Sprintf("sha256:%s", hexHash)
+				}
 			}
 
 			if err != nil {
