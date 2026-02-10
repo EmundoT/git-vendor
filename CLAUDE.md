@@ -679,6 +679,10 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 32. **YAML file size limit**: `YAMLStore.Load()` rejects files > 1 MB (`maxYAMLFileSize`). Normal configs are well under 100 KB (SEC-020)
 33. **Hook threat model**: See `docs/HOOK_THREAT_MODEL.md`. Hooks execute arbitrary shell commands by design — same trust model as npm scripts. Key mitigations: 5-min timeout, env var sanitization, project root working dir (SEC-012)
 34. **Policy file detection uses `os.Stat`, not heuristics**: `CheckCompliance` checks for `.git-vendor-policy.yml` existence with `os.Stat` — NOT by guessing from policy content. A policy file with only `allow` entries (no deny/warn) is correctly detected and enforced. A malformed policy file returns an error instead of silently degrading to legacy behavior.
+35. **`--commit` creates a single commit with multi-valued trailers**: `CommitVendorChanges` collects all matching lock entries, stages all affected paths in one `git add`, and creates a single commit with multi-valued `Vendor-Name`/`Vendor-Ref`/`Vendor-Commit` trailers (one group per vendor). A JSON git note is attached under `refs/notes/vendor` with rich per-vendor metadata (file hashes, URLs, paths). Note attachment is best-effort — failure does not fail the commit. `--commit` is ignored during `--dry-run` (with warning). Pre-existing staged files may be included in vendor commits (v2: porcelain check).
+36. **One-commit-per-vendor is a legacy trap**: The original design created N commits for N vendors. This was replaced with single-commit + multi-valued trailers for correct atomic semantics. MUST NOT regress to per-vendor commits.
+37. **`Trailer` types are distinct across packages**: `types.Trailer` and `git.Trailer` have identical `Key`/`Value` fields but are separate Go types. `SystemGitClient.Commit()` MUST explicitly convert `[]types.Trailer` → `[]git.Trailer`. Direct assignment causes compile error.
+38. **`git vendor annotate` retroactively attaches notes**: `AnnotateVendorCommit` adds a vendor/v1 JSON note to an existing commit. Does not create a new commit. Used when a human manually commits vendor changes and wants structured provenance added after the fact.
 
 ## Quick Reference
 
@@ -702,6 +706,7 @@ git-vendor diff <vendor>             # Show commit history between locked and la
 git-vendor drift [options] [vendor]  # Detect drift from origin (local + upstream)
 git-vendor watch                     # Auto-sync on config changes
 git-vendor sbom [options]            # Generate SBOM (CycloneDX/SPDX)
+git-vendor annotate [commit] [opts]  # Retroactively attach vendor metadata as git note
 git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/powershell)
 
 # LLM-Friendly Commands (Spec 072) — non-interactive, JSON-capable
@@ -726,6 +731,7 @@ git-vendor config set <key> <value>  # Set config value
 --dry-run         # Preview without changes
 --force           # Re-download even if synced
 --no-cache        # Disable incremental sync cache
+--commit          # Auto-commit with COMMIT-SCHEMA v1 trailers + git note
 --group <name>    # Sync only vendors in specified group
 --parallel        # Enable parallel processing
 --workers <N>     # Set custom worker count (requires --parallel)
@@ -736,6 +742,7 @@ git-vendor config set <key> <value>  # Set config value
 ### Update Command Flags
 
 ```bash
+--commit          # Auto-commit with COMMIT-SCHEMA v1 trailers + git note
 --parallel        # Enable parallel processing
 --workers <N>     # Set custom worker count (requires --parallel)
 --verbose, -v     # Show git commands
@@ -939,6 +946,16 @@ Error response:
 - `GetConfigValue()` / `SetConfigValue()` - Dotted key-path config access
 - `CheckVendorStatus()` - Per-vendor sync status check
 
+**commit_service.go:**
+
+- `VendorTrailers()` - Build COMMIT-SCHEMA v1 vendor/v1 ordered []Trailer from []LockDetails (multi-valued, exported for git-agent composition)
+- `VendorNoteJSON()` - Build JSON note content with rich per-vendor metadata (file hashes, URLs, paths)
+- `VendorNoteRef` - Constant: "refs/notes/vendor" namespace for vendor git notes
+- `VendorCommitSubject()` - Format conventional-commits subject line for vendor operations
+- `CommitVendorChanges()` - Stage all vendor files, create single commit with multi-valued trailers, attach JSON git note
+- `AnnotateVendorCommit()` - Retroactively attach vendor metadata note to an existing commit
+- `collectVendorPaths()` - Gather all file paths to stage for a vendor commit
+
 **cli_response.go:**
 
 - `CLIResponse` / `CLIErrorDetail` - JSON output types for Spec 072 commands
@@ -975,6 +992,10 @@ Error response:
 - `ValidateVendorURL()` - SEC-011: Reject dangerous URL schemes (file://, ftp://, etc.)
 - `SanitizeURL()` - SEC-013: Strip credentials from URLs for safe logging
 - `GitClient.ListTree()` - Browse remote directories via git ls-tree
+- `GitClient.Add()` - Stage files for commit (delegates to git-plumbing)
+- `GitClient.Commit()` - Create commit with ordered []Trailer (converts types.Trailer → git.Trailer)
+- `GitClient.AddNote()` - Add/overwrite git note on commit under a note ref namespace
+- `GitClient.GetNote()` - Retrieve git note content from commit under a note ref namespace
 
 **github_client.go:**
 

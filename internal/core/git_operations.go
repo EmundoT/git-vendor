@@ -27,6 +27,10 @@ type GitClient interface {
 	ListTree(ctx context.Context, dir, ref, subdir string) ([]string, error)
 	GetCommitLog(ctx context.Context, dir, oldHash, newHash string, maxCount int) ([]types.CommitInfo, error)
 	GetTagForCommit(ctx context.Context, dir, commitHash string) (string, error)
+	Add(ctx context.Context, dir string, paths ...string) error
+	Commit(ctx context.Context, dir string, opts types.CommitOptions) error
+	AddNote(ctx context.Context, dir, noteRef, commitHash, content string) error
+	GetNote(ctx context.Context, dir, noteRef, commitHash string) (string, error)
 }
 
 // SystemGitClient implements GitClient using system git commands
@@ -152,6 +156,38 @@ func (g *SystemGitClient) GetTagForCommit(ctx context.Context, dir, commitHash s
 func isSemverTag(tag string) bool {
 	tag = strings.TrimPrefix(tag, "v")
 	return semverRegex.MatchString(tag)
+}
+
+// Add stages files for the next commit.
+// Add delegates to git-plumbing's Add method with the specified paths.
+func (g *SystemGitClient) Add(ctx context.Context, dir string, paths ...string) error {
+	return g.gitFor(dir).Add(ctx, paths...)
+}
+
+// Commit creates a new commit with structured trailers.
+// Commit converts []types.Trailer to []git.Trailer for the git-plumbing layer.
+// Both types have identical Key/Value fields but are distinct Go types across packages.
+func (g *SystemGitClient) Commit(ctx context.Context, dir string, opts types.CommitOptions) error {
+	plumbingTrailers := make([]git.Trailer, len(opts.Trailers))
+	for i, t := range opts.Trailers {
+		plumbingTrailers[i] = git.Trailer{Key: t.Key, Value: t.Value}
+	}
+	return g.gitFor(dir).Commit(ctx, git.CommitOpts{
+		Message:  opts.Message,
+		Trailers: plumbingTrailers,
+	})
+}
+
+// AddNote adds or overwrites a git note on a commit under the given note ref namespace.
+// AddNote delegates to git-plumbing's AddNote with NoteRef type conversion.
+func (g *SystemGitClient) AddNote(ctx context.Context, dir, noteRef, commitHash, content string) error {
+	return g.gitFor(dir).AddNote(ctx, git.NoteRef(noteRef), commitHash, content)
+}
+
+// GetNote retrieves a git note from a commit under the given note ref namespace.
+// GetNote delegates to git-plumbing's GetNote with NoteRef type conversion.
+func (g *SystemGitClient) GetNote(ctx context.Context, dir, noteRef, commitHash string) (string, error) {
+	return g.gitFor(dir).GetNote(ctx, git.NoteRef(noteRef), commitHash)
 }
 
 // GetGitUserIdentity returns the git user identity in "Name <email>" format.

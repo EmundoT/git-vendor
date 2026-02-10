@@ -324,6 +324,23 @@ func (m *Manager) CheckVendorStatus(vendorName string) (map[string]interface{}, 
 	return m.syncer.CheckVendorStatus(vendorName)
 }
 
+// CommitVendorChanges stages and commits vendored files in a single commit
+// with multi-valued COMMIT-SCHEMA v1 trailers and a git note under refs/notes/vendor.
+// CommitVendorChanges delegates to the package-level CommitVendorChanges function.
+func (m *Manager) CommitVendorChanges(operation, vendorFilter string) error {
+	return CommitVendorChanges(context.Background(), m.syncer.gitClient,
+		m.syncer.configStore, m.syncer.lockStore, ".", operation, vendorFilter)
+}
+
+// AnnotateVendorCommit retroactively attaches vendor metadata as a git note
+// to an existing commit. Used by "git vendor annotate" for human-created commits.
+// commitHash is the target commit (empty = HEAD).
+// vendorFilter restricts to a single vendor (empty = all).
+func (m *Manager) AnnotateVendorCommit(commitHash, vendorFilter string) error {
+	return AnnotateVendorCommit(context.Background(), m.syncer.gitClient,
+		m.syncer.configStore, m.syncer.lockStore, ".", commitHash, vendorFilter)
+}
+
 // UpdateVerboseMode updates the verbose flag for git operations
 func (m *Manager) UpdateVerboseMode(verbose bool) {
 	// Update the global git client

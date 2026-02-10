@@ -35,6 +35,39 @@ func (m *MockGitClient) EXPECT() *MockGitClientMockRecorder {
 	return m.recorder
 }
 
+// Add mocks base method.
+func (m *MockGitClient) Add(ctx context.Context, dir string, paths ...string) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, dir}
+	for _, a := range paths {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "Add", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Add indicates an expected call of Add.
+func (mr *MockGitClientMockRecorder) Add(ctx, dir interface{}, paths ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, dir}, paths...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Add", reflect.TypeOf((*MockGitClient)(nil).Add), varargs...)
+}
+
+// AddNote mocks base method.
+func (m *MockGitClient) AddNote(ctx context.Context, dir, noteRef, commitHash, content string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddNote", ctx, dir, noteRef, commitHash, content)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddNote indicates an expected call of AddNote.
+func (mr *MockGitClientMockRecorder) AddNote(ctx, dir, noteRef, commitHash, content interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddNote", reflect.TypeOf((*MockGitClient)(nil).AddNote), ctx, dir, noteRef, commitHash, content)
+}
+
 // AddRemote mocks base method.
 func (m *MockGitClient) AddRemote(ctx context.Context, dir, name, url string) error {
 	m.ctrl.T.Helper()
@@ -75,6 +108,20 @@ func (m *MockGitClient) Clone(ctx context.Context, dir, url string, opts *types.
 func (mr *MockGitClientMockRecorder) Clone(ctx, dir, url, opts interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Clone", reflect.TypeOf((*MockGitClient)(nil).Clone), ctx, dir, url, opts)
+}
+
+// Commit mocks base method.
+func (m *MockGitClient) Commit(ctx context.Context, dir string, opts types.CommitOptions) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Commit", ctx, dir, opts)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Commit indicates an expected call of Commit.
+func (mr *MockGitClientMockRecorder) Commit(ctx, dir, opts interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockGitClient)(nil).Commit), ctx, dir, opts)
 }
 
 // Fetch mocks base method.
@@ -133,6 +180,21 @@ func (m *MockGitClient) GetHeadHash(ctx context.Context, dir string) (string, er
 func (mr *MockGitClientMockRecorder) GetHeadHash(ctx, dir interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHeadHash", reflect.TypeOf((*MockGitClient)(nil).GetHeadHash), ctx, dir)
+}
+
+// GetNote mocks base method.
+func (m *MockGitClient) GetNote(ctx context.Context, dir, noteRef, commitHash string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNote", ctx, dir, noteRef, commitHash)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNote indicates an expected call of GetNote.
+func (mr *MockGitClientMockRecorder) GetNote(ctx, dir, noteRef, commitHash interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNote", reflect.TypeOf((*MockGitClient)(nil).GetNote), ctx, dir, noteRef, commitHash)
 }
 
 // GetTagForCommit mocks base method.
