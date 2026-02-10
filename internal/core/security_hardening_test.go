@@ -69,7 +69,8 @@ func TestSEC010_HookSanitizeEnvValue(t *testing.T) {
 
 // TestSEC010_GitArgsNotShellInterpolated documents that git arguments are passed as
 // separate exec.Command arguments (safe), not via shell interpolation (unsafe).
-// This test verifies the SystemGitClient correctly creates a new git instance per call.
+// TestSEC010_GitArgsNotShellInterpolated verifies SystemGitClient.gitFor() returns
+// a valid git-plumbing instance per call.
 func TestSEC010_GitArgsNotShellInterpolated(t *testing.T) {
 	// SystemGitClient.gitFor() creates a new git.Git per call with Dir set.
 	// git.Git.Run() uses exec.CommandContext(ctx, "git", args...) — safe.
@@ -460,9 +461,8 @@ func TestSEC022_CopyFile_DanglingSymlink(t *testing.T) {
 // to a directory is seen as a non-directory entry. CopyFile then calls os.Open
 // which follows the symlink to a directory and fails with "is a directory".
 //
-// This is safe behavior: preventing symlink traversal in directory copies avoids
-// symlink-based directory escape attacks. Git clone sources rarely contain
-// directory symlinks.
+// Preventing symlink traversal in directory copies avoids symlink-based directory
+// escape attacks. Git clone sources rarely contain directory symlinks.
 func TestSEC022_CopyDir_SymlinkToDirectory(t *testing.T) {
 	fs := NewOSFileSystem()
 	tempDir := t.TempDir()

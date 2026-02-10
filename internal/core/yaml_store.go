@@ -16,8 +16,8 @@ import (
 const maxYAMLFileSize = 1 << 20 // 1 MB
 
 // YAMLStore provides generic YAML file I/O operations.
-// YAMLStore consolidates duplicate code between ConfigStore and LockStore.
-// It's a perfect use case for Go 1.18+ generics.
+// YAMLStore consolidates duplicate code between ConfigStore and LockStore
+// using Go 1.18+ generics.
 type YAMLStore[T any] struct {
 	rootDir      string
 	filename     string
