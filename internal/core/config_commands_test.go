@@ -305,6 +305,40 @@ func TestAddMappingToVendor_RefNotFound(t *testing.T) {
 	}
 }
 
+func TestAddMappingToVendor_EmptySpecs(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := types.VendorSpec{
+		Name:    "mylib",
+		URL:     "https://github.com/org/lib",
+		License: "MIT",
+		Specs:   []types.BranchSpec{}, // no specs
+	}
+	cfg := createTestConfig(vendor)
+
+	config.EXPECT().Load().Return(cfg, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.AddMappingToVendor("mylib", "a.go", "b.go", "")
+	assertError(t, err, "AddMappingToVendor empty specs")
+	if !strings.Contains(err.Error(), "no specs") {
+		t.Errorf("expected 'no specs' error, got: %v", err)
+	}
+}
+
+func TestAddMappingToVendor_EmptyArgs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.AddMappingToVendor("", "a.go", "b.go", "")
+	assertError(t, err, "AddMappingToVendor empty vendor name")
+
+	err = syncer.AddMappingToVendor("mylib", "", "b.go", "")
+	assertError(t, err, "AddMappingToVendor empty from path")
+}
+
 // ============================================================================
 // RemoveMappingFromVendor Tests
 // ============================================================================
@@ -347,6 +381,32 @@ func TestRemoveMappingFromVendor_NotFound(t *testing.T) {
 	}
 }
 
+func TestRemoveMappingFromVendor_VendorNotFound(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	config.EXPECT().Load().Return(types.VendorConfig{}, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.RemoveMappingFromVendor("nonexistent", "src/file.go")
+	assertError(t, err, "RemoveMappingFromVendor vendor not found")
+	if !IsVendorNotFound(err) {
+		t.Errorf("expected VendorNotFoundError, got: %v", err)
+	}
+}
+
+func TestRemoveMappingFromVendor_EmptyArgs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.RemoveMappingFromVendor("", "src/file.go")
+	assertError(t, err, "RemoveMappingFromVendor empty vendor name")
+
+	err = syncer.RemoveMappingFromVendor("mylib", "")
+	assertError(t, err, "RemoveMappingFromVendor empty from path")
+}
+
 // ============================================================================
 // UpdateMappingInVendor Tests
 // ============================================================================
@@ -387,6 +447,32 @@ func TestUpdateMappingInVendor_NotFound(t *testing.T) {
 	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
 	err := syncer.UpdateMappingInVendor("mylib", "nonexistent.go", "new.go")
 	assertError(t, err, "UpdateMappingInVendor not found")
+}
+
+func TestUpdateMappingInVendor_VendorNotFound(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	config.EXPECT().Load().Return(types.VendorConfig{}, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.UpdateMappingInVendor("nonexistent", "src/file.go", "new.go")
+	assertError(t, err, "UpdateMappingInVendor vendor not found")
+	if !IsVendorNotFound(err) {
+		t.Errorf("expected VendorNotFoundError, got: %v", err)
+	}
+}
+
+func TestUpdateMappingInVendor_EmptyArgs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.UpdateMappingInVendor("", "src/file.go", "new.go")
+	assertError(t, err, "UpdateMappingInVendor empty vendor name")
+
+	err = syncer.UpdateMappingInVendor("mylib", "", "new.go")
+	assertError(t, err, "UpdateMappingInVendor empty from path")
 }
 
 // ============================================================================
@@ -449,6 +535,33 @@ func TestShowVendor_NotFound(t *testing.T) {
 	}
 }
 
+func TestShowVendor_NoLockfile(t *testing.T) {
+	ctrl, _, _, config, lock, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	cfg := createTestConfig(vendor)
+
+	config.EXPECT().Load().Return(cfg, nil)
+	lock.EXPECT().Load().Return(types.VendorLock{}, os.ErrNotExist)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, lock, NewMockLicenseChecker(ctrl))
+	data, err := syncer.ShowVendor("mylib")
+	assertNoError(t, err, "ShowVendor no lockfile")
+
+	if data["name"] != "mylib" {
+		t.Errorf("expected name 'mylib', got %v", data["name"])
+	}
+	specs, ok := data["specs"].([]map[string]interface{})
+	if !ok || len(specs) != 1 {
+		t.Fatalf("expected 1 spec, got %v", data["specs"])
+	}
+	// No commit_hash when lockfile is absent
+	if _, hasHash := specs[0]["commit_hash"]; hasHash {
+		t.Errorf("expected no commit_hash without lockfile, got %v", specs[0]["commit_hash"])
+	}
+}
+
 // ============================================================================
 // GetConfigValue Tests
 // ============================================================================
@@ -506,6 +619,116 @@ func TestGetConfigValue_VendorNotFound(t *testing.T) {
 	assertError(t, err, "GetConfigValue vendor not found")
 	if !IsVendorNotFound(err) {
 		t.Errorf("expected VendorNotFoundError, got: %v", err)
+	}
+}
+
+func TestGetConfigValue_VendorsList(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	v1 := createTestVendorSpec("alpha", "https://a.com", "main")
+	v2 := createTestVendorSpec("beta", "https://b.com", "main")
+	config.EXPECT().Load().Return(createTestConfig(v1, v2), nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	val, err := syncer.GetConfigValue("vendors")
+	assertNoError(t, err, "GetConfigValue vendors list")
+
+	names, ok := val.([]string)
+	if !ok {
+		t.Fatalf("expected []string, got %T", val)
+	}
+	if len(names) != 2 || names[0] != "alpha" || names[1] != "beta" {
+		t.Errorf("expected [alpha beta], got %v", names)
+	}
+}
+
+func TestGetConfigValue_VendorObject(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	val, err := syncer.GetConfigValue("vendors.mylib")
+	assertNoError(t, err, "GetConfigValue vendor object")
+
+	obj, ok := val.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map[string]interface{}, got %T", val)
+	}
+	if obj["name"] != "mylib" {
+		t.Errorf("expected name 'mylib', got %v", obj["name"])
+	}
+	if obj["url"] != "https://github.com/org/lib" {
+		t.Errorf("expected URL, got %v", obj["url"])
+	}
+}
+
+func TestGetConfigValue_RefField(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/org/lib", "v2.0.0")
+	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	val, err := syncer.GetConfigValue("vendors.mylib.ref")
+	assertNoError(t, err, "GetConfigValue ref field")
+	if val != "v2.0.0" {
+		t.Errorf("expected 'v2.0.0', got %v", val)
+	}
+}
+
+func TestGetConfigValue_LicenseField(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	val, err := syncer.GetConfigValue("vendors.mylib.license")
+	assertNoError(t, err, "GetConfigValue license field")
+	if val != "MIT" {
+		t.Errorf("expected 'MIT', got %v", val)
+	}
+}
+
+func TestGetConfigValue_GroupsField(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	vendor.Groups = []string{"frontend", "shared"}
+	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	val, err := syncer.GetConfigValue("vendors.mylib.groups")
+	assertNoError(t, err, "GetConfigValue groups field")
+
+	groups, ok := val.([]string)
+	if !ok {
+		t.Fatalf("expected []string, got %T", val)
+	}
+	if len(groups) != 2 || groups[0] != "frontend" {
+		t.Errorf("expected [frontend shared], got %v", groups)
+	}
+}
+
+func TestGetConfigValue_UnknownVendorField(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	_, err := syncer.GetConfigValue("vendors.mylib.nonexistent_field")
+	assertError(t, err, "GetConfigValue unknown vendor field")
+	if !strings.Contains(err.Error(), "unknown vendor field") {
+		t.Errorf("expected 'unknown vendor field' error, got: %v", err)
 	}
 }
 
@@ -573,6 +796,67 @@ func TestSetConfigValue_InvalidKey(t *testing.T) {
 	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
 	err := syncer.SetConfigValue("invalid", "value")
 	assertError(t, err, "SetConfigValue invalid key")
+}
+
+func TestSetConfigValue_License(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
+	config.EXPECT().Save(gomock.Any()).DoAndReturn(func(cfg types.VendorConfig) error {
+		if cfg.Vendors[0].License != "Apache-2.0" {
+			t.Errorf("expected license 'Apache-2.0', got %q", cfg.Vendors[0].License)
+		}
+		return nil
+	})
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.SetConfigValue("vendors.mylib.license", "Apache-2.0")
+	assertNoError(t, err, "SetConfigValue license")
+}
+
+func TestSetConfigValue_UnknownField(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.SetConfigValue("vendors.mylib.nonexistent", "value")
+	assertError(t, err, "SetConfigValue unknown field")
+	if !strings.Contains(err.Error(), "unknown vendor field") {
+		t.Errorf("expected 'unknown vendor field' error, got: %v", err)
+	}
+}
+
+func TestSetConfigValue_VendorNotFound(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	config.EXPECT().Load().Return(types.VendorConfig{}, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.SetConfigValue("vendors.nonexistent.url", "https://new.com")
+	assertError(t, err, "SetConfigValue vendor not found")
+	if !IsVendorNotFound(err) {
+		t.Errorf("expected VendorNotFoundError, got: %v", err)
+	}
+}
+
+func TestSetConfigValue_IncompleteKey(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	config.EXPECT().Load().Return(types.VendorConfig{}, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.SetConfigValue("vendors.mylib", "value")
+	assertError(t, err, "SetConfigValue incomplete key")
+	if !strings.Contains(err.Error(), "invalid key format") {
+		t.Errorf("expected 'invalid key format' error, got: %v", err)
+	}
 }
 
 // ============================================================================
@@ -659,6 +943,37 @@ func TestCheckVendorStatus_VendorNotFound(t *testing.T) {
 	assertError(t, err, "CheckVendorStatus not found")
 	if !IsVendorNotFound(err) {
 		t.Errorf("expected VendorNotFoundError, got: %v", err)
+	}
+}
+
+func TestCheckVendorStatus_NotLocked(t *testing.T) {
+	ctrl, _, _, config, lock, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	cfg := createTestConfig(vendor)
+
+	config.EXPECT().Load().Return(cfg, nil)
+	// Lockfile exists but has no entry for mylib@main
+	lock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			createTestLockEntry("other-vendor", "main", "xyz789"),
+		},
+	}, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, lock, NewMockLicenseChecker(ctrl))
+	result, err := syncer.CheckVendorStatus("mylib")
+	assertNoError(t, err, "CheckVendorStatus not locked")
+
+	if result["status"] != "stale" {
+		t.Errorf("expected status 'stale', got %v", result["status"])
+	}
+	specs, ok := result["specs"].([]map[string]interface{})
+	if !ok || len(specs) != 1 {
+		t.Fatalf("expected 1 spec status, got %v", result["specs"])
+	}
+	if specs[0]["status"] != "not_locked" {
+		t.Errorf("expected spec status 'not_locked', got %v", specs[0]["status"])
 	}
 }
 
