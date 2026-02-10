@@ -557,6 +557,29 @@ func TestCheckLocalModifications_WholeFile_CRLF_NoSpuriousWarning(t *testing.T) 
 	}
 }
 
+// TestCheckLocalModifications_Position_InvalidRange_SuppressesWarning verifies that
+// checkLocalModifications silently returns no warning when the position range is
+// invalid on the existing destination file (e.g., file has 2 lines but pos targets L5).
+// This is intentional: the file may have been created/modified since last sync,
+// and an invalid range means "no comparison possible", not "modification detected".
+func TestCheckLocalModifications_Position_InvalidRange_SuppressesWarning(t *testing.T) {
+	tempDir := t.TempDir()
+	destFile := filepath.Join(tempDir, "short.go")
+	if err := os.WriteFile(destFile, []byte("line1\nline2\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &OSFileSystem{}
+	svc := &FileCopyService{fs: fs}
+
+	// Position L5 doesn't exist in 3-line file — ExtractPosition errors, warning suppressed
+	pos := &types.PositionSpec{StartLine: 5}
+	w := svc.checkLocalModifications(destFile, pos, "some content")
+	if w != "" {
+		t.Errorf("expected no warning for invalid range on existing file, got %q", w)
+	}
+}
+
 func TestCopyStats_WarningsAggregation(t *testing.T) {
 	s1 := CopyStats{Warnings: []string{"warn1"}}
 	s2 := CopyStats{Warnings: []string{"warn2", "warn3"}}
@@ -1472,37 +1495,8 @@ func TestExtractPosition_L1ToEOF_EntireFile(t *testing.T) {
 	}
 }
 
-// TestExtractPosition_EmptyFile verifies behavior on a zero-byte file.
-// strings.Split("", "\n") yields [""] (one empty line), so L1 returns ""
-// and L2 errors. This is documented as intentional: an empty file has one empty line.
-func TestExtractPosition_EmptyFile(t *testing.T) {
-	tempDir := t.TempDir()
-	filePath := filepath.Join(tempDir, "empty.go")
-	if err := os.WriteFile(filePath, []byte(""), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// L1 on empty file → empty string (the single empty line)
-	extracted, hash, err := ExtractPosition(filePath, &types.PositionSpec{StartLine: 1})
-	if err != nil {
-		t.Fatalf("unexpected error for L1 on empty file: %v", err)
-	}
-	if extracted != "" {
-		t.Errorf("extracted = %q, want empty string", extracted)
-	}
-	if !strings.HasPrefix(hash, "sha256:") {
-		t.Errorf("hash = %q, want sha256: prefix", hash)
-	}
-
-	// L2 on empty file → error
-	_, _, err = ExtractPosition(filePath, &types.PositionSpec{StartLine: 2})
-	if err == nil {
-		t.Fatal("expected error for L2 on empty file")
-	}
-	if !strings.Contains(err.Error(), "does not exist") {
-		t.Errorf("error = %q, want 'does not exist' message", err.Error())
-	}
-}
+// NOTE: TestExtractPosition_EmptyFile removed — duplicated by the more comprehensive
+// TestExtractPosition_EmptyFile_L1, _L2_Error, and _L1EOF tests above (lines 931-985).
 
 // TestExtractPosition_NoTrailingNewline verifies that extraction preserves content
 // exactly when the file has no trailing newline.
@@ -1550,29 +1544,52 @@ func TestExtractPosition_TrailingNewlineCreatesEmptyLine(t *testing.T) {
 	}
 }
 
-// TestExtractPosition_MixedLineEndings verifies that \r\n is normalized to \n
-// before extraction. After CRLF normalization, \r is stripped from extracted content.
-func TestExtractPosition_MixedLineEndings(t *testing.T) {
+// NOTE: TestExtractPosition_MixedLineEndings removed — duplicated by the more
+// comprehensive TestExtractPosition_CRLF_LineExtraction test above (line 724).
+
+// ============================================================================
+// Column Extraction Edge Cases — StartCol Boundary Asymmetry
+// ============================================================================
+
+// TestExtractPosition_StartColBoundary_SingleVsMultiLine documents the intentional
+// asymmetry between single-line and multi-line column extraction for StartCol at line
+// boundary. Single-line mode errors when StartCol > len(line), but multi-line mode
+// allows StartCol = len(line)+1 (clamped to end). This matches the semantics:
+// in multi-line, starting "past the end" of the first line means extracting only
+// from subsequent lines, which is valid. In single-line, there's nothing to extract.
+func TestExtractPosition_StartColBoundary_SingleVsMultiLine(t *testing.T) {
 	tempDir := t.TempDir()
-	filePath := filepath.Join(tempDir, "crlf.go")
-	content := "line1\r\nline2\r\nline3\r\n"
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+	filePath := filepath.Join(tempDir, "boundary.go")
+	// "abc" = 3 bytes
+	if err := os.WriteFile(filePath, []byte("abc\ndef\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// After CRLF normalization: "line1\nline2\nline3\n" → ["line1", "line2", "line3", ""]
-	extracted, _, err := ExtractPosition(filePath, &types.PositionSpec{StartLine: 2})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// Single-line: StartCol=4 on "abc" (len=3) → error
+	_, _, err := ExtractPosition(filePath, &types.PositionSpec{
+		StartLine: 1, EndLine: 1, StartCol: 4, EndCol: 4,
+	})
+	if err == nil {
+		t.Fatal("single-line: expected error for StartCol > len(line)")
 	}
-	// \r is NOT preserved — CRLF is normalized to LF before extraction
-	if extracted != "line2" {
-		t.Errorf("extracted = %q, want %q (CRLF normalized)", extracted, "line2")
+
+	// Multi-line: StartCol=4 on "abc" (len=3) → allowed, clamped to end of first line.
+	// extractColumns multi-line allows StartCol up to len(firstLine)+1.
+	extracted, _, err := ExtractPosition(filePath, &types.PositionSpec{
+		StartLine: 1, EndLine: 2, StartCol: 4, EndCol: 3,
+	})
+	if err != nil {
+		t.Fatalf("multi-line: unexpected error for StartCol at line boundary: %v", err)
+	}
+	// First line from col 4 on "abc" (len=3): clamped → ""
+	// Last line "def" to col 3: "def"
+	if extracted != "\ndef" {
+		t.Errorf("multi-line: extracted = %q, want %q", extracted, "\ndef")
 	}
 }
 
 // ============================================================================
-// Tests merged from main — Column Extraction Edge Cases
+// Column Extraction Edge Cases (continued)
 // ============================================================================
 
 // TestExtractPosition_FullLineViaColumns verifies that L1C1:L1C{len} extracts the entire line.
