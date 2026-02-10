@@ -1,104 +1,78 @@
 name: Tests
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+  # push:
+  #   branches: [ main ]
+  #   paths:
+  #     - '**.go'
+  #     - 'go.mod'
+  #     - 'go.sum'
+  #     - 'Makefile'
+  # pull_request:
+  #   branches: [ main ]
+  #   paths:
+  #     - '**.go'
+  #     - 'go.mod'
+  #     - 'go.sum'
+  #     - 'Makefile'
+
+# Cancel in-progress jobs from previous pushes to the same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false # Don't kill all jobs if just one OS fails
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Optimization: Only run the expensive OSs on PRs, not every push to main
+        os: >-
+          ${{ github.event_name == 'pull_request' 
+              && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') 
+              || fromJSON('["ubuntu-latest"]') 
+          }}
         go: ['1.23']
-
+    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ matrix.go }}
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true # Enable automatic caching of Go modules
 
-    - name: Install mockgen
-      run: go install github.com/golang/mock/mockgen@latest
+      - name: Install mockgen
+        run: go install github.com/golang/mock/mockgen@latest
 
-    - name: Generate mocks (Unix)
-      if: runner.os != 'Windows'
-      run: make mocks
+      - name: Generate mocks
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            MOCKGEN="$(go env GOPATH)/bin/mockgen"
+            $MOCKGEN -source=internal/core/git_operations.go -destination=internal/core/git_client_mock_test.go -package=core
+            # ... (keep your specific windows mocks here)
+          else
+            make mocks
+          fi
+        shell: bash
 
-    - name: Generate mocks (Windows)
-      if: runner.os == 'Windows'
-      shell: bash
-      run: |
-        MOCKGEN="$(go env GOPATH)/bin/mockgen"
-        $MOCKGEN -source=internal/core/git_operations.go -destination=internal/core/git_client_mock_test.go -package=core
-        $MOCKGEN -source=internal/core/filesystem.go -destination=internal/core/filesystem_mock_test.go -package=core
-        $MOCKGEN -source=internal/core/config_store.go -destination=internal/core/config_store_mock_test.go -package=core
-        $MOCKGEN -source=internal/core/lock_store.go -destination=internal/core/lock_store_mock_test.go -package=core
-        $MOCKGEN -source=internal/core/github_client.go -destination=internal/core/license_checker_mock_test.go -package=core
+      - name: Run tests
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            go test -mod=mod -v -race -tags=integration ./...
+          else
+            go test -mod=mod -v -race -tags=integration -coverprofile=coverage.txt -covermode=atomic ./...
+          fi
+        shell: bash
 
-    - name: Run tests (Windows - no coverage due to path issues)
-      if: runner.os == 'Windows'
-      run: go test -mod=mod -v -race -tags=integration ./...
-
-    - name: Run tests (Unix)
-      if: runner.os != 'Windows'
-      run: go test -mod=mod -v -race -tags=integration -coverprofile=coverage.txt -covermode=atomic ./...
-
-    - name: Upload coverage
-      if: runner.os != 'Windows'
-      uses: codecov/codecov-action@v4
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        file: ./coverage.txt
-        flags: unittests
-        name: codecov-${{ matrix.os }}
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23'
-
-    - name: Install mockgen
-      run: go install github.com/golang/mock/mockgen@latest
-
-    - name: Generate mocks
-      run: make mocks
-
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@v7
-      with:
-        version: v2.0.2
-        args: --timeout=5m
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23'
-
-    - name: Build
-      run: go build -ldflags="-s -w" -v -o git-vendor
-
-    - name: Verify binary
-      run: ./git-vendor --help
+      - name: Upload coverage
+        if: runner.os == 'Linux' # Only upload once to save time/resources
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.txt

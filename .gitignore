@@ -28,6 +28,9 @@ benchmark.txt
 # OS
 .DS_Store
 
+# Go module vendor (project uses .git-vendor/, not vendor/)
+vendor/
+
 # Git-vendor development/testing files
 .git-vendor/
 vendor.yml
