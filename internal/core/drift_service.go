@@ -226,7 +226,7 @@ func (s *DriftService) driftForVendorRef(
 	var totalUpstreamAdded, totalUpstreamRemoved int
 	var localChanged, localUnchanged int
 	var upstreamChanged, upstreamUnchanged int
-	var totalOrigLines, totalDriftLines int
+	var totalOrigLines int
 
 	for _, m := range wholeMappings {
 		original := originals[m.From]
@@ -322,9 +322,7 @@ func (s *DriftService) driftForVendorRef(
 		}
 
 		// Accumulate for overall drift score
-		origLineCount := countLines(original)
-		totalOrigLines += origLineCount
-		totalDriftLines += df.LocalLinesAdded + df.LocalLinesRemoved
+		totalOrigLines += countLines(original)
 
 		dep.Files = append(dep.Files, df)
 	}
