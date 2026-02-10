@@ -31,17 +31,20 @@ type RefMetadata struct {
 
 // SyncServiceInterface defines the contract for vendor synchronization.
 // SyncServiceInterface enables mocking in tests and alternative sync strategies.
+// All methods accept a context.Context for cancellation support (e.g., Ctrl+C).
 type SyncServiceInterface interface {
 	// Sync synchronizes vendors based on the provided options, loading config and lock internally.
-	Sync(opts SyncOptions) error
+	// ctx controls cancellation of git operations during sync.
+	Sync(ctx context.Context, opts SyncOptions) error
 
 	// SyncVendor syncs a single vendor's refs and returns per-ref metadata and copy stats.
+	// ctx controls cancellation of git operations during sync.
 	//
 	// lockedRefs controls the sync mode:
 	//   - nil: update mode — fetches the latest commit on each ref (FETCH_HEAD).
 	//   - non-nil map: sync mode — checks out the exact commit hash for each ref.
 	//     Missing or empty entries within the map are treated as unlocked for that ref.
-	SyncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error)
+	SyncVendor(ctx context.Context, v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error)
 }
 
 // Compile-time interface satisfaction check.
@@ -88,9 +91,10 @@ func NewSyncService(
 	}
 }
 
-// Sync performs synchronization based on the provided options
-// Note: Caller should check for lockfile existence before calling this
-func (s *SyncService) Sync(opts SyncOptions) error {
+// Sync performs synchronization based on the provided options.
+// ctx controls cancellation of git operations during sync.
+// Note: Caller should check for lockfile existence before calling this.
+func (s *SyncService) Sync(ctx context.Context, opts SyncOptions) error {
 	config, err := s.configStore.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -141,10 +145,10 @@ func (s *SyncService) Sync(opts SyncOptions) error {
 
 	// Use parallel or sequential sync based on options
 	if opts.Parallel.Enabled {
-		return s.syncParallel(vendorsToSync, lockMap, opts)
+		return s.syncParallel(ctx, vendorsToSync, lockMap, opts)
 	}
 
-	return s.syncSequential(vendorsToSync, lockMap, opts)
+	return s.syncSequential(ctx, vendorsToSync, lockMap, opts)
 }
 
 // syncDryRun performs dry-run preview (always sequential)
@@ -160,8 +164,9 @@ func (s *SyncService) syncDryRun(vendors []types.VendorSpec, lockMap map[string]
 	return nil
 }
 
-// syncSequential performs sequential sync (original implementation)
-func (s *SyncService) syncSequential(vendors []types.VendorSpec, lockMap map[string]map[string]string, opts SyncOptions) error {
+// syncSequential performs sequential sync (original implementation).
+// ctx controls cancellation — checked at each vendor boundary.
+func (s *SyncService) syncSequential(ctx context.Context, vendors []types.VendorSpec, lockMap map[string]map[string]string, opts SyncOptions) error {
 	// Start progress tracking
 	progress := s.ui.StartProgress(len(vendors), "Syncing vendors")
 	defer progress.Complete()
@@ -171,12 +176,15 @@ func (s *SyncService) syncSequential(vendors []types.VendorSpec, lockMap map[str
 
 	// Sync vendors
 	for _, v := range vendors {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		// If force is true, pass nil to ignore lock and re-download
 		refs := lockMap[v.Name]
 		if opts.Force {
 			refs = nil
 		}
-		_, stats, err := s.SyncVendor(&v, refs, opts)
+		_, stats, err := s.SyncVendor(ctx, &v, refs, opts)
 		if err != nil {
 			progress.Fail(err)
 			return fmt.Errorf("sync vendor %s: %w", v.Name, err)
@@ -194,8 +202,9 @@ func (s *SyncService) syncSequential(vendors []types.VendorSpec, lockMap map[str
 	return nil
 }
 
-// syncParallel performs parallel sync using worker pool
-func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[string]map[string]string, opts SyncOptions) error {
+// syncParallel performs parallel sync using worker pool.
+// ctx controls cancellation — passed to the parallel executor and each worker.
+func (s *SyncService) syncParallel(ctx context.Context, vendors []types.VendorSpec, lockMap map[string]map[string]string, opts SyncOptions) error {
 	// Start progress tracking
 	progress := s.ui.StartProgress(len(vendors), "Syncing vendors (parallel)")
 	defer progress.Complete()
@@ -204,8 +213,8 @@ func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[strin
 	executor := NewParallelExecutor(opts.Parallel, s.ui)
 
 	// Define sync function for a single vendor
-	syncFunc := func(v types.VendorSpec, lockedRefs map[string]string, syncOpts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
-		updatedRefs, stats, err := s.SyncVendor(&v, lockedRefs, syncOpts)
+	syncFunc := func(workerCtx context.Context, v types.VendorSpec, lockedRefs map[string]string, syncOpts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+		updatedRefs, stats, err := s.SyncVendor(workerCtx, &v, lockedRefs, syncOpts)
 		if err != nil {
 			progress.Fail(err)
 			return nil, CopyStats{}, err
@@ -215,7 +224,7 @@ func (s *SyncService) syncParallel(vendors []types.VendorSpec, lockMap map[strin
 	}
 
 	// Execute parallel sync
-	results, err := executor.ExecuteParallelSync(vendors, lockMap, opts, syncFunc)
+	results, err := executor.ExecuteParallelSync(ctx, vendors, lockMap, opts, syncFunc)
 	if err != nil {
 		return fmt.Errorf("parallel sync: %w", err)
 	}
@@ -350,8 +359,9 @@ func (s *SyncService) previewSyncVendor(v *types.VendorSpec, lockedRefs map[stri
 }
 
 // SyncVendor syncs a single vendor.
+// ctx controls cancellation of git operations during sync.
 // Returns a map of ref to RefMetadata and total stats for all synced refs.
-func (s *SyncService) SyncVendor(v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+func (s *SyncService) SyncVendor(ctx context.Context, v *types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 	// Check cache for all refs first (if cache enabled)
 	canSkipClone := false
 	if !opts.NoCache && !opts.Force && lockedRefs != nil {
@@ -419,8 +429,6 @@ func (s *SyncService) SyncVendor(v *types.VendorSpec, lockedRefs map[string]stri
 	}
 	defer func() { _ = s.fs.RemoveAll(tempDir) }() //nolint:errcheck // cleanup in defer
 
-	ctx := context.Background()
-
 	// Initialize git repo
 	if err := s.gitClient.Init(ctx, tempDir); err != nil {
 		return nil, CopyStats{}, fmt.Errorf("failed to initialize git repository for %s: %w", v.Name, err)
@@ -435,7 +443,7 @@ func (s *SyncService) SyncVendor(v *types.VendorSpec, lockedRefs map[string]stri
 
 	// Sync each ref
 	for _, spec := range v.Specs {
-		metadata, stats, err := s.syncRef(tempDir, v, spec, lockedRefs, opts)
+		metadata, stats, err := s.syncRef(ctx, tempDir, v, spec, lockedRefs, opts)
 		if err != nil {
 			return nil, CopyStats{}, err
 		}
@@ -476,8 +484,9 @@ func (s *SyncService) SyncVendor(v *types.VendorSpec, lockedRefs map[string]stri
 	return results, totalStats, nil
 }
 
-// syncRef syncs a single ref for a vendor
-func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string, opts SyncOptions) (RefMetadata, CopyStats, error) {
+// syncRef syncs a single ref for a vendor.
+// ctx controls cancellation of git operations during sync.
+func (s *SyncService) syncRef(ctx context.Context, tempDir string, v *types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string, opts SyncOptions) (RefMetadata, CopyStats, error) {
 	targetCommit := ""
 	isLocked := false
 
@@ -491,11 +500,10 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 
 	// Fetch and checkout
 	fmt.Printf("  ⠿ Fetching ref '%s'...\n", spec.Ref)
-	ctx := context.Background()
 
 	if isLocked {
 		// Locked sync - checkout specific commit
-		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
+		if err := s.fetchWithFallback(ctx, tempDir, spec.Ref); err != nil {
 			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 		}
 		if err := s.gitClient.Checkout(ctx, tempDir, targetCommit); err != nil {
@@ -508,7 +516,7 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 		}
 	} else {
 		// Unlocked sync - checkout latest
-		if err := s.fetchWithFallback(tempDir, spec.Ref); err != nil {
+		if err := s.fetchWithFallback(ctx, tempDir, spec.Ref); err != nil {
 			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
 		}
 		if err := s.gitClient.Checkout(ctx, tempDir, FetchHead); err != nil {
@@ -557,10 +565,9 @@ func (s *SyncService) syncRef(tempDir string, v *types.VendorSpec, spec types.Br
 	return RefMetadata{CommitHash: hash, VersionTag: versionTag, Positions: stats.Positions}, stats, nil
 }
 
-// fetchWithFallback tries shallow fetch first, falls back to full fetch if needed
-// This eliminates duplicate fetch retry logic
-func (s *SyncService) fetchWithFallback(tempDir, ref string) error {
-	ctx := context.Background()
+// fetchWithFallback tries shallow fetch first, falls back to full fetch if needed.
+// ctx controls cancellation of git fetch operations.
+func (s *SyncService) fetchWithFallback(ctx context.Context, tempDir, ref string) error {
 	// Try shallow fetch first
 	if err := s.gitClient.Fetch(ctx, tempDir, 1, ref); err != nil {
 		// Shallow fetch failed, try full fetch

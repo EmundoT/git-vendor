@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -23,7 +24,7 @@ func (m *mockVendorManager) ParseSmartURL(_ string) (string, string, string) {
 	return "", "", ""
 }
 
-func (m *mockVendorManager) FetchRepoDir(_, _, _ string) ([]string, error) {
+func (m *mockVendorManager) FetchRepoDir(_ context.Context, _, _, _ string) ([]string, error) {
 	return nil, nil
 }
 

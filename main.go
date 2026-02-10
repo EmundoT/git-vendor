@@ -489,8 +489,12 @@ func main() {
 			commit = false
 		}
 
+		// Create signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
 		if dryRun {
-			if err := manager.SyncDryRun(); err != nil {
+			if err := manager.SyncDryRun(ctx); err != nil {
 				callback.ShowError("Preview Failed", err.Error())
 				os.Exit(1)
 			}
@@ -506,19 +510,19 @@ func main() {
 					Enabled:    true,
 					MaxWorkers: workers,
 				}
-				if err := manager.SyncWithParallel(vendorName, force, noCache, parallelOpts); err != nil {
+				if err := manager.SyncWithParallel(ctx, vendorName, force, noCache, parallelOpts); err != nil {
 					callback.ShowError("Sync Failed", err.Error())
 					os.Exit(1)
 				}
 			case groupName != "":
 				// Use group sync if group is specified
-				if err := manager.SyncWithGroup(groupName, force, noCache); err != nil {
+				if err := manager.SyncWithGroup(ctx, groupName, force, noCache); err != nil {
 					callback.ShowError("Sync Failed", err.Error())
 					os.Exit(1)
 				}
 			default:
 				// Regular sync
-				if err := manager.SyncWithOptions(vendorName, force, noCache); err != nil {
+				if err := manager.SyncWithOptions(ctx, vendorName, force, noCache); err != nil {
 					callback.ShowError("Sync Failed", err.Error())
 					os.Exit(1)
 				}
@@ -582,18 +586,22 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Create signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
 		// Use parallel update if requested
 		if parallel {
 			parallelOpts := types.ParallelOptions{
 				Enabled:    true,
 				MaxWorkers: workers,
 			}
-			if err := manager.UpdateAllWithParallel(parallelOpts); err != nil {
+			if err := manager.UpdateAllWithParallel(ctx, parallelOpts); err != nil {
 				callback.ShowError("Update Failed", err.Error())
 				os.Exit(1)
 			}
 		} else {
-			if err := manager.UpdateAll(); err != nil {
+			if err := manager.UpdateAll(ctx); err != nil {
 				callback.ShowError("Update Failed", err.Error())
 				os.Exit(1)
 			}
@@ -729,8 +737,10 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Run verification
-		result, err := manager.Verify()
+		// Run verification with signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		result, err := manager.Verify(ctx)
 		if err != nil {
 			tui.PrintError("Verification Failed", err.Error())
 			os.Exit(1)
@@ -1068,8 +1078,10 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Check for updates
-		updates, err := manager.CheckUpdates()
+		// Check for updates with signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		updates, err := manager.CheckUpdates(ctx)
 		if err != nil {
 			callback.ShowError("Update Check Failed", err.Error())
 			os.Exit(1)
@@ -1301,8 +1313,10 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Run drift detection
-		result, err := manager.Drift(core.DriftOptions{
+		// Run drift detection with signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		result, err := manager.Drift(ctx, core.DriftOptions{
 			Dependency: dependency,
 			Offline:    offline,
 			Detail:     detail,
@@ -1376,9 +1390,10 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Watch for config changes and auto-sync
+		// Watch for config changes and auto-sync.
+		// Each sync invocation creates its own context for cancellation.
 		err := manager.WatchConfig(func() error {
-			return manager.Sync()
+			return manager.Sync(context.Background())
 		})
 
 		if err != nil {
@@ -1648,6 +1663,112 @@ func main() {
 		// - Exit 2 if result is WARN (warned licenses)
 		// - Exit 0 if PASS
 		switch result.Summary.Result {
+		case "PASS":
+			os.Exit(0)
+		case "WARN":
+			os.Exit(2)
+		default: // FAIL
+			os.Exit(1)
+		}
+
+	case "audit":
+		// Parse command-specific flags
+		format := "table"
+		skipVerify := false
+		skipScan := false
+		skipLicense := false
+		skipDrift := false
+		scanFailOn := ""
+		licenseFailOn := "deny"
+		policyPath := ""
+		verbose := false
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			case arg == "--skip-verify":
+				skipVerify = true
+			case arg == "--skip-scan":
+				skipScan = true
+			case arg == "--skip-license":
+				skipLicense = true
+			case arg == "--skip-drift":
+				skipDrift = true
+			case strings.HasPrefix(arg, "--fail-on="):
+				scanFailOn = strings.TrimPrefix(arg, "--fail-on=")
+			case arg == "--fail-on":
+				if i+1 < len(os.Args) {
+					scanFailOn = os.Args[i+1]
+					i++
+				}
+			case strings.HasPrefix(arg, "--license-fail-on="):
+				licenseFailOn = strings.TrimPrefix(arg, "--license-fail-on=")
+			case arg == "--license-fail-on":
+				if i+1 < len(os.Args) {
+					licenseFailOn = os.Args[i+1]
+					i++
+				}
+			case strings.HasPrefix(arg, "--policy="):
+				policyPath = strings.TrimPrefix(arg, "--policy=")
+			case arg == "--policy":
+				if i+1 < len(os.Args) {
+					policyPath = os.Args[i+1]
+					i++
+				}
+			case arg == "--verbose" || arg == "-v":
+				verbose = true
+			}
+		}
+
+		if verbose {
+			core.Verbose = true
+			manager.UpdateVerboseMode(true)
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		// Run unified audit with signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		auditResult, err := manager.RunAudit(ctx, core.AuditOptions{
+			SkipVerify:        skipVerify,
+			SkipScan:          skipScan,
+			SkipLicense:       skipLicense,
+			SkipDrift:         skipDrift,
+			ScanFailOn:        scanFailOn,
+			LicenseFailOn:     licenseFailOn,
+			LicensePolicyPath: policyPath,
+		})
+		if err != nil {
+			tui.PrintError("Audit Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(auditResult); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			fmt.Print(core.FormatAuditTable(auditResult))
+		}
+
+		// Exit codes: 0=PASS, 1=FAIL, 2=WARN
+		switch auditResult.Summary.Result {
 		case "PASS":
 			os.Exit(0)
 		case "WARN":

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -178,7 +179,7 @@ func TestFetchRepoDir_HappyPath(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	files, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "src")
+	files, err := syncer.FetchRepoDir(context.Background(), "https://github.com/owner/repo", "main", "src")
 
 	// Verify
 	assertNoError(t, err, "FetchRepoDir should succeed")
@@ -200,7 +201,7 @@ func TestFetchRepoDir_CloneFails(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "src")
+	_, err := syncer.FetchRepoDir(context.Background(), "https://github.com/owner/repo", "main", "src")
 
 	// Verify
 	assertError(t, err, "FetchRepoDir should fail when clone fails")
@@ -228,7 +229,7 @@ func TestFetchRepoDir_SpecificRef(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "v1.0.0", "")
+	_, err := syncer.FetchRepoDir(context.Background(), "https://github.com/owner/repo", "v1.0.0", "")
 
 	// Verify
 	assertNoError(t, err, "FetchRepoDir should succeed")
@@ -253,7 +254,7 @@ func TestFetchRepoDir_ListTreeFails(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, err := syncer.FetchRepoDir("https://github.com/owner/repo", "main", "nonexistent")
+	_, err := syncer.FetchRepoDir(context.Background(), "https://github.com/owner/repo", "main", "nonexistent")
 
 	// Verify
 	assertError(t, err, "FetchRepoDir should fail when ListTree fails")

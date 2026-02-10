@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -140,7 +141,7 @@ func TestColumnPrecise_RoundTrip_SyncVerifyTamperDrift(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), workDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestColumnPrecise_RoundTrip_SyncVerifyTamperDrift(t *testing.T) {
 	}, nil)
 
 	service2 := NewVerifyService(configStore2, lockStore2, realCache, NewOSFileSystem(), workDir)
-	result2, err := service2.Verify()
+	result2, err := service2.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("verify after tamper: %v", err)
 	}
@@ -462,7 +463,7 @@ func TestOverlappingPositionMappings_TwoVendors_IndependentVerify(t *testing.T) 
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), workDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -542,7 +543,7 @@ func TestOverlappingPositionMappings_TwoVendors_IndependentVerify(t *testing.T) 
 	}, nil)
 
 	service2 := NewVerifyService(configStore2, lockStore2, realCache, NewOSFileSystem(), workDir)
-	result2, err := service2.Verify()
+	result2, err := service2.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("verify after vendor-A tamper: %v", err)
 	}

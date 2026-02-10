@@ -11,8 +11,9 @@ import (
 
 // RemoteExplorerInterface defines the contract for remote repository browsing and URL parsing.
 // RemoteExplorerInterface enables mocking in tests and alternative exploration strategies.
+// FetchRepoDir accepts ctx for cancellation; the 30s ls-tree timeout derives from the parent context.
 type RemoteExplorerInterface interface {
-	FetchRepoDir(url, ref, subdir string) ([]string, error)
+	FetchRepoDir(ctx context.Context, url, ref, subdir string) ([]string, error)
 	ListLocalDir(path string) ([]string, error)
 	ParseSmartURL(rawURL string) (string, string, string)
 }
@@ -36,8 +37,10 @@ func NewRemoteExplorer(gitClient GitClient, fs FileSystem) *RemoteExplorer {
 	}
 }
 
-// FetchRepoDir fetches directory listing from remote repository
-func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error) {
+// FetchRepoDir fetches directory listing from remote repository.
+// ctx controls cancellation of git clone/fetch/ls-tree operations.
+// The 30-second ls-tree timeout derives from the parent context.
+func (e *RemoteExplorer) FetchRepoDir(ctx context.Context, url, ref, subdir string) ([]string, error) {
 	// Show progress indication to user
 	fmt.Println("⠿ Cloning repository...")
 
@@ -55,8 +58,6 @@ func (e *RemoteExplorer) FetchRepoDir(url, ref, subdir string) ([]string, error)
 		NoCheckout: true,
 		Depth:      1,
 	}
-
-	ctx := context.Background()
 
 	if err := e.gitClient.Clone(ctx, tempDir, url, opts); err != nil {
 		return nil, err
