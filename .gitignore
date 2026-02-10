@@ -29,7 +29,7 @@ benchmark.txt
 .DS_Store
 
 # Git-vendor development/testing files
-vendor/
+.git-vendor/
 vendor.yml
 vendor.lock
 licenses/

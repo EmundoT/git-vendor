@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,7 +10,7 @@ import (
 )
 
 // YAMLStore provides generic YAML file I/O operations.
-// This consolidates duplicate code between ConfigStore and LockStore.
+// YAMLStore consolidates duplicate code between ConfigStore and LockStore.
 // It's a perfect use case for Go 1.18+ generics.
 type YAMLStore[T any] struct {
 	rootDir      string
@@ -43,7 +44,7 @@ func (s *YAMLStore[T]) Load() (T, error) {
 	data, err := os.ReadFile(s.Path())
 	if err != nil {
 		// Handle missing file based on allowMissing setting
-		if os.IsNotExist(err) && s.allowMissing {
+		if errors.Is(err, os.ErrNotExist) && s.allowMissing {
 			return result, nil // Return zero value
 		}
 		return result, err

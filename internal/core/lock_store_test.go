@@ -15,7 +15,7 @@ import (
 
 func TestFileLockStore_Path(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	store := NewFileLockStore(vendorDir)
@@ -35,7 +35,7 @@ func TestFileLockStore_Path(t *testing.T) {
 
 func TestFileLockStore_GetHash(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	store := NewFileLockStore(vendorDir)
@@ -116,7 +116,7 @@ func TestFileLockStore_GetHash(t *testing.T) {
 
 func TestFileLockStore_GetHash_EmptyLockfile(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	store := NewFileLockStore(vendorDir)
@@ -139,12 +139,12 @@ func TestFileLockStore_GetHash_EmptyLockfile(t *testing.T) {
 
 func TestFileLockStore_GetHash_MissingLockfile(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	store := NewFileLockStore(vendorDir)
 
-	// Don't create lockfile - it doesn't exist
+	// Don't create lockfile - lockfile doesn't exist on disk
 
 	// Test: GetHash on missing lockfile should return empty string (no error)
 	hash := store.GetHash("vendor1", "main")
@@ -159,7 +159,7 @@ func TestFileLockStore_GetHash_MissingLockfile(t *testing.T) {
 
 func TestFileLockStore_LoadAndSave(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	store := NewFileLockStore(vendorDir)
@@ -172,7 +172,7 @@ func TestFileLockStore_LoadAndSave(t *testing.T) {
 				Ref:         "main",
 				CommitHash:  "abc123",
 				Updated:     "2024-01-01T00:00:00Z",
-				LicensePath: "vendor/licenses/test-vendor.txt",
+				LicensePath: VendorDir + "/licenses/test-vendor.txt",
 			},
 		},
 	}
@@ -207,7 +207,7 @@ func TestFileLockStore_LoadAndSave(t *testing.T) {
 
 func TestFileLockStore_Load_MissingFile(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	store := NewFileLockStore(vendorDir)
@@ -482,7 +482,7 @@ func TestFileLockStore_Load_VersionCompatibility(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tempDir := t.TempDir()
-			vendorDir := filepath.Join(tempDir, "vendor")
+			vendorDir := filepath.Join(tempDir, VendorDir)
 			_ = os.MkdirAll(vendorDir, 0755)
 
 			// Write lockfile with specific schema version
@@ -516,7 +516,7 @@ func TestFileLockStore_Load_VersionCompatibility(t *testing.T) {
 
 func TestFileLockStore_Save_SetsSchemaVersion(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	store := NewFileLockStore(vendorDir)
@@ -564,7 +564,7 @@ func TestFileLockStore_Save_SetsSchemaVersion(t *testing.T) {
 
 func TestFileLockStore_Save_OverridesExistingVersion(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	store := NewFileLockStore(vendorDir)

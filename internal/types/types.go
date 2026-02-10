@@ -8,7 +8,7 @@ type VendorConfig struct {
 	Vendors []VendorSpec `yaml:"vendors"`
 }
 
-// VendorSpec defines a single vendored dependency with its source repository and mappings.
+// VendorSpec defines a single vendored dependency with source repository URL and path mappings.
 type VendorSpec struct {
 	Name    string       `yaml:"name"`
 	URL     string       `yaml:"url"`
@@ -50,7 +50,7 @@ type LockDetails struct {
 	LicenseSPDX      string `yaml:"license_spdx,omitempty"`       // SPDX license identifier
 	SourceVersionTag string `yaml:"source_version_tag,omitempty"` // Git tag matching commit (if any)
 	VendoredAt       string `yaml:"vendored_at,omitempty"`        // ISO 8601 timestamp of initial vendoring
-	VendoredBy       string `yaml:"vendored_by,omitempty"`        // Git user identity who vendored it
+	VendoredBy       string `yaml:"vendored_by,omitempty"`        // Git user identity who performed the vendoring
 	LastSyncedAt     string `yaml:"last_synced_at,omitempty"`     // ISO 8601 timestamp of most recent sync
 
 	// Position extraction metadata (spec 071)
@@ -82,10 +82,12 @@ type CloneOptions struct {
 
 // VendorStatus represents the sync status of a vendor
 type VendorStatus struct {
-	Name         string
-	Ref          string
-	IsSynced     bool
-	MissingPaths []string // Paths that should exist but don't
+	Name          string
+	Ref           string
+	IsSynced      bool
+	MissingPaths  []string // Paths that should exist but don't
+	FileCount     int      // Number of file-level mappings
+	PositionCount int      // Number of position-level mappings from lockfile
 }
 
 // SyncStatus represents the overall sync status
@@ -197,11 +199,21 @@ type VerifySummary struct {
 	Result     string `json:"result"` // PASS, FAIL, WARN
 }
 
+// PositionDetail provides position-level metadata for FileStatus entries
+// that originate from position-extracted mappings.
+type PositionDetail struct {
+	From       string `json:"from"`        // Source path with position (e.g., "api/constants.go:L4-L6")
+	To         string `json:"to"`          // Destination path with optional position
+	SourceHash string `json:"source_hash"` // SHA-256 of extracted content at sync time
+}
+
 // FileStatus represents the verification status of a single file
 type FileStatus struct {
-	Path         string  `json:"path"`
-	Vendor       *string `json:"vendor"`
-	Status       string  `json:"status"` // verified, modified, added, deleted
-	ExpectedHash *string `json:"expected_hash,omitempty"`
-	ActualHash   *string `json:"actual_hash,omitempty"`
+	Path         string          `json:"path"`
+	Vendor       *string         `json:"vendor"`
+	Status       string          `json:"status"`             // verified, modified, added, deleted
+	Type         string          `json:"type"`               // "file" or "position"
+	ExpectedHash *string         `json:"expected_hash,omitempty"`
+	ActualHash   *string         `json:"actual_hash,omitempty"`
+	Position     *PositionDetail `json:"position,omitempty"` // Present only for type="position"
 }

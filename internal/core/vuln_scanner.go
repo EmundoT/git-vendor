@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -37,13 +38,18 @@ const (
 	// These values align with typical CLI tool expectations for network operations.
 	singleQueryTimeout = 30 * time.Second
 	batchQueryTimeout  = 60 * time.Second
+
+	// maxResponseBodySize limits response body reads to prevent OOM from malicious
+	// or misconfigured servers. 10 MB is generous for OSV.dev batch responses
+	// (typical response for 1000 queries is ~500 KB).
+	maxResponseBodySize = 10 * 1024 * 1024 // 10 MB
 )
 
 // Package-level compiled regex for CVSS score extraction
 var cvssScoreRegex = regexp.MustCompile(`^(\d+\.?\d*)$`)
 
 // VulnScannerInterface defines the contract for vulnerability scanning.
-// This interface enables mocking in tests and potential alternative implementations.
+// VulnScannerInterface enables mocking in tests and alternative implementations.
 type VulnScannerInterface interface {
 	// Scan performs vulnerability scanning on all vendored dependencies.
 	// failOn specifies the severity threshold (critical|high|medium|low) for failing.
@@ -394,21 +400,26 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 		if resp.StatusCode == http.StatusTooManyRequests {
 			resp.Body.Close() //nolint:errcheck // Non-actionable
 			cancel()
-			return results, fmt.Errorf("rate limited")
+			return results, NewOSVAPIError(resp.StatusCode, "rate limited by OSV.dev")
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, err := io.ReadAll(resp.Body)
+			// Read body with size limit to prevent OOM from oversized error responses
+			limitedReader := io.LimitReader(resp.Body, maxResponseBodySize)
+			body, readErr := io.ReadAll(limitedReader)
 			resp.Body.Close() //nolint:errcheck // Non-actionable
 			cancel()
-			if err != nil {
-				return results, fmt.Errorf("OSV batch API error: %d (failed to read body: %w)", resp.StatusCode, err)
+			bodyStr := ""
+			if readErr == nil {
+				bodyStr = string(body)
 			}
-			return results, fmt.Errorf("OSV batch API error: %d - %s", resp.StatusCode, string(body))
+			return results, NewOSVAPIError(resp.StatusCode, bodyStr)
 		}
 
+		// Decode response with size-limited reader to prevent OOM
+		limitedBody := io.LimitReader(resp.Body, maxResponseBodySize)
 		var batchResp osvBatchResponse
-		if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
+		if err := json.NewDecoder(limitedBody).Decode(&batchResp); err != nil {
 			resp.Body.Close() //nolint:errcheck // Non-actionable
 			cancel()
 			return results, fmt.Errorf("decode batch response: %w", err)
@@ -743,9 +754,17 @@ func (s *VulnScanner) determineResult(result *types.ScanResult, failOn string) s
 	}
 }
 
-// Helper to check if error is rate limiting
+// Helper to check if error is rate limiting.
+// Recognizes both structured OSVAPIError (HTTP 429) and legacy string-based errors.
 func isRateLimitError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "rate limited")
+	if err == nil {
+		return false
+	}
+	var apiErr *OSVAPIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusTooManyRequests
+	}
+	return strings.Contains(err.Error(), "rate limited")
 }
 
 // Helper to check if error is network related

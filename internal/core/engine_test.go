@@ -19,7 +19,7 @@ func TestManager_ConfigPath(t *testing.T) {
 	mockLicense := NewMockLicenseChecker(ctrl)
 	ui := &SilentUICallback{}
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, VendorDir, ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
 	mockConfig.EXPECT().Path().Return(ConfigPath)
@@ -41,7 +41,7 @@ func TestManager_LockPath(t *testing.T) {
 	mockLicense := NewMockLicenseChecker(ctrl)
 	ui := &SilentUICallback{}
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, VendorDir, ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
 	mockLock.EXPECT().Path().Return(LockPath)
@@ -63,7 +63,7 @@ func TestManager_LicensePath(t *testing.T) {
 	mockLicense := NewMockLicenseChecker(ctrl)
 	ui := &SilentUICallback{}
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, VendorDir, ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
 	tests := []struct {
@@ -96,7 +96,7 @@ func TestManager_SetUICallback(t *testing.T) {
 	mockLicense := NewMockLicenseChecker(ctrl)
 	ui := &SilentUICallback{}
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, VendorDir, ui, nil)
 	manager := NewManagerWithSyncer(syncer)
 
 	// Initially should be silent UI
@@ -108,14 +108,14 @@ func TestManager_SetUICallback(t *testing.T) {
 	newUI := &SilentUICallback{}
 	manager.SetUICallback(newUI)
 
-	// Verify it changed
+	// Verify UI callback changed
 	if manager.syncer.ui != newUI {
 		t.Error("Expected UI callback to be updated")
 	}
 }
 
 func TestIsGitInstalled(t *testing.T) {
-	// Git should be installed in the test environment (CI requires it)
+	// Git should be installed in the test environment (CI requires git)
 	installed := IsGitInstalled()
 	if !installed {
 		t.Error("Expected git to be installed in test environment")
@@ -209,7 +209,7 @@ func TestManager_UpdateVerboseMode(t *testing.T) {
 	// UpdateVerboseMode should create a new git client
 	manager.UpdateVerboseMode(true)
 
-	// Verify git client was updated (by checking it's not nil)
+	// Verify git client was updated (by checking gitClient is not nil)
 	if manager.syncer.gitClient == nil {
 		t.Error("Expected git client to be updated")
 	}
@@ -237,7 +237,7 @@ func TestNewVendorSyncer_ServiceOverrides(t *testing.T) {
 		Repository: customRepo,
 	}
 
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, overrides)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, VendorDir, ui, overrides)
 
 	// Verify the override was applied: repository should be our custom instance
 	if syncer.repository != customRepo {
@@ -274,7 +274,7 @@ func TestNewVendorSyncer_NilOverrides(t *testing.T) {
 	ui := &SilentUICallback{}
 
 	// Pass nil overrides — all services should be defaults
-	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, "vendor", ui, nil)
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, mockLicense, VendorDir, ui, nil)
 
 	// Verify all domain services are non-nil
 	if syncer.repository == nil {

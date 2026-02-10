@@ -111,7 +111,7 @@ The codebase follows clean architecture principles with proper separation of con
    - **verify_service.go**: `VerifyService` - verification against lockfile hashes + position-level checks
    - **validation_service.go**: `ValidationService` - config validation, conflict detection
    - **position_extract.go**: Position extraction and placement (ExtractPosition, PlaceContent)
-   - **git_operations.go**: `GitClient` interface - Git command operations
+   - **git_operations.go**: `GitClient` interface + `SystemGitClient` (delegates to git-plumbing via `gitFor()` helper)
    - **filesystem.go**: `FileSystem` interface - File I/O operations, CopyStats, ValidateDestPath
    - **github_client.go**: `LicenseChecker` interface - GitHub API license detection
    - **config_store.go**: `ConfigStore` interface - vendor.yml I/O
@@ -172,6 +172,12 @@ VendorLock (vendor.lock)
       ├─ CommitHash: exact commit SHA
       ├─ LicensePath: path to cached license
       ├─ Updated: timestamp
+      ├─ FileHashes: map[string]string (path → SHA-256 hash)
+      ├─ LicenseSPDX: SPDX license identifier (schema v1.1)
+      ├─ SourceVersionTag: git tag matching commit (schema v1.1)
+      ├─ VendoredAt: ISO 8601 initial vendoring timestamp (schema v1.1)
+      ├─ VendoredBy: git user identity (schema v1.1)
+      ├─ LastSyncedAt: ISO 8601 most recent sync timestamp (schema v1.1)
       └─ Positions: []PositionLock (omitempty)
           └─ PositionLock
               ├─ From: source path with position (e.g., "api/constants.go:L4-L6")
@@ -188,17 +194,17 @@ PositionSpec (internal/types/position.go)
 
 ### File System Structure
 
-All vendor-related files live in `./vendor/`:
+All vendor-related files live in `./.git-vendor/`:
 
 ```text
-vendor/
+.git-vendor/
 ├── vendor.yml       # Configuration file
 ├── vendor.lock      # Lock file with commit hashes
 └── licenses/        # Cached license files
     └── {name}.txt
 ```
 
-Vendored files are copied to paths specified in the configuration (outside vendor/ directory).
+Vendored files are copied to paths specified in the configuration (outside .git-vendor/ directory).
 
 ## Key Operations
 
@@ -217,7 +223,7 @@ Vendored files are copied to paths specified in the configuration (outside vendo
 
 ### Smart URL Parsing
 
-The `ParseSmartURL` function (git_operations.go:183) extracts repository, ref, and path from GitHub URLs:
+The `ParseSmartURL` function (git_operations.go:164) extracts repository, ref, and path from GitHub URLs:
 
 - `github.com/owner/repo` → base URL, no ref, no path
 - `github.com/owner/repo/blob/main/path/to/file.go` → base URL, "main", "path/to/file.go"
@@ -227,7 +233,7 @@ The `ParseSmartURL` function (git_operations.go:183) extracts repository, ref, a
 
 ### Remote Directory Browsing
 
-The `FetchRepoDir` function (vendor_syncer.go:632) browses remote repository contents without full checkout:
+The `FetchRepoDir` function (vendor_syncer.go:385, delegating to remote_explorer.go:40) browses remote repository contents without full checkout:
 
 1. Clone with `--filter=blob:none --no-checkout --depth 1`
 2. Fetch specific ref if needed
@@ -241,7 +247,7 @@ Automatic license detection via `GitHubLicenseChecker` (github_client.go:33):
 - Queries GitHub API `/repos/:owner/:repo/license` endpoint
 - Allowed by default: MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Unlicense, CC0-1.0
 - Other licenses prompt user confirmation via `tui.AskToOverrideCompliance()`
-- License files are automatically copied to `vendor/licenses/{name}.txt`
+- License files are automatically copied to `.git-vendor/licenses/{name}.txt`
 
 ### Position Extraction (Spec 071)
 
@@ -259,8 +265,8 @@ file.go:L5C10:L10C30  # Line 5 col 10 through line 10 col 30 (1-indexed inclusiv
 **Pipeline:**
 
 1. `ParsePathPosition()` splits `path:Lspec` into file path + `PositionSpec`
-2. `ExtractPosition()` reads file, extracts content, returns content + SHA-256 hash
-3. `PlaceContent()` writes extracted content into target file at specified position
+2. `ExtractPosition()` reads file, normalizes CRLF→LF, extracts content, returns content + SHA-256 hash
+3. `PlaceContent()` normalizes existing content CRLF→LF, writes extracted content at specified position
 4. `CopyStats.Positions` carries `positionRecord` (From, To, SourceHash) back to caller
 5. `toPositionLocks()` converts to `PositionLock` for lockfile persistence
 
@@ -381,6 +387,7 @@ vendors:
 - `GIT_VENDOR_COMMIT`: Resolved commit hash
 - `GIT_VENDOR_ROOT`: Project root directory
 - `GIT_VENDOR_FILES_COPIED`: Number of files copied
+- `GIT_VENDOR_DIRS_CREATED`: Number of directories created
 
 **Behavior:**
 
@@ -402,7 +409,8 @@ vendors:
 ### Legacy Traps (Non-Goals)
 
 - **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
-- **Binary file detection for position extraction**: Explicitly deferred. Position extraction on binary files produces garbage but is not guarded. If needed later, use `net/http.DetectContentType` check before extraction.
+- **`net/http.DetectContentType` for binary detection**: Rejected in favor of git's null-byte heuristic (scan first 8000 bytes for `\x00`). `DetectContentType` only inspects 512 bytes and can misclassify source code as `application/octet-stream`. The null-byte approach matches git's own `xdl_mmfile_istext` and has no false positives on valid text files including multi-byte UTF-8.
+- **Bare hex vs `sha256:` prefix in position verify**: `ComputeFileChecksum` returns bare hex, but `ExtractPosition` returns `"sha256:<hex>"`. When comparing hashes in `verifyPositions` for whole-file destinations (`destPos == nil`), MUST normalize `ComputeFileChecksum` output to `"sha256:"` prefix before comparing against `SourceHash`. Mixing formats causes false drift detection.
 
 ### Error Handling
 
@@ -410,7 +418,12 @@ Error handling follows Go conventions (see ROADMAP.md section 9.5 for details):
 
 - **`fmt.Errorf`**: Default for most errors (informational, wrapping with `%w`)
 - **Sentinel errors**: `ErrNotInitialized`, `ErrComplianceFailed` — use with `errors.Is()`
-- **Custom types**: `VendorNotFoundError`, `StaleCommitError`, etc. — use with `errors.As()` or `Is*()` helpers
+- **Custom types**: `VendorNotFoundError`, `StaleCommitError`, `HookError`, `OSVAPIError`, etc. — use with `errors.As()` or `Is*()` helpers
+
+Service-specific error handling:
+- **Hooks**: `HookError` wraps hook failures with vendor name, phase (pre/post-sync), and command context. Hooks have a 5-minute timeout (configurable via `hookService.timeout` field for testing) via `context.WithTimeout` to prevent hangs. Environment variable values are sanitized to strip newlines/null bytes.
+- **Sync cache**: `canSkipSync()` logs a warning and forces re-sync on cache corruption. Uses `errors.Is(err, os.ErrNotExist)` for file existence checks (not `os.IsNotExist`).
+- **Vuln scanner**: `OSVAPIError` wraps HTTP error responses with status code and truncated body. Response bodies are size-limited to 10 MB via `io.LimitReader`. Rate limit (HTTP 429), server error (5xx), and client error (4xx) produce distinct error messages.
 
 Display patterns:
 - TUI functions use `check(err)` helper that prints "Aborted." and exits
@@ -429,13 +442,16 @@ Display patterns:
 
 ### Git Operations
 
-Git operations use the `GitClient` interface (git_operations.go):
+Git operations use the `GitClient` interface (git_operations.go), delegating to git-plumbing:
 
 - `SystemGitClient` implements `GitClient` for production
-- Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`
-- Internal `run()` method executes git commands via `exec.Command`
-- Verbose mode logs commands to stderr when `--verbose` flag is used
-- Temp directories cleaned up with `defer fs.RemoveAll(tempDir)`
+- Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`, `GetCommitLog`, `GetTagForCommit`
+- `gitFor(dir)` helper creates `*git.Git` instances per-call (cheap allocation, no I/O)
+- All git execution delegated to git-plumbing (`github.com/emundoT/git-plumbing`) — no direct `exec.Command` calls
+- `GetCommitLog` adapter converts `git.Commit` → `types.CommitInfo` with date formatting (`time.Time` → `"2006-01-02 15:04:05 -0700"`)
+- `GetTagForCommit` adapter calls `TagsAt()` then applies local semver preference via `isSemverTag()`
+- Standalone: `GetGitUserIdentity()` → `git.Git{}.UserIdentity()`, `IsGitInstalled()` → `git.IsInstalled()`
+- Verbose mode propagated via `git.Git{Verbose: true}` which logs commands to stderr
 
 ## Development Notes
 
@@ -500,10 +516,43 @@ go test -v ./...
 
 **Note:** Mock files (`*_mock_test.go`) are auto-generated and git-ignored. Generate them locally before running tests.
 
+### Testing Boundaries (git-vendor vs git-plumbing)
+
+git-vendor delegates all git operations to `git-plumbing` via the `SystemGitClient.gitFor()` adapter pattern. Understanding what each layer tests prevents duplication and focuses effort correctly.
+
+**What git-plumbing tests (do NOT re-test here):**
+
+git-plumbing integration tests cover all git CLI primitives with real repos:
+
+- Git operations: `Clone()`, `Fetch()`, `Init()`, `Checkout()`, `Add()`, `Commit()`, `Log()`, `TagsAt()`, `ListTree()`, `Branches()`, `DiffStat()`, `Status()`, `ShowRef()`, `ForEachRef()`, `AddNote()`, `GetNote()`
+- Error sentinels: `ErrNotRepo`, `ErrDirtyTree`, `ErrDetachedHead`, `ErrRefNotFound`, `ErrConflict`
+- `GitError` wrapping with stderr capture, `IsNotRepo()` helper
+- Parsing: null-byte delimited log format, trailer extraction, numstat parsing
+- Edge cases: empty repos, detached HEAD, merge conflicts, invalid refs, shallow clones
+
+**What git-vendor MUST test (its own orchestration layer):**
+
+- **Mock-based service tests**: Sync orchestration, update flow, config validation, license compliance, diff computation, file copy logic, parallel execution, hook execution, position extraction/placement, verification — all via mocked `GitClient`, `FileSystem`, `ConfigStore`, `LockStore` interfaces
+- **SystemGitClient adapter logic**: Type conversions between git-plumbing's types and git-vendor's types (e.g., `git.Commit` → `types.CommitInfo`). Semver tag preference logic (`isSemverTag`) in `GetTagForCommit()`. Date format handling.
+- **URL parsing**: `ParseSmartURL()`, `cleanURL()` — pure string parsing, not git operations
+- **Position extraction**: `ParsePathPosition()`, `ExtractPosition()`, `PlaceContent()` — file content manipulation unique to git-vendor
+- **Error types**: Structured error formatting (`VendorNotFoundError`, `ErrNotInitialized`, etc.) with `Error()`, `Is()`, `As()` chains
+
+**What is intentionally untested:**
+
+- `main.go` CLI dispatch — too coupled to TUI/stdout/os.Exit
+- TUI wizard interactions — `charmbracelet/huh` forms not amenable to unit testing
+- `internal/version/` — trivial var set via ldflags
+
+**Known duplication (acceptable):**
+
+`git_operations_test.go` and `integration_test.go` contain some tests that exercise raw git behavior (Clone, ListTree, Fetch chains) already covered by git-plumbing. These exist as smoke tests for the adapter layer and are gated behind `//go:build integration`. They MAY be pruned if git-plumbing's coverage proves sufficient, but are low-cost to maintain.
+
 ### Dependencies
 
 **Runtime:**
 
+- `github.com/emundoT/git-plumbing` - Git CLI wrapper (self-vendored via git-vendor to `pkg/git-plumbing/`)
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
@@ -545,23 +594,30 @@ go test -v ./...
 9. **Edit mode**: Changes aren't saved until user selects "💾 Save & Exit"
 10. **.md gotchas**: All ````` blocks must have a language specifier (e.g. ``````yaml) to render correctly, use text for the UI and in lieu of nothing
 11. **Branch names with slashes**: Cannot parse from URL due to ambiguity - use base URL and enter ref manually
-12. **Incremental sync cache**: Stored in vendor/.cache/, auto-invalidates on commit hash changes, 1000 file limit per vendor
-13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts
+12. **Incremental sync cache**: Stored in .git-vendor/.cache/, auto-invalidates on commit hash changes, 1000 file limit per vendor
+13. **Hook execution**: Hooks run in project root with full shell support (sh -c), runs even for cache hits, same security model as npm scripts. 5-minute timeout kills hanging hooks (override `hookService.timeout` in tests). Environment variable values are sanitized (newlines/null bytes stripped). Timeout tests MUST use `exec sleep` (not bare `sleep`) to prevent orphaned child processes when `sh -c` is killed
 14. **Parallel processing**: Auto-disabled for dry-run mode, worker count defaults to NumCPU (max 8), thread-safe operations
 15. **Watch mode**: 1-second debounce for rapid changes, watches vendor.yml only, re-runs full sync on changes
 16. **Sentinel errors with tui.PrintError**: Sentinel errors like `ErrNotInitialized` are `error` types, not strings. Call `.Error()` when passing to `tui.PrintError(title, err.Error())`
-17. **Position syntax and Windows paths**: Position parser uses last `:L<digit>` occurrence to split, avoiding false matches on Windows drive letters like `C:\path`
-18. **EndCol is 1-indexed inclusive**: `L1C5:L1C10` extracts columns 5-10 (6 chars). Maps to Go slice `line[StartCol-1 : EndCol]` because Go's exclusive upper bound equals the 1-indexed inclusive bound
+17. **Position syntax and Windows paths**: Position parser uses first `:L<digit>` occurrence to split, avoiding false matches on Windows drive letters like `C:\path`
+18. **EndCol is 1-indexed inclusive byte offset**: `L1C5:L1C10` extracts bytes 5-10 (6 bytes). Maps to Go slice `line[StartCol-1 : EndCol]` because Go's exclusive upper bound equals the 1-indexed inclusive bound. See gotcha #22 for multi-byte character implications
 19. **errors.Is vs os.IsNotExist**: `os.IsNotExist()` does NOT unwrap `fmt.Errorf("%w")`-wrapped errors. MUST use `errors.Is(err, os.ErrNotExist)` when checking errors from functions that wrap (e.g., `ExtractPosition`)
-20. **Position extraction on binary files**: No binary detection — extracting positions from binary files produces garbage. Not currently guarded
+20. **Binary file detection**: `ExtractPosition` and `PlaceContent` (with position) reject binary files by scanning the first 8000 bytes for null bytes (git's heuristic). Null byte beyond 8000 bytes is NOT detected. Whole-file replacement (`PlaceContent` with nil pos) bypasses the check
 21. **Verify produces separate position-level and whole-file results**: A file with both types of lockfile entries gets two verification results; position-level can fail independently of whole-file
+22. **Hash format mismatch in verify**: `ComputeFileChecksum` returns bare hex, `ExtractPosition` returns `"sha256:<hex>"`. `verifyPositions` normalizes `ComputeFileChecksum` output with `"sha256:"` prefix for whole-file position destinations
+23. **Position column semantics are byte-offset, not rune-offset**: Column numbers in `L1C5:L1C10` refer to byte positions in the Go string, not Unicode codepoints. For ASCII this is identical, but multi-byte characters (emoji=4 bytes, CJK=3 bytes, accented=2 bytes) require counting bytes. Extracting a partial multi-byte character produces invalid UTF-8.
+24. **CRLF normalized to LF in position extraction**: `extractFromContent` and `placeInContent` normalize `\r\n` → `\n` before processing. Extracted content always uses LF. Files with CRLF will have their line endings changed to LF after `PlaceContent`. Standalone `\r` (classic Mac) is NOT normalized.
+25. **Trailing newline creates phantom empty line**: A file ending with `\n` has one more "line" than visible content lines (e.g., `"a\nb\n"` = 3 lines: `"a"`, `"b"`, `""`). L5-EOF on a 5-line file with trailing newline captures the trailing newline; without trailing newline it does not.
+26. **Empty file has 1 line**: A 0-byte file splits to `[""]` (1 empty line). `L1` extracts empty string. `L2+` errors.
+27. **Sequential PlaceContent calls operate on modified content**: When two vendors write to different positions in the same file, the second call sees the file as modified by the first. If the first call changes line count, the second call's position targets shifted lines.
+28. **L1-EOF hash equals whole-file hash**: `L1-EOF` extraction produces content byte-identical to the raw file (after CRLF normalization), so the hash matches `sha256(file_content)`.
 
 ## Quick Reference
 
 ### Available Commands
 
 ```bash
-git-vendor init                      # Initialize vendor directory
+git-vendor init                      # Initialize .git-vendor directory
 git-vendor add                       # Add vendor (interactive)
 git-vendor edit                      # Edit vendor (interactive)
 git-vendor remove <name>             # Remove vendor
@@ -631,7 +687,7 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - Results cached for 24 hours (configurable via `GIT_VENDOR_CACHE_TTL` env var)
 - Commit-level queries may miss vulnerabilities announced against version ranges
 
-**Cache:** Results cached in `.git-vendor-cache/osv/` with 24-hour TTL. Stale cache used as fallback when network unavailable.
+**Cache:** Results cached in `.git-vendor/.cache/osv/` with 24-hour TTL. Stale cache used as fallback when network unavailable.
 
 ### SBOM Command Flags
 
@@ -653,10 +709,10 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 ### File Paths
 
-- Config: `vendor/vendor.yml`
-- Lock: `vendor/vendor.lock`
-- Licenses: `vendor/licenses/<name>.txt`
-- Vendored files: User-specified paths (outside vendor/)
+- Config: `.git-vendor/vendor.yml`
+- Lock: `.git-vendor/vendor.lock`
+- Licenses: `.git-vendor/licenses/<name>.txt`
+- Vendored files: User-specified paths (outside .git-vendor/)
 
 ### Important Functions by File
 
@@ -688,9 +744,10 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 **vuln_scanner.go:**
 
 - `Scan()` - Core vulnerability scanning against OSV.dev
-- `queryOSV()` - Query OSV.dev for individual dependency
+- `batchQuery()` - Batch queries to OSV.dev (up to 1000 per request, auto-paginated)
 - `CVSSToSeverity()` - Convert CVSS score to severity level
-- `BatchQuery()` - Efficient batch queries (up to 1000 packages)
+- `isRateLimitError()` - Detect rate-limit errors via OSVAPIError or string matching
+- `isNetworkError()` - Detect transient network errors for stale-cache fallback
 
 **verify_service.go:**
 
@@ -711,8 +768,22 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `copyWithPosition()` - Position-aware file copy (extract → place → track)
 - `checkLocalModifications()` - Detect local changes at target position before overwrite
 
+**hook_service.go:**
+
+- `ExecutePreSync()` / `ExecutePostSync()` - Run pre/post sync shell hooks with timeout and env injection
+- `sanitizeEnvValue()` - Strip newlines/null bytes from environment variable values
+
+**errors.go:**
+
+- `NewHookError()` / `IsHookError()` - Structured error for hook failures with phase/command context
+- `NewOSVAPIError()` / `IsOSVAPIError()` - Structured error for OSV.dev API HTTP errors
+
 **git_operations.go:**
 
+- `gitFor(dir)` - Create `*git.Git` instance for given directory (delegates to git-plumbing)
+- `GetCommitLog()` - Retrieve commit log between two refs (adapter: `git.Commit` → `types.CommitInfo`)
+- `GetTagForCommit()` - Get tag for commit with semver preference (wraps `TagsAt()`)
+- `GetGitUserIdentity()` - Get git user identity string (delegates to `git.Git{}.UserIdentity()`)
 - `ParseSmartURL()` - Extract repo/ref/path from GitHub URLs
 - `GitClient.ListTree()` - Browse remote directories via git ls-tree
 

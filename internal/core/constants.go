@@ -2,8 +2,10 @@ package core
 
 // File and directory names
 const (
-	// VendorDir is the root directory for all vendor-related files
-	VendorDir = "vendor"
+	// VendorDir is the root directory for all vendor-related files.
+	// Uses dotfile convention to avoid clashing with Go's vendor/ directory
+	// and similar conventions in Ruby (Bundler), PHP (Composer), Rust (cargo vendor).
+	VendorDir = ".git-vendor"
 	// ConfigFile is the vendor configuration filename
 	ConfigFile = "vendor.yml"
 	// LockFile is the vendor lock filename
@@ -36,7 +38,7 @@ const (
 )
 
 // AllowedLicenses defines the list of open-source licenses permitted by default.
-// These are SPDX license identifiers.
+// AllowedLicenses uses SPDX license identifiers.
 var AllowedLicenses = []string{
 	"MIT",
 	"Apache-2.0",
@@ -48,7 +50,7 @@ var AllowedLicenses = []string{
 }
 
 // LicenseFileNames lists standard filenames checked when searching for repository licenses.
-// These are checked in order when detecting licenses via file content.
+// LicenseFileNames entries are checked in order when detecting licenses via file content.
 var LicenseFileNames = []string{
 	"LICENSE",
 	"LICENSE.txt",

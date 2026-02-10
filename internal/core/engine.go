@@ -2,7 +2,8 @@ package core
 
 import (
 	"os"
-	"os/exec"
+
+	git "github.com/emundoT/git-plumbing"
 
 	"github.com/EmundoT/git-vendor/internal/core/providers"
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -11,8 +12,8 @@ import (
 // Verbose controls whether git commands are logged
 var Verbose = false
 
-// Manager provides the main API for git-vendor operations
-// It delegates to VendorSyncer for all business logic
+// Manager provides the main API for git-vendor operations.
+// Manager delegates to VendorSyncer for all business logic.
 type Manager struct {
 	RootDir string
 	syncer  *VendorSyncer
@@ -26,7 +27,7 @@ func NewManager() *Manager {
 	configStore := NewFileConfigStore(rootDir)
 	lockStore := NewFileLockStore(rootDir)
 	gitClient := NewSystemGitClient(Verbose)
-	fs := NewOSFileSystem()
+	fs := NewRootedFileSystem(".")
 
 	// Create provider registry for multi-platform URL parsing
 	providerRegistry := providers.NewProviderRegistry()
@@ -80,8 +81,7 @@ func (m *Manager) LicensePath(name string) string {
 
 // IsGitInstalled checks if git is available on the system
 func IsGitInstalled() bool {
-	_, err := exec.LookPath("git")
-	return err == nil
+	return git.IsInstalled()
 }
 
 // IsVendorInitialized checks if the vendor directory structure exists

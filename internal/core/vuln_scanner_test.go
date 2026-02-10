@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -840,7 +841,7 @@ func TestClearCache(t *testing.T) {
 	os.WriteFile(cacheFile, []byte("{}"), 0644)
 
 	// Verify file exists
-	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+	if _, err := os.Stat(cacheFile); errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Cache file should exist before clear")
 	}
 
@@ -850,7 +851,7 @@ func TestClearCache(t *testing.T) {
 	}
 
 	// Verify cache directory is removed
-	if _, err := os.Stat(cacheDir); !os.IsNotExist(err) {
+	if _, err := os.Stat(cacheDir); !errors.Is(err, os.ErrNotExist) {
 		t.Error("Cache directory should be removed after clear")
 	}
 }
@@ -1105,7 +1106,7 @@ func TestLoadFromCache_CorruptFile(t *testing.T) {
 	}
 
 	// Verify file exists before
-	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+	if _, err := os.Stat(cacheFile); errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Cache file should exist before load attempt")
 	}
 
@@ -1119,7 +1120,7 @@ func TestLoadFromCache_CorruptFile(t *testing.T) {
 	}
 
 	// Verify corrupt file was removed
-	if _, err := os.Stat(cacheFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(cacheFile); !errors.Is(err, os.ErrNotExist) {
 		t.Error("Corrupt cache file should be removed after load attempt")
 	}
 }
@@ -1326,4 +1327,370 @@ func TestScan_BatchPartialFailure(t *testing.T) {
 			}
 		}
 	}
+}
+
+// ============================================================================
+// OSVAPIError Tests
+// ============================================================================
+
+func TestScan_HTTP500_ReturnsOSVAPIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "test", Ref: "main", CommitHash: "abc123def"},
+		},
+	}, nil)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "test", URL: "https://github.com/owner/repo"},
+		},
+	}, nil)
+
+	scanner := &VulnScanner{
+		client: &http.Client{
+			Transport: &mockTransport{serverURL: server.URL},
+		},
+		cacheDir:    t.TempDir(),
+		cacheTTL:    24 * time.Hour,
+		lockStore:   lockStore,
+		configStore: configStore,
+	}
+
+	result, err := scanner.Scan("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// When batch query fails, the scan should still succeed
+	// but mark dependencies as not_scanned or error
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+
+	// Verify the dependency was not successfully scanned
+	if result.Summary.Scanned != 0 {
+		t.Errorf("Expected 0 scanned with server error, got %d", result.Summary.Scanned)
+	}
+}
+
+func TestScan_HTTP429_RateLimited(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "rate-limited", Ref: "main", CommitHash: "abc123"},
+		},
+	}, nil)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "rate-limited", URL: "https://github.com/owner/repo"},
+		},
+	}, nil)
+
+	scanner := &VulnScanner{
+		client: &http.Client{
+			Transport: &mockTransport{serverURL: server.URL},
+		},
+		cacheDir:    t.TempDir(),
+		cacheTTL:    24 * time.Hour,
+		lockStore:   lockStore,
+		configStore: configStore,
+	}
+
+	result, err := scanner.Scan("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Rate limited deps should be marked as not_scanned
+	if len(result.Dependencies) != 1 {
+		t.Fatalf("Expected 1 dependency, got %d", len(result.Dependencies))
+	}
+
+	dep := result.Dependencies[0]
+	if dep.ScanStatus != types.ScanStatusNotScanned {
+		t.Errorf("Expected not_scanned for rate limited dep, got %s", dep.ScanStatus)
+	}
+	if !strings.Contains(dep.ScanReason, "Rate limited") {
+		t.Errorf("Expected rate limit reason, got: %s", dep.ScanReason)
+	}
+}
+
+func TestScan_MalformedJSON_Response(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{invalid json response"))
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "test", Ref: "main", CommitHash: "abc123"},
+		},
+	}, nil)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "test", URL: "https://github.com/owner/repo"},
+		},
+	}, nil)
+
+	scanner := &VulnScanner{
+		client: &http.Client{
+			Transport: &mockTransport{serverURL: server.URL},
+		},
+		cacheDir:    t.TempDir(),
+		cacheTTL:    24 * time.Hour,
+		lockStore:   lockStore,
+		configStore: configStore,
+	}
+
+	result, err := scanner.Scan("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Malformed JSON should result in scan failure, but not a top-level error
+	if result.Summary.Scanned != 0 {
+		t.Errorf("Expected 0 scanned with malformed response, got %d", result.Summary.Scanned)
+	}
+}
+
+// TestOSVAPIError_StructuredError verifies OSVAPIError error messages
+func TestOSVAPIError_StructuredError(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantMsg    string
+	}{
+		{"Rate limited", 429, "", "Rate limited"},
+		{"Server error", 500, "internal error", "transient"},
+		{"Client error", 400, "bad request body", "Client error"},
+		{"Not found", 404, "endpoint not found", "Client error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := NewOSVAPIError(tt.statusCode, tt.body)
+			errStr := err.Error()
+			if !strings.Contains(errStr, fmt.Sprintf("HTTP %d", tt.statusCode)) {
+				t.Errorf("Expected HTTP %d in error, got: %s", tt.statusCode, errStr)
+			}
+			if !strings.Contains(errStr, tt.wantMsg) {
+				t.Errorf("Expected '%s' in error, got: %s", tt.wantMsg, errStr)
+			}
+		})
+	}
+}
+
+// TestIsRateLimitError_OSVAPIError verifies isRateLimitError recognizes OSVAPIError
+func TestIsRateLimitError_OSVAPIError(t *testing.T) {
+	apiErr := NewOSVAPIError(429, "too many requests")
+	if !isRateLimitError(apiErr) {
+		t.Error("Expected isRateLimitError to recognize OSVAPIError with 429")
+	}
+
+	apiErr500 := NewOSVAPIError(500, "server error")
+	if isRateLimitError(apiErr500) {
+		t.Error("Expected isRateLimitError to reject OSVAPIError with 500")
+	}
+}
+
+// TestCVSSToSeverity_BoundaryValues verifies CVSS boundary values
+func TestCVSSToSeverity_BoundaryValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		score    float64
+		severity string
+	}{
+		{"Exact 10.0", 10.0, types.SeverityCritical},
+		{"Exact 9.0", 9.0, types.SeverityCritical},
+		{"Just below 9.0", 8.9, types.SeverityHigh},
+		{"Exact 7.0", 7.0, types.SeverityHigh},
+		{"Just below 7.0", 6.9, types.SeverityMedium},
+		{"Exact 4.0", 4.0, types.SeverityMedium},
+		{"Just below 4.0", 3.9, types.SeverityLow},
+		{"Smallest positive", 0.01, types.SeverityLow},
+		{"Exact 0.0", 0.0, types.SeverityUnknown},
+		{"Negative", -0.1, types.SeverityUnknown},
+		{"Large negative", -10.0, types.SeverityUnknown},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CVSSToSeverity(tt.score)
+			if got != tt.severity {
+				t.Errorf("CVSSToSeverity(%f) = %s, want %s", tt.score, got, tt.severity)
+			}
+		})
+	}
+}
+
+// TestScan_FailOnThreshold_AllLevels verifies all threshold comparisons
+func TestScan_FailOnThreshold_AllLevels(t *testing.T) {
+	// Server returns one medium-severity vulnerability
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		response := osvBatchResponse{
+			Results: []osvResponse{
+				{Vulns: []osvVuln{{
+					ID:       "CVE-2024-MED",
+					Summary:  "Medium issue",
+					Severity: []osvSeverity{{Type: "CVSS_V3", Score: "5.0"}},
+				}}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		failOn            string
+		expectExceeded    bool
+	}{
+		{"CRITICAL", false}, // Only medium exists, critical threshold not exceeded
+		{"HIGH", false},     // Only medium exists, high threshold not exceeded
+		{"MEDIUM", true},    // Medium exists, medium threshold exceeded
+		{"LOW", true},       // Medium exists, low threshold exceeded (medium >= low)
+	}
+
+	for _, tt := range tests {
+		t.Run("failOn="+tt.failOn, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			lockStore := NewMockLockStore(ctrl)
+			configStore := NewMockConfigStore(ctrl)
+
+			lockStore.EXPECT().Load().Return(types.VendorLock{
+				Vendors: []types.LockDetails{
+					{Name: "test", Ref: "main", CommitHash: "abc123"},
+				},
+			}, nil)
+			configStore.EXPECT().Load().Return(types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{Name: "test", URL: "https://github.com/owner/repo"},
+				},
+			}, nil)
+
+			scanner := &VulnScanner{
+				client: &http.Client{
+					Transport: &mockTransport{serverURL: server.URL},
+				},
+				cacheDir:    t.TempDir(),
+				cacheTTL:    24 * time.Hour,
+				lockStore:   lockStore,
+				configStore: configStore,
+			}
+
+			result, err := scanner.Scan(tt.failOn)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if result.Summary.ThresholdExceeded != tt.expectExceeded {
+				t.Errorf("failOn=%s: ThresholdExceeded=%v, want %v", tt.failOn, result.Summary.ThresholdExceeded, tt.expectExceeded)
+			}
+		})
+	}
+}
+
+// TestScan_NetworkError_WithStaleCache_FallsBack verifies stale cache fallback on network error
+func TestScan_NetworkError_WithStaleCache_FallsBack(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	cacheDir := t.TempDir()
+
+	dep := types.LockDetails{
+		Name:       "network-fallback",
+		Ref:        "main",
+		CommitHash: "fallback123",
+	}
+
+	repoURL := "https://github.com/owner/network-fallback"
+
+	// Pre-populate cache
+	scanner := NewVulnScanner(lockStore, configStore)
+	scanner.cacheDir = cacheDir
+	scanner.cacheTTL = 1 * time.Millisecond // Expire immediately
+
+	cacheKey := scanner.GetCacheKey(&dep, repoURL)
+	scanner.saveToCache(cacheKey, []osvVuln{{ID: "CVE-CACHED", Summary: "Cached vuln", Severity: []osvSeverity{{Type: "CVSS_V3", Score: "7.0"}}}})
+
+	// Wait for cache to expire
+	time.Sleep(10 * time.Millisecond)
+
+	// Setup mock stores for scan
+	lockStore.EXPECT().Load().Return(types.VendorLock{Vendors: []types.LockDetails{dep}}, nil)
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{Name: "network-fallback", URL: repoURL}},
+	}, nil)
+
+	// Create scanner with a transport that simulates network error
+	scanner2 := &VulnScanner{
+		client: &http.Client{
+			Transport: &errorTransport{err: fmt.Errorf("dial tcp: connection refused")},
+		},
+		cacheDir:    cacheDir,
+		cacheTTL:    1 * time.Millisecond, // Expired
+		lockStore:   lockStore,
+		configStore: configStore,
+	}
+
+	result, err := scanner2.Scan("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Should have used stale cache
+	if result.Summary.Scanned != 1 {
+		t.Errorf("Expected 1 scanned (from stale cache), got %d", result.Summary.Scanned)
+	}
+
+	// Should have found the cached vulnerability
+	if result.Summary.Vulnerabilities.Total != 1 {
+		t.Errorf("Expected 1 vulnerability from stale cache, got %d", result.Summary.Vulnerabilities.Total)
+	}
+}
+
+// errorTransport always returns an error for testing network failures
+type errorTransport struct {
+	err error
+}
+
+func (t *errorTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
+	return nil, t.err
 }

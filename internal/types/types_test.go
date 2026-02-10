@@ -309,7 +309,7 @@ func TestVendorLock_YAML_RoundTrip(t *testing.T) {
 						Name:             "test-vendor",
 						Ref:              "main",
 						CommitHash:       "abc123def456789",
-						LicensePath:      "vendor/licenses/test-vendor.txt",
+						LicensePath:      ".git-vendor/licenses/test-vendor.txt",
 						Updated:          "2024-01-15T10:30:00Z",
 						FileHashes:       map[string]string{"lib/file.go": "sha256:abc123"},
 						LicenseSPDX:      "MIT",
@@ -360,7 +360,7 @@ func TestLockDetails_YAML_OmitEmpty(t *testing.T) {
 		Name:        "minimal-vendor",
 		Ref:         "main",
 		CommitHash:  "abc123",
-		LicensePath: "vendor/licenses/minimal-vendor.txt",
+		LicensePath: ".git-vendor/licenses/minimal-vendor.txt",
 		Updated:     "2024-01-15T10:30:00Z",
 		// All omitempty fields left empty/nil
 	}
@@ -396,7 +396,7 @@ func TestVerifyResult_JSON_RoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name: "failing verification with files",
+			name: "failing verification with file and position entries",
 			result: VerifyResult{
 				SchemaVersion: "1.0",
 				Timestamp:     "2024-01-15T10:30:00Z",
@@ -404,10 +404,15 @@ func TestVerifyResult_JSON_RoundTrip(t *testing.T) {
 					TotalFiles: 100, Verified: 95, Modified: 3, Added: 1, Deleted: 1, Result: "FAIL",
 				},
 				Files: []FileStatus{
-					{Path: "lib/ok.go", Vendor: testutil.StrPtr("vendor"), Status: "verified", ExpectedHash: testutil.StrPtr("sha256:abc"), ActualHash: testutil.StrPtr("sha256:abc")},
-					{Path: "lib/changed.go", Vendor: testutil.StrPtr("vendor"), Status: "modified", ExpectedHash: testutil.StrPtr("sha256:old"), ActualHash: testutil.StrPtr("sha256:new")},
-					{Path: "lib/new.go", Vendor: nil, Status: "added"},
-					{Path: "lib/gone.go", Vendor: testutil.StrPtr("vendor"), Status: "deleted", ExpectedHash: testutil.StrPtr("sha256:was")},
+					{Path: "lib/ok.go", Vendor: testutil.StrPtr("vendor"), Status: "verified", Type: "file", ExpectedHash: testutil.StrPtr("sha256:abc"), ActualHash: testutil.StrPtr("sha256:abc")},
+					{Path: "lib/changed.go", Vendor: testutil.StrPtr("vendor"), Status: "modified", Type: "file", ExpectedHash: testutil.StrPtr("sha256:old"), ActualHash: testutil.StrPtr("sha256:new")},
+					{Path: "lib/new.go", Vendor: nil, Status: "added", Type: "file"},
+					{Path: "lib/gone.go", Vendor: testutil.StrPtr("vendor"), Status: "deleted", Type: "file", ExpectedHash: testutil.StrPtr("sha256:was")},
+					{
+						Path: "lib/api.go", Vendor: testutil.StrPtr("vendor"), Status: "verified", Type: "position",
+						ExpectedHash: testutil.StrPtr("sha256:pos"), ActualHash: testutil.StrPtr("sha256:pos"),
+						Position: &PositionDetail{From: "src/api.go:L5-L20", To: "lib/api.go:L10-L25", SourceHash: "sha256:pos"},
+					},
 				},
 			},
 		},
@@ -447,6 +452,7 @@ func TestFileStatus_JSON_AllStatuses(t *testing.T) {
 				Path:   "test/file.go",
 				Vendor: testutil.StrPtr("test-vendor"),
 				Status: status,
+				Type:   "file",
 			}
 			if status == "verified" || status == "modified" || status == "deleted" {
 				fs.ExpectedHash = testutil.StrPtr("sha256:expected")
@@ -460,16 +466,74 @@ func TestFileStatus_JSON_AllStatuses(t *testing.T) {
 	}
 }
 
+func TestFileStatus_JSON_PositionType(t *testing.T) {
+	fs := FileStatus{
+		Path:         "lib/api.go",
+		Vendor:       testutil.StrPtr("api-vendor"),
+		Status:       "verified",
+		Type:         "position",
+		ExpectedHash: testutil.StrPtr("sha256:abc123"),
+		ActualHash:   testutil.StrPtr("sha256:abc123"),
+		Position: &PositionDetail{
+			From:       "src/api.go:L5-L20",
+			To:         "lib/api.go:L10-L25",
+			SourceHash: "sha256:abc123",
+		},
+	}
+
+	testutil.AssertJSONRoundTrip(t, fs)
+}
+
 func TestFileStatus_JSON_OmitEmpty(t *testing.T) {
 	fs := FileStatus{
 		Path:   "new/file.go",
 		Vendor: nil,
 		Status: "added",
-		// ExpectedHash and ActualHash are nil - should be omitted
+		Type:   "file",
+		// ExpectedHash, ActualHash, and Position are nil/zero — should be omitted
 	}
 
 	testutil.AssertJSONOmitsField(t, fs, "expected_hash")
 	testutil.AssertJSONOmitsField(t, fs, "actual_hash")
+	testutil.AssertJSONOmitsField(t, fs, "position")
+}
+
+func TestPositionDetail_JSON_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name   string
+		detail PositionDetail
+	}{
+		{
+			name: "line range extraction",
+			detail: PositionDetail{
+				From:       "src/constants.go:L4-L6",
+				To:         "lib/constants.go",
+				SourceHash: "sha256:deadbeef0123456789abcdef",
+			},
+		},
+		{
+			name: "column-precise extraction",
+			detail: PositionDetail{
+				From:       "src/types.go:L1C5:L1C30",
+				To:         "lib/types.go:L10-L10",
+				SourceHash: "sha256:cafebabe0123456789abcdef",
+			},
+		},
+		{
+			name: "EOF extraction",
+			detail: PositionDetail{
+				From:       "src/footer.go:L100-EOF",
+				To:         "lib/footer.go",
+				SourceHash: "sha256:feedface0123456789abcdef",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testutil.AssertJSONRoundTrip(t, tt.detail)
+		})
+	}
 }
 
 func TestVerifySummary_JSON_AllResults(t *testing.T) {
@@ -688,32 +752,50 @@ func TestCloneOptions_ShallowCloneConfiguration(t *testing.T) {
 
 func TestVendorStatus_SyncStateConsistency(t *testing.T) {
 	tests := []struct {
-		name         string
-		status       VendorStatus
-		wantSynced   bool
-		wantMissing  int
-		isConsistent bool
+		name          string
+		status        VendorStatus
+		wantSynced    bool
+		wantMissing   int
+		wantFiles     int
+		wantPositions int
 	}{
 		{
-			name:         "synced with no missing paths",
-			status:       VendorStatus{Name: "a", Ref: "main", IsSynced: true, MissingPaths: nil},
-			wantSynced:   true,
-			wantMissing:  0,
-			isConsistent: true,
+			name:          "synced with no missing paths",
+			status:        VendorStatus{Name: "a", Ref: "main", IsSynced: true, MissingPaths: nil},
+			wantSynced:    true,
+			wantMissing:   0,
+			wantFiles:     0,
+			wantPositions: 0,
 		},
 		{
-			name:         "not synced with missing paths",
-			status:       VendorStatus{Name: "b", Ref: "main", IsSynced: false, MissingPaths: []string{"path/"}},
-			wantSynced:   false,
-			wantMissing:  1,
-			isConsistent: true,
+			name:          "not synced with missing paths",
+			status:        VendorStatus{Name: "b", Ref: "main", IsSynced: false, MissingPaths: []string{"path/"}},
+			wantSynced:    false,
+			wantMissing:   1,
+			wantFiles:     0,
+			wantPositions: 0,
 		},
 		{
-			name:         "inconsistent: synced but has missing paths",
-			status:       VendorStatus{Name: "c", Ref: "main", IsSynced: true, MissingPaths: []string{"path/"}},
-			wantSynced:   true,
-			wantMissing:  1,
-			isConsistent: false, // This would be a bug in the calling code
+			name: "synced with file and position counts",
+			status: VendorStatus{
+				Name: "d", Ref: "main", IsSynced: true,
+				FileCount: 10, PositionCount: 3,
+			},
+			wantSynced:    true,
+			wantMissing:   0,
+			wantFiles:     10,
+			wantPositions: 3,
+		},
+		{
+			name: "position-only vendor",
+			status: VendorStatus{
+				Name: "e", Ref: "v1.0", IsSynced: true,
+				FileCount: 0, PositionCount: 5,
+			},
+			wantSynced:    true,
+			wantMissing:   0,
+			wantFiles:     0,
+			wantPositions: 5,
 		},
 	}
 
@@ -724,6 +806,12 @@ func TestVendorStatus_SyncStateConsistency(t *testing.T) {
 			}
 			if len(tt.status.MissingPaths) != tt.wantMissing {
 				t.Errorf("len(MissingPaths) = %d, want %d", len(tt.status.MissingPaths), tt.wantMissing)
+			}
+			if tt.status.FileCount != tt.wantFiles {
+				t.Errorf("FileCount = %d, want %d", tt.status.FileCount, tt.wantFiles)
+			}
+			if tt.status.PositionCount != tt.wantPositions {
+				t.Errorf("PositionCount = %d, want %d", tt.status.PositionCount, tt.wantPositions)
 			}
 		})
 	}
@@ -870,6 +958,205 @@ func TestParallelOptions_Validation(t *testing.T) {
 		})
 	}
 }
+
+// ============================================================================
+// Forward Compatibility Tests
+// ============================================================================
+
+func TestVendorConfig_YAML_UnknownFieldsIgnored(t *testing.T) {
+	// Unknown fields in YAML should be silently ignored (forward compatibility).
+	// This ensures older clients can read configs written by newer versions.
+	input := `
+vendors:
+  - name: test-vendor
+    url: https://github.com/test/repo
+    license: MIT
+    future_field: "some new feature"
+    another_unknown: 42
+    specs:
+      - ref: main
+        unknown_branch_field: true
+        mapping:
+          - from: src/
+            to: lib/
+            unknown_mapping_field: "value"
+`
+	var config VendorConfig
+	err := yaml.Unmarshal([]byte(input), &config)
+	if err != nil {
+		t.Fatalf("unknown fields should be silently ignored, got error: %v", err)
+	}
+
+	if len(config.Vendors) != 1 {
+		t.Fatalf("expected 1 vendor, got %d", len(config.Vendors))
+	}
+	if config.Vendors[0].Name != "test-vendor" {
+		t.Errorf("name = %q, want %q", config.Vendors[0].Name, "test-vendor")
+	}
+	if config.Vendors[0].Specs[0].Ref != "main" {
+		t.Errorf("ref = %q, want %q", config.Vendors[0].Specs[0].Ref, "main")
+	}
+}
+
+func TestVendorLock_YAML_UnknownFieldsIgnored(t *testing.T) {
+	input := `
+schema_version: "2.0"
+future_lock_field: true
+vendors:
+  - name: test
+    ref: main
+    commit_hash: abc123
+    license_path: vendor/licenses/test.txt
+    updated: "2024-01-15T10:30:00Z"
+    unknown_vendor_field: "future data"
+    positions:
+      - from: "file.go:L5"
+        to: "out.go"
+        source_hash: "sha256:abc"
+        unknown_position_field: "ignored"
+`
+	var lock VendorLock
+	err := yaml.Unmarshal([]byte(input), &lock)
+	if err != nil {
+		t.Fatalf("unknown fields should be silently ignored, got error: %v", err)
+	}
+
+	if lock.SchemaVersion != "2.0" {
+		t.Errorf("schema_version = %q, want %q", lock.SchemaVersion, "2.0")
+	}
+	if len(lock.Vendors) != 1 {
+		t.Fatalf("expected 1 vendor, got %d", len(lock.Vendors))
+	}
+	if len(lock.Vendors[0].Positions) != 1 {
+		t.Fatalf("expected 1 position, got %d", len(lock.Vendors[0].Positions))
+	}
+}
+
+// ============================================================================
+// Scan Types Tests
+// ============================================================================
+
+func TestScanResult_JSON_RoundTrip(t *testing.T) {
+	result := ScanResult{
+		SchemaVersion: "1.0",
+		Timestamp:     "2024-01-15T10:30:00Z",
+		Summary: ScanSummary{
+			TotalDependencies: 5,
+			Scanned:           4,
+			NotScanned:        1,
+			Vulnerabilities: VulnCounts{
+				Critical: 1, High: 2, Medium: 3, Low: 0, Unknown: 0, Total: 6,
+			},
+			Result:            ScanResultFail,
+			FailOnThreshold:   "high",
+			ThresholdExceeded: true,
+		},
+		Dependencies: []DependencyScan{
+			{
+				Name:       "dep-a",
+				Version:    testutil.StrPtr("v1.0.0"),
+				Commit:     "abc123",
+				URL:        "https://github.com/org/dep-a",
+				ScanStatus: ScanStatusScanned,
+				Vulnerabilities: []Vulnerability{
+					{
+						ID:           "CVE-2024-1234",
+						Aliases:      []string{"GHSA-xxxx-yyyy-zzzz"},
+						Severity:     SeverityCritical,
+						CVSSScore:    9.8,
+						Summary:      "Remote code execution",
+						Details:      "Extended description",
+						FixedVersion: "v1.0.1",
+						References:   []string{"https://nvd.nist.gov/vuln/detail/CVE-2024-1234"},
+					},
+				},
+			},
+			{
+				Name:            "dep-b",
+				Version:         nil,
+				Commit:          "def456",
+				ScanStatus:      ScanStatusNotScanned,
+				ScanReason:      "private repository",
+				Vulnerabilities: []Vulnerability{},
+			},
+		},
+	}
+
+	testutil.AssertJSONRoundTrip(t, result)
+}
+
+func TestScanSummary_JSON_OmitEmpty(t *testing.T) {
+	summary := ScanSummary{
+		TotalDependencies: 3,
+		Scanned:           3,
+		Result:            ScanResultPass,
+		// FailOnThreshold and ThresholdExceeded omitted
+	}
+
+	testutil.AssertJSONOmitsField(t, summary, "fail_on_threshold")
+	testutil.AssertJSONOmitsField(t, summary, "threshold_exceeded")
+}
+
+func TestDependencyScan_JSON_OmitEmpty(t *testing.T) {
+	dep := DependencyScan{
+		Name:            "dep",
+		Commit:          "abc",
+		ScanStatus:      ScanStatusScanned,
+		Vulnerabilities: []Vulnerability{},
+		// URL and ScanReason omitted
+	}
+
+	testutil.AssertJSONOmitsField(t, dep, "url")
+	testutil.AssertJSONOmitsField(t, dep, "scan_reason")
+}
+
+func TestVulnerability_JSON_OmitEmpty(t *testing.T) {
+	vuln := Vulnerability{
+		ID:         "CVE-2024-0001",
+		Aliases:    []string{},
+		Severity:   SeverityHigh,
+		Summary:    "Some vulnerability",
+		References: []string{},
+		// CVSSScore, Details, FixedVersion omitted
+	}
+
+	testutil.AssertJSONOmitsField(t, vuln, "cvss_score")
+	testutil.AssertJSONOmitsField(t, vuln, "details")
+	testutil.AssertJSONOmitsField(t, vuln, "fixed_version")
+}
+
+func TestSeverityThreshold_Ordering(t *testing.T) {
+	// Verify severity levels are properly ordered
+	if SeverityThreshold[SeverityCritical] <= SeverityThreshold[SeverityHigh] {
+		t.Error("CRITICAL should be higher than HIGH")
+	}
+	if SeverityThreshold[SeverityHigh] <= SeverityThreshold[SeverityMedium] {
+		t.Error("HIGH should be higher than MEDIUM")
+	}
+	if SeverityThreshold[SeverityMedium] <= SeverityThreshold[SeverityLow] {
+		t.Error("MEDIUM should be higher than LOW")
+	}
+	if SeverityThreshold[SeverityLow] <= SeverityThreshold[SeverityUnknown] {
+		t.Error("LOW should be higher than UNKNOWN")
+	}
+}
+
+func TestValidSeverityThresholds_Completeness(t *testing.T) {
+	expected := []string{"critical", "high", "medium", "low"}
+	for _, sev := range expected {
+		if !ValidSeverityThresholds[sev] {
+			t.Errorf("expected %q to be a valid severity threshold", sev)
+		}
+	}
+	// "unknown" should NOT be a valid threshold
+	if ValidSeverityThresholds["unknown"] {
+		t.Error("unknown should not be a valid severity threshold")
+	}
+}
+
+// ============================================================================
+// Struct Field Tests (continued)
+// ============================================================================
 
 func TestCommitInfo_ShortHashLength(t *testing.T) {
 	commit := CommitInfo{
