@@ -14,7 +14,6 @@ import (
 // Path Validation Tests
 // ============================================================================
 
-// TestValidateDestPath tests path traversal protection
 func TestValidateDestPath(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -187,7 +186,6 @@ func TestValidateDestPath(t *testing.T) {
 	}
 }
 
-// TestValidateDestPath_SecurityRegression tests real-world path traversal attacks
 func TestValidateDestPath_SecurityRegression(t *testing.T) {
 	// These are real-world path traversal attack vectors
 	// Ensure they are ALL rejected
@@ -225,7 +223,6 @@ func TestValidateDestPath_SecurityRegression(t *testing.T) {
 // Config Validation Tests
 // ============================================================================
 
-// TestValidateConfig tests comprehensive config validation
 func TestValidateConfig(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -569,7 +566,6 @@ func TestDetectConflicts_EmptyOwners(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_NoPanic tests that DetectConflicts handles edge cases safely
 func TestDetectConflicts_NoPanic(t *testing.T) {
 	tempDir := t.TempDir()
 	vendorDir := filepath.Join(tempDir, "vendor")
@@ -625,7 +621,6 @@ func TestDetectConflicts_NoPanic(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_Comprehensive adds more comprehensive conflict detection tests
 func TestDetectConflicts_Comprehensive(t *testing.T) {
 	t.Run("Detect same path conflict", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -732,7 +727,6 @@ func TestDetectConflicts_Comprehensive(t *testing.T) {
 // Edge Case Tests for Coverage
 // ============================================================================
 
-// TestValidateConfig_LoadError tests error handling when config fails to load
 func TestValidateConfig_LoadError(t *testing.T) {
 	tempDir := t.TempDir()
 	vendorDir := filepath.Join(tempDir, "vendor")
@@ -751,7 +745,6 @@ func TestValidateConfig_LoadError(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_LoadError tests error handling when config fails to load
 func TestDetectConflicts_LoadError(t *testing.T) {
 	tempDir := t.TempDir()
 	vendorDir := filepath.Join(tempDir, "vendor")
@@ -773,7 +766,6 @@ func TestDetectConflicts_LoadError(t *testing.T) {
 	}
 }
 
-// TestBuildPathOwnershipMap_DotDestination tests auto-path with "." destination
 func TestBuildPathOwnershipMap_DotDestination(t *testing.T) {
 	tempDir := t.TempDir()
 	vendorDir := filepath.Join(tempDir, "vendor")
@@ -814,7 +806,6 @@ func TestBuildPathOwnershipMap_DotDestination(t *testing.T) {
 	}
 }
 
-// TestIsSubPath_EdgeCases tests edge cases in path overlap detection
 func TestIsSubPath_EdgeCases(t *testing.T) {
 	tempDir := t.TempDir()
 	vendorDir := filepath.Join(tempDir, "vendor")
@@ -908,7 +899,6 @@ func TestIsSubPath_EdgeCases(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_MultipleOwnersPerPath tests multiple owners for a single path
 func TestDetectConflicts_MultipleOwnersPerPath(t *testing.T) {
 	tempDir := t.TempDir()
 	vendorDir := filepath.Join(tempDir, "vendor")
@@ -976,8 +966,6 @@ func TestDetectConflicts_MultipleOwnersPerPath(t *testing.T) {
 // ValidateConfig — Gomock-based unit tests (no real filesystem)
 // ============================================================================
 
-// TestValidateConfig_Gomock_DuplicateNames verifies duplicate vendor name detection
-// via the mock ConfigStore, independent of filesystem.
 func TestValidateConfig_Gomock_DuplicateNames(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1008,7 +996,6 @@ func TestValidateConfig_Gomock_DuplicateNames(t *testing.T) {
 	}
 }
 
-// TestValidateConfig_Gomock_EmptySpecs verifies that a vendor with zero specs fails.
 func TestValidateConfig_Gomock_EmptySpecs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1034,7 +1021,6 @@ func TestValidateConfig_Gomock_EmptySpecs(t *testing.T) {
 	}
 }
 
-// TestValidateConfig_Gomock_MissingRef verifies that a spec with empty ref fails.
 func TestValidateConfig_Gomock_MissingRef(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1062,7 +1048,6 @@ func TestValidateConfig_Gomock_MissingRef(t *testing.T) {
 	}
 }
 
-// TestValidateConfig_Gomock_EmptyMappings verifies that a spec with zero mappings fails.
 func TestValidateConfig_Gomock_EmptyMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1090,7 +1075,6 @@ func TestValidateConfig_Gomock_EmptyMappings(t *testing.T) {
 	}
 }
 
-// TestValidateConfig_Gomock_EmptyFromPath verifies that a mapping with empty "from" fails.
 func TestValidateConfig_Gomock_EmptyFromPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1118,7 +1102,6 @@ func TestValidateConfig_Gomock_EmptyFromPath(t *testing.T) {
 	}
 }
 
-// TestValidateConfig_Gomock_MissingURL verifies that a vendor with no URL fails.
 func TestValidateConfig_Gomock_MissingURL(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1146,7 +1129,6 @@ func TestValidateConfig_Gomock_MissingURL(t *testing.T) {
 	}
 }
 
-// TestValidateConfig_Gomock_ConfigLoadError verifies error propagation from config store.
 func TestValidateConfig_Gomock_ConfigLoadError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1168,8 +1150,6 @@ func TestValidateConfig_Gomock_ConfigLoadError(t *testing.T) {
 // DetectConflicts — Gomock-based unit tests
 // ============================================================================
 
-// TestDetectConflicts_Gomock_OverlappingPathsBetweenVendors verifies that overlapping
-// paths (one is a subdirectory of another) between different vendors are detected.
 func TestDetectConflicts_Gomock_OverlappingPathsBetweenVendors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1204,8 +1184,6 @@ func TestDetectConflicts_Gomock_OverlappingPathsBetweenVendors(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_Gomock_SameExactPath verifies that two vendors mapping to the
-// same exact destination path produces a conflict.
 func TestDetectConflicts_Gomock_SameExactPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1253,8 +1231,6 @@ func TestDetectConflicts_Gomock_SameExactPath(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_Gomock_SelfConflictSingleVendor verifies that a single vendor
-// with two mappings to the same destination path produces a self-conflict.
 func TestDetectConflicts_Gomock_SelfConflictSingleVendor(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1289,9 +1265,6 @@ func TestDetectConflicts_Gomock_SelfConflictSingleVendor(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_Gomock_PositionPathStripped verifies that position specifiers
-// are stripped from destination paths before conflict comparison.
-// "output.go:L5" and "output.go:L10" target the same file and should conflict.
 func TestDetectConflicts_Gomock_PositionPathStripped(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1327,8 +1300,6 @@ func TestDetectConflicts_Gomock_PositionPathStripped(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_Gomock_PositionVsWholeFile verifies that a position mapping
-// and a whole-file mapping to the same destination file produce a conflict.
 func TestDetectConflicts_Gomock_PositionVsWholeFile(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1363,8 +1334,6 @@ func TestDetectConflicts_Gomock_PositionVsWholeFile(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_Gomock_NoConflict verifies that non-overlapping paths
-// produce zero conflicts.
 func TestDetectConflicts_Gomock_NoConflict(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1399,7 +1368,6 @@ func TestDetectConflicts_Gomock_NoConflict(t *testing.T) {
 	}
 }
 
-// TestDetectConflicts_Gomock_ConfigLoadError verifies error propagation.
 func TestDetectConflicts_Gomock_ConfigLoadError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
