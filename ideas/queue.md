@@ -18,7 +18,7 @@
 |----|--------|-------|-------|------|
 | 010 | completed | SBOM Generation | `git vendor sbom` - Generate CycloneDX and SPDX format SBOMs from lockfile | [spec](specs/complete/010-sbom-generation.md) |
 | 011 | completed | CVE/Vulnerability Scanning | `git vendor scan` - Query OSV.dev API for known vulnerabilities | [spec](specs/complete/011-cve-vulnerability-scanning.md) |
-| 012 | pending | Drift Detection | `git vendor drift` - Compare vendored files against origin, detect local and upstream changes | - |
+| 012 | completed | Drift Detection | `git vendor drift` - Compare vendored files against origin, detect local and upstream changes | - |
 | 013 | completed | License Policy Enforcement | `git vendor license` - Configurable policy file with allow/deny/warn lists | - |
 
 ## Phase 3: Ecosystem Integration (P1)
@@ -31,6 +31,7 @@
 | 023 | pending | Compliance Evidence Reports | `git vendor compliance` - Generate EO 14028, NIST, DORA, CRA, SOC 2 evidence docs | - |
 | 024 | pending | Migration Metrics | `git vendor metrics` - Track extraction progress for monolith decomposition | - |
 | 070 | pending | Internal Project Compliance | `source: internal` vendors for intra-repo file sync with transforms, CI enforcement | [spec](specs/in-progress/070-internal-compliance.md) |
+| 075 | pending | Vendor Compliance Modes | Global + per-vendor compliance levels (strict/lenient/info), enforcement hooks, override mode | [spec](specs/in-progress/075-vendor-compliance-modes.md) |
 
 ## Phase 4: Developer & LLM Experience (P1)
 
@@ -58,7 +59,7 @@
 | 040 | pending | Sigstore/Cosign Integration | Cryptographic signing of lockfiles for advanced provenance | - |
 | 041 | pending | Plugin/Hook System | Pre-add, post-sync, pre-verify event hooks for extensibility | - |
 | 042 | pending | API Mode | `git vendor serve` for integration with other tools | - |
-| 043 | pending | Multi-Repo Lockfile Aggregation | Aggregate lockfiles across multiple repositories | - |
+| 043 | pending | Multi-Repo Lockfile Aggregation | `git-vendor compare` + commit trailer syntax for cross-project vendor consistency | [spec](specs/in-progress/043-multi-repo-lockfile-aggregation.md) |
 | 044 | pending | GitLab CI Template | Provide .gitlab-ci.yml snippet for GitLab users | - |
 
 ## Backlog (Unprioritized)
@@ -101,8 +102,12 @@ Per ROADMAP.md Section 12:
        └── 024 (Migration Metrics)
 
 002 (Verify Hardening)
-  └── 012 (Drift Detection)
-       └── 024 (Migration Metrics)
+  ├── 012 (Drift Detection)
+  │    └── 024 (Migration Metrics)
+  └── 075 (Vendor Compliance Modes)
+       ├── 070 (Internal Compliance)
+       ├── 022 (GitHub Action)
+       └── 023 (Compliance Reports)
 
 010 + 011 + 012 + 013
   └── 020 (Audit Command)

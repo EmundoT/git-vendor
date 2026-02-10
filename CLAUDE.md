@@ -120,6 +120,7 @@ The codebase follows clean architecture principles with proper separation of con
    - **cache_store.go**: `CacheStore` interface - Incremental sync cache
    - **parallel_executor.go**: `ParallelExecutor` - Worker pool for concurrent vendor processing
    - **diff_service.go**: Diff service - Commit comparison between locked and latest versions
+   - **drift_service.go**: `DriftService` - Three-way drift detection (local/upstream/conflict risk)
    - **watch_service.go**: Watch service - File monitoring for auto-sync on config changes
    - **update_checker.go**: Update checker - Check for available updates without modifying files
    - **license_policy.go**: License policy loader - Reads `.git-vendor-policy.yml`, validates, returns defaults if absent
@@ -465,6 +466,9 @@ vendors:
 - **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
 - **`net/http.DetectContentType` for binary detection**: Rejected in favor of git's null-byte heuristic (scan first 8000 bytes for `\x00`). `DetectContentType` only inspects 512 bytes and can misclassify source code as `application/octet-stream`. The null-byte approach matches git's own `xdl_mmfile_istext` and has no false positives on valid text files including multi-byte UTF-8.
 - **Bare hex vs `sha256:` prefix in position verify**: `ComputeFileChecksum` returns bare hex, but `ExtractPosition` returns `"sha256:<hex>"`. When comparing hashes in `verifyPositions` for whole-file destinations (`destPos == nil`), MUST normalize `ComputeFileChecksum` output to `"sha256:"` prefix before comparing against `SourceHash`. Mixing formats causes false drift detection.
+- **`file://` URLs in vendor.yml**: MUST NOT allow `file://` scheme in vendor URLs. `ValidateVendorURL()` rejects `file://`, `ftp://`, `javascript:`, and `data:` schemes. Only `https://`, `http://`, `ssh://`, `git://`, `git+ssh://`, and SCP-style (`git@host:path`) are accepted (SEC-011).
+- **Logging URLs with credentials**: MUST NOT include raw URLs in error messages when the URL may contain embedded credentials (`https://user:token@host/repo`). Use `SanitizeURL()` to strip userinfo before logging (SEC-013).
+- **Unbounded YAML file reads**: MUST NOT read vendor.yml/vendor.lock without checking file size. `YAMLStore.Load()` enforces a 1 MB size limit (`maxYAMLFileSize`) to prevent memory exhaustion (SEC-020).
 
 ### Error Handling
 
@@ -501,7 +505,7 @@ Git operations use the `GitClient` interface (git_operations.go), delegating to 
 - `SystemGitClient` implements `GitClient` for production
 - Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`, `GetCommitLog`, `GetTagForCommit`
 - `gitFor(dir)` helper creates `*git.Git` instances per-call (cheap allocation, no I/O)
-- All git execution delegated to git-plumbing (`github.com/emundoT/git-plumbing`) — no direct `exec.Command` calls
+- All git execution delegated to git-plumbing (`github.com/EmundoT/git-plumbing`) — no direct `exec.Command` calls
 - `GetCommitLog` adapter converts `git.Commit` → `types.CommitInfo` with date formatting (`time.Time` → `"2006-01-02 15:04:05 -0700"`)
 - `GetTagForCommit` adapter calls `TagsAt()` then applies local semver preference via `isSemverTag()`
 - Standalone: `GetGitUserIdentity()` → `git.Git{}.UserIdentity()`, `IsGitInstalled()` → `git.IsInstalled()`
@@ -606,7 +610,7 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 
 **Runtime:**
 
-- `github.com/emundoT/git-plumbing` - Git CLI wrapper (self-vendored via git-vendor to `pkg/git-plumbing/`)
+- `github.com/EmundoT/git-plumbing` - Git CLI wrapper (self-vendored via git-vendor to `pkg/git-plumbing/`)
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
@@ -665,7 +669,12 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 26. **Empty file has 1 line**: A 0-byte file splits to `[""]` (1 empty line). `L1` extracts empty string. `L2+` errors.
 27. **Sequential PlaceContent calls operate on modified content**: When two vendors write to different positions in the same file, the second call sees the file as modified by the first. If the first call changes line count, the second call's position targets shifted lines.
 28. **L1-EOF hash equals whole-file hash**: `L1-EOF` extraction produces content byte-identical to the raw file (after CRLF normalization), so the hash matches `sha256(file_content)`.
-29. **Policy file detection uses `os.Stat`, not heuristics**: `CheckCompliance` checks for `.git-vendor-policy.yml` existence with `os.Stat` — NOT by guessing from policy content. A policy file with only `allow` entries (no deny/warn) is correctly detected and enforced. A malformed policy file returns an error instead of silently degrading to legacy behavior.
+29. **URL scheme validation**: `ValidateVendorURL()` rejects `file://`, `ftp://`, `javascript:`, `data:` schemes. Allowed: `https://`, `http://`, `ssh://`, `git://`, `git+ssh://`, SCP-style, and bare hostnames. Called during config validation (SEC-011)
+30. **IsBinaryContent is exported**: The binary detection function (null-byte scan, first 8000 bytes) is exported as `IsBinaryContent()` for use in both position extraction and whole-file copy warnings (SEC-023)
+31. **CopyDir does not follow directory symlinks**: `filepath.Walk` uses `os.Lstat` which does not follow symlinks. Symlinks to directories cause CopyDir to error ("is a directory"). Symlinks to files are followed and content is dereferenced. This is safe behavior for vendored content (SEC-022)
+32. **YAML file size limit**: `YAMLStore.Load()` rejects files > 1 MB (`maxYAMLFileSize`). Normal configs are well under 100 KB (SEC-020)
+33. **Hook threat model**: See `docs/HOOK_THREAT_MODEL.md`. Hooks execute arbitrary shell commands by design — same trust model as npm scripts. Key mitigations: 5-min timeout, env var sanitization, project root working dir (SEC-012)
+34. **Policy file detection uses `os.Stat`, not heuristics**: `CheckCompliance` checks for `.git-vendor-policy.yml` existence with `os.Stat` — NOT by guessing from policy content. A policy file with only `allow` entries (no deny/warn) is correctly detected and enforced. A malformed policy file returns an error instead of silently degrading to legacy behavior.
 
 ## Quick Reference
 
@@ -686,6 +695,7 @@ git-vendor license [options]         # Check license compliance against policy
 git-vendor status                    # Check if local files match lockfile
 git-vendor check-updates             # Preview available updates
 git-vendor diff <vendor>             # Show commit history between locked and latest
+git-vendor drift [options] [vendor]  # Detect drift from origin (local + upstream)
 git-vendor watch                     # Auto-sync on config changes
 git-vendor sbom [options]            # Generate SBOM (CycloneDX/SPDX)
 git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/powershell)
@@ -724,6 +734,34 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - **Deleted files**: Files in lockfile but missing from disk
 - **Added files**: Files in vendor directories but not in lockfile
 - **Position-level drift**: For position-extracted mappings, verifies the target range hash matches the stored `source_hash` (local-only, no cloning)
+
+### Drift Command Flags
+
+```bash
+--dependency <name>  # Scope to specific vendor (also accepts positional arg)
+--offline            # Skip upstream fetch, report only local drift
+--detail             # Show line-level diff output per file
+--format=<fmt>       # Output format: table (default), json, or detail
+# Exit codes: 0=CLEAN (no drift), 1=DRIFTED or CONFLICT
+```
+
+**Behavior:** The drift command compares vendored files against their origin to detect divergence:
+- **Local drift**: Diff between locked commit state and current local files (local modifications)
+- **Upstream drift**: Diff between locked commit state and upstream HEAD (upstream changes since vendoring)
+- **Conflict risk**: Files with both local and upstream changes (merge conflict risk)
+- **Drift score**: Line-level percentage per file and per dependency (0% = identical, 100% = fully rewritten)
+
+**Algorithm:**
+1. Clone source repo, checkout locked commit → read original files
+2. Checkout latest HEAD → read upstream files (skipped in `--offline` mode)
+3. Read local files from disk
+4. Compute LCS-based line diff for local drift and upstream drift
+5. Report per-file and aggregate drift statistics
+
+**Limitations:**
+- Position-extracted mappings (`:L5-L20`) are skipped — use `verify` for position-level checks
+- LCS algorithm is O(n*m) per file; very large files (>10K lines) may be slow
+- Upstream fetch requires network access; use `--offline` for local-only analysis
 
 ### Scan Command Flags
 
@@ -829,6 +867,7 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `ExtractPosition()` - Read file, extract content at PositionSpec, return content + SHA-256 hash
 - `PlaceContent()` - Write extracted content into target file at specified position
 - `extractColumns()` / `placeColumns()` - Column-precise extraction and placement
+- `IsBinaryContent()` - SEC-023: Exported null-byte binary detection (first 8000 bytes)
 
 **file_copy_service.go:**
 
@@ -840,6 +879,15 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 - `ExecutePreSync()` / `ExecutePostSync()` - Run pre/post sync shell hooks with timeout and env injection
 - `sanitizeEnvValue()` - Strip newlines/null bytes from environment variable values
+
+**drift_service.go:**
+
+- `Drift()` - Core drift detection: clones source, compares locked/local/upstream file states
+- `driftForVendorRef()` - Per-vendor three-way comparison (locked commit, local files, upstream HEAD)
+- `lineDiff()` - LCS-based line-level diff between two file contents
+- `longestCommonSubsequence()` - O(n*m) two-row DP for LCS length
+- `computeDriftSummary()` - Aggregate per-dependency stats into DriftSummary
+- `FormatDriftOutput()` - Human-readable table output for drift results
 
 **errors.go:**
 
@@ -853,6 +901,8 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `GetTagForCommit()` - Get tag for commit with semver preference (wraps `TagsAt()`)
 - `GetGitUserIdentity()` - Get git user identity string (delegates to `git.Git{}.UserIdentity()`)
 - `ParseSmartURL()` - Extract repo/ref/path from GitHub URLs
+- `ValidateVendorURL()` - SEC-011: Reject dangerous URL schemes (file://, ftp://, etc.)
+- `SanitizeURL()` - SEC-013: Strip credentials from URLs for safe logging
 - `GitClient.ListTree()` - Browse remote directories via git ls-tree
 
 **github_client.go:**
