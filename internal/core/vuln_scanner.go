@@ -52,9 +52,10 @@ var cvssScoreRegex = regexp.MustCompile(`^(\d+\.?\d*)$`)
 // VulnScannerInterface enables mocking in tests and alternative implementations.
 type VulnScannerInterface interface {
 	// Scan performs vulnerability scanning on all vendored dependencies.
+	// ctx controls cancellation — a cancelled context aborts in-flight HTTP requests.
 	// failOn specifies the severity threshold (critical|high|medium|low) for failing.
 	// Returns nil error even if vulnerabilities are found; check result.Summary.Result.
-	Scan(failOn string) (*types.ScanResult, error)
+	Scan(ctx context.Context, failOn string) (*types.ScanResult, error)
 
 	// ClearCache removes all cached OSV responses.
 	ClearCache() error
@@ -63,16 +64,22 @@ type VulnScannerInterface interface {
 // Compile-time interface satisfaction check.
 var _ VulnScannerInterface = (*VulnScanner)(nil)
 
-// VulnScanner handles vulnerability scanning against OSV.dev
+// VulnScanner handles vulnerability scanning against OSV.dev.
+// The batch API endpoint is configurable via the GIT_VENDOR_OSV_ENDPOINT
+// environment variable (defaults to https://api.osv.dev). This enables
+// testing against local servers and air-gapped proxy deployments.
 type VulnScanner struct {
-	client      *http.Client
-	cacheDir    string
-	cacheTTL    time.Duration
-	lockStore   LockStore
-	configStore ConfigStore
+	client        *http.Client
+	batchEndpoint string // Full URL for batch queries (e.g., "https://api.osv.dev/v1/querybatch")
+	cacheDir      string
+	cacheTTL      time.Duration
+	lockStore     LockStore
+	configStore   ConfigStore
 }
 
-// NewVulnScanner creates a new vulnerability scanner
+// NewVulnScanner creates a new vulnerability scanner.
+// Reads GIT_VENDOR_OSV_ENDPOINT env var to override the default OSV.dev base URL.
+// Reads GIT_VENDOR_CACHE_TTL env var to override the default 24-hour cache TTL.
 func NewVulnScanner(lockStore LockStore, configStore ConfigStore) *VulnScanner {
 	// Check for custom cache TTL
 	cacheTTL := defaultCacheTTL
@@ -80,6 +87,13 @@ func NewVulnScanner(lockStore LockStore, configStore ConfigStore) *VulnScanner {
 		if d, err := time.ParseDuration(ttlStr); err == nil {
 			cacheTTL = d
 		}
+	}
+
+	// Determine batch endpoint: env override or default
+	batchEndpoint := osvBatchAPIEndpoint
+	if baseURL := os.Getenv("GIT_VENDOR_OSV_ENDPOINT"); baseURL != "" {
+		// Strip trailing slash for consistent concatenation
+		batchEndpoint = strings.TrimRight(baseURL, "/") + "/v1/querybatch"
 	}
 
 	// Cache directory is inside vendor directory
@@ -90,10 +104,11 @@ func NewVulnScanner(lockStore LockStore, configStore ConfigStore) *VulnScanner {
 			// No global timeout - let context.WithTimeout control each request.
 			// This avoids the client timeout (30s) aborting batch requests (60s).
 		},
-		cacheDir:    cacheDir,
-		cacheTTL:    cacheTTL,
-		lockStore:   lockStore,
-		configStore: configStore,
+		batchEndpoint: batchEndpoint,
+		cacheDir:      cacheDir,
+		cacheTTL:      cacheTTL,
+		lockStore:     lockStore,
+		configStore:   configStore,
 	}
 }
 
@@ -173,9 +188,10 @@ type cacheEntry struct {
 }
 
 // Scan performs vulnerability scanning on all vendored dependencies.
+// ctx controls cancellation — a cancelled context aborts in-flight HTTP requests.
 // failOn specifies the severity threshold for failing (critical|high|medium|low).
 // An empty string means no threshold check.
-func (s *VulnScanner) Scan(failOn string) (*types.ScanResult, error) {
+func (s *VulnScanner) Scan(ctx context.Context, failOn string) (*types.ScanResult, error) {
 	// Validate failOn parameter
 	if failOn != "" {
 		normalized := strings.ToLower(failOn)
@@ -214,7 +230,14 @@ func (s *VulnScanner) Scan(failOn string) (*types.ScanResult, error) {
 	}
 
 	// Use batch query for efficiency
-	vulnResults, batchErr := s.batchQuery(lock.Vendors, vendorURLs)
+	vulnResults, batchErr := s.batchQuery(ctx, lock.Vendors, vendorURLs)
+
+	// Short-circuit on context cancellation — the user requested abort (e.g. Ctrl+C).
+	// Unlike network/API errors (which are handled per-vendor below), cancellation
+	// means "stop everything" and returning partial results would be misleading.
+	if batchErr != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 
 	// Track which deps were successfully included in batch
 	batchedDeps := make(map[string]bool)
@@ -330,8 +353,9 @@ func (s *VulnScanner) Scan(failOn string) (*types.ScanResult, error) {
 }
 
 // batchQuery performs batch vulnerability queries for efficiency.
-// It handles batching (max 1000 queries per request) and caching automatically.
-func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string]string) (map[string][]osvVuln, error) {
+// ctx is used as the parent for per-request timeouts — cancelling ctx aborts all requests.
+// batchQuery handles batching (max 1000 queries per request) and caching automatically.
+func (s *VulnScanner) batchQuery(ctx context.Context, deps []types.LockDetails, vendorURLs map[string]string) (map[string][]osvVuln, error) {
 	results := make(map[string][]osvVuln)
 
 	// First, check cache for all deps (also filter out empty commit hashes)
@@ -373,8 +397,9 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 
 		batchQueries := queries[batchStart:batchEnd]
 
-		// Make batch request with timeout (see timeout rationale at package level)
-		ctx, cancel := context.WithTimeout(context.Background(), batchQueryTimeout)
+		// Make batch request with timeout derived from parent context.
+		// See timeout rationale at package level.
+		ctx, cancel := context.WithTimeout(ctx, batchQueryTimeout)
 
 		batchReq := osvBatchRequest{Queries: batchQueries}
 		reqJSON, err := json.Marshal(batchReq)
@@ -383,7 +408,7 @@ func (s *VulnScanner) batchQuery(deps []types.LockDetails, vendorURLs map[string
 			return results, fmt.Errorf("marshal batch request: %w", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, osvBatchAPIEndpoint, bytes.NewReader(reqJSON))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.batchEndpoint, bytes.NewReader(reqJSON))
 		if err != nil {
 			cancel()
 			return results, fmt.Errorf("create request: %w", err)
