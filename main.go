@@ -1183,6 +1183,109 @@ func main() {
 			fmt.Println()
 		}
 
+	case "drift":
+		// Parse command-specific flags
+		format := "table"
+		dependency := ""
+		offline := false
+		detail := false
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case arg == "--format=detail":
+				format = "detail"
+				detail = true
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+				if format == "detail" {
+					detail = true
+				}
+			case arg == "--detail":
+				detail = true
+			case arg == "--offline":
+				offline = true
+			case strings.HasPrefix(arg, "--dependency="):
+				dependency = strings.TrimPrefix(arg, "--dependency=")
+			case arg == "--dependency":
+				if i+1 < len(os.Args) {
+					dependency = os.Args[i+1]
+					i++
+				} else {
+					tui.PrintError("Invalid Flag", "--dependency requires a vendor name")
+					os.Exit(1)
+				}
+			case !strings.HasPrefix(arg, "--"):
+				dependency = arg
+			}
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		// Run drift detection
+		result, err := manager.Drift(core.DriftOptions{
+			Dependency: dependency,
+			Offline:    offline,
+			Detail:     detail,
+		})
+		if err != nil {
+			tui.PrintError("Drift Detection Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			// Table/detail format
+			fmt.Println("Analyzing drift for vendored dependencies...")
+			fmt.Println()
+
+			for i := range result.Dependencies {
+				fmt.Print(core.FormatDriftOutput(&result.Dependencies[i], offline))
+				fmt.Println()
+			}
+
+			// Summary
+			fmt.Printf("Summary: %d dependencies analyzed\n", result.Summary.TotalDependencies)
+			if result.Summary.Clean > 0 {
+				fmt.Printf("  \u2713 %s with no drift\n", core.Pluralize(result.Summary.Clean, "dependency", "dependencies"))
+			}
+			if result.Summary.DriftedLocal > 0 {
+				fmt.Printf("  \u0394 %s with local drift\n", core.Pluralize(result.Summary.DriftedLocal, "dependency", "dependencies"))
+			}
+			if result.Summary.DriftedUpstream > 0 {
+				fmt.Printf("  \u2191 %s with upstream drift\n", core.Pluralize(result.Summary.DriftedUpstream, "dependency", "dependencies"))
+			}
+			if result.Summary.ConflictRisk > 0 {
+				fmt.Printf("  \u26A0 %s with conflict risk\n", core.Pluralize(result.Summary.ConflictRisk, "dependency", "dependencies"))
+			}
+			fmt.Printf("  Overall drift score: %.0f%%\n", result.Summary.OverallDriftScore)
+			fmt.Println()
+			fmt.Printf("Result: %s\n", result.Summary.Result)
+		}
+
+		// Exit codes: 0=CLEAN, 1=DRIFTED/CONFLICT
+		switch result.Summary.Result {
+		case "CLEAN":
+			os.Exit(0)
+		default:
+			os.Exit(1)
+		}
+
 	case "watch":
 		// Parse common flags
 		flags, _ := parseCommonFlags(os.Args[2:])
@@ -1366,6 +1469,1010 @@ func main() {
 		} else {
 			// Write to stdout
 			fmt.Print(string(output))
+		}
+
+	case "license":
+		// Parse command-specific flags
+		format := "table" // default format
+		failOn := "deny"  // default: only denied licenses cause FAIL
+		policyPath := ""  // empty = default PolicyFile location
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			case strings.HasPrefix(arg, "--fail-on="):
+				failOn = strings.TrimPrefix(arg, "--fail-on=")
+			case arg == "--fail-on":
+				if i+1 < len(os.Args) {
+					failOn = os.Args[i+1]
+					i++
+				}
+			case strings.HasPrefix(arg, "--policy="):
+				policyPath = strings.TrimPrefix(arg, "--policy=")
+			case arg == "--policy":
+				if i+1 < len(os.Args) {
+					policyPath = os.Args[i+1]
+					i++
+				}
+			}
+		}
+
+		// Validate --fail-on value
+		switch failOn {
+		case "deny", "warn":
+			// valid
+		default:
+			tui.PrintError("Invalid Flag", fmt.Sprintf("--fail-on must be 'deny' or 'warn', got '%s'", failOn))
+			os.Exit(1)
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		// Run license compliance report
+		result, err := manager.LicenseReport(policyPath, failOn)
+		if err != nil {
+			tui.PrintError("License Report Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			// Table format
+			fmt.Println("License compliance report")
+			fmt.Printf("Policy: %s\n", result.PolicyFile)
+			fmt.Println()
+
+			for _, vendor := range result.Vendors {
+				symbol := "✓"
+				switch vendor.Decision {
+				case "deny":
+					symbol = "✗"
+				case "warn":
+					symbol = "⚠"
+				}
+				fmt.Printf("  %s %s  %s  [%s]\n", symbol, vendor.Name, vendor.License, vendor.Decision)
+				if vendor.Decision != "allow" {
+					fmt.Printf("    %s\n", vendor.Reason)
+				}
+			}
+
+			fmt.Println()
+			fmt.Printf("Summary: %d vendors checked\n", result.Summary.TotalVendors)
+			if result.Summary.Allowed > 0 {
+				fmt.Printf("  ✓ %d allowed\n", result.Summary.Allowed)
+			}
+			if result.Summary.Warned > 0 {
+				fmt.Printf("  ⚠ %d warned\n", result.Summary.Warned)
+			}
+			if result.Summary.Denied > 0 {
+				fmt.Printf("  ✗ %d denied\n", result.Summary.Denied)
+			}
+			if result.Summary.Unknown > 0 {
+				fmt.Printf("  ? %d unknown license\n", result.Summary.Unknown)
+			}
+			fmt.Println()
+			fmt.Printf("Result: %s\n", result.Summary.Result)
+		}
+
+		// Exit code logic:
+		// - Exit 1 if result is FAIL (denied licenses, or warned when --fail-on=warn)
+		// - Exit 2 if result is WARN (warned licenses)
+		// - Exit 0 if PASS
+		switch result.Summary.Result {
+		case "PASS":
+			os.Exit(0)
+		case "WARN":
+			os.Exit(2)
+		default: // FAIL
+			os.Exit(1)
+		}
+
+	// =====================================================================
+	// LLM-Friendly CLI Commands (Spec 072)
+	// =====================================================================
+
+	case "create":
+		// Non-interactive vendor creation
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		// Parse command-specific flags
+		ref := ""
+		license := ""
+		var positionalArgs []string
+
+		for i := 0; i < len(args); i++ {
+			switch {
+			case args[i] == "--ref" && i+1 < len(args):
+				ref = args[i+1]
+				i++
+			case args[i] == "--license" && i+1 < len(args):
+				license = args[i+1]
+				i++
+			case !strings.HasPrefix(args[i], "--"):
+				positionalArgs = append(positionalArgs, args[i])
+			}
+		}
+
+		if len(positionalArgs) < 2 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor create <name> <url> [--ref <ref>] [--license <license>]", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor create <name> <url> [--ref <ref>] [--license <license>]")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		name := positionalArgs[0]
+		url := positionalArgs[1]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		if err := manager.CreateVendorEntry(name, url, ref, license); err != nil {
+			if jsonMode {
+				code := core.CLIErrorCodeForError(err)
+				if strings.Contains(err.Error(), "already exists") {
+					code = core.ErrCodeVendorExists
+				}
+				os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+			}
+			tui.PrintError("Failed", err.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		if jsonMode {
+			core.EmitCLISuccess(map[string]interface{}{
+				"name":    name,
+				"url":     url,
+				"ref":     ref,
+				"license": license,
+			})
+		} else {
+			tui.PrintSuccess(fmt.Sprintf("Created vendor '%s'", name))
+		}
+
+	case "delete":
+		// Alias for remove — delegates to existing remove logic
+		// Re-parse as if "remove" was called
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		if len(args) < 1 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor delete <name>", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor delete <name>")
+			os.Exit(core.ExitInvalidArguments)
+		}
+		name := args[0]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		// Create callback for confirmation
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		// Verify vendor exists
+		cfg, err := manager.GetConfig()
+		if err != nil {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeConfigError, err.Error(), core.ExitGeneralError))
+			}
+			callback.ShowError("Error", err.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		found := false
+		for _, v := range cfg.Vendors {
+			if v.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeVendorNotFound, fmt.Sprintf("vendor '%s' not found", name), core.ExitVendorNotFound))
+			}
+			callback.ShowError("Error", fmt.Sprintf("vendor '%s' not found", name))
+			os.Exit(core.ExitVendorNotFound)
+		}
+
+		// Confirmation (skipped in JSON/quiet/yes mode)
+		confirmed := callback.AskConfirmation(
+			fmt.Sprintf("Remove vendor '%s'?", name),
+			"This will delete the config entry and license file.",
+		)
+		if !confirmed {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInternalError, "cancelled", core.ExitGeneralError))
+			}
+			fmt.Println("Cancelled.")
+			os.Exit(core.ExitGeneralError)
+		}
+
+		if err := manager.RemoveVendor(name); err != nil {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInternalError, err.Error(), core.ExitGeneralError))
+			}
+			callback.ShowError("Error", err.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		if jsonMode {
+			core.EmitCLISuccess(map[string]interface{}{"name": name, "deleted": true})
+		} else {
+			callback.ShowSuccess("Removed " + name)
+		}
+
+	case "rename":
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		var positionalArgs []string
+		for _, a := range args {
+			if !strings.HasPrefix(a, "--") {
+				positionalArgs = append(positionalArgs, a)
+			}
+		}
+
+		if len(positionalArgs) < 2 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor rename <old-name> <new-name>", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor rename <old-name> <new-name>")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		oldName := positionalArgs[0]
+		newName := positionalArgs[1]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		if err := manager.RenameVendor(oldName, newName); err != nil {
+			if jsonMode {
+				code := core.CLIErrorCodeForError(err)
+				exitCode := core.CLIExitCodeForError(err)
+				if strings.Contains(err.Error(), "already exists") {
+					code = core.ErrCodeVendorExists
+				}
+				os.Exit(core.EmitCLIError(code, err.Error(), exitCode))
+			}
+			tui.PrintError("Failed", err.Error())
+			os.Exit(core.CLIExitCodeForError(err))
+		}
+
+		if jsonMode {
+			core.EmitCLISuccess(map[string]interface{}{
+				"old_name": oldName,
+				"new_name": newName,
+			})
+		} else {
+			tui.PrintSuccess(fmt.Sprintf("Renamed '%s' → '%s'", oldName, newName))
+		}
+
+	case "add-mapping":
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		// Parse flags
+		to := ""
+		ref := ""
+		var positionalArgs []string
+
+		for i := 0; i < len(args); i++ {
+			switch {
+			case args[i] == "--to" && i+1 < len(args):
+				to = args[i+1]
+				i++
+			case args[i] == "--ref" && i+1 < len(args):
+				ref = args[i+1]
+				i++
+			case !strings.HasPrefix(args[i], "--"):
+				positionalArgs = append(positionalArgs, args[i])
+			}
+		}
+
+		if len(positionalArgs) < 2 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor add-mapping <vendor> <from> --to <to> [--ref <ref>]", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor add-mapping <vendor> <from> --to <to> [--ref <ref>]")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		vendorName := positionalArgs[0]
+		from := positionalArgs[1]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		if err := manager.AddMappingToVendor(vendorName, from, to, ref); err != nil {
+			if jsonMode {
+				code := core.CLIErrorCodeForError(err)
+				if strings.Contains(err.Error(), "already exists") {
+					code = core.ErrCodeMappingExists
+				}
+				os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+			}
+			tui.PrintError("Failed", err.Error())
+			os.Exit(core.CLIExitCodeForError(err))
+		}
+
+		dest := to
+		if dest == "" {
+			dest = "(auto)"
+		}
+		if jsonMode {
+			core.EmitCLISuccess(map[string]interface{}{
+				"vendor": vendorName,
+				"from":   from,
+				"to":     to,
+			})
+		} else {
+			tui.PrintSuccess(fmt.Sprintf("Added mapping: %s → %s", from, dest))
+		}
+
+	case "remove-mapping":
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		var positionalArgs []string
+		for _, a := range args {
+			if !strings.HasPrefix(a, "--") {
+				positionalArgs = append(positionalArgs, a)
+			}
+		}
+
+		if len(positionalArgs) < 2 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor remove-mapping <vendor> <from>", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor remove-mapping <vendor> <from>")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		vendorName := positionalArgs[0]
+		from := positionalArgs[1]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		if err := manager.RemoveMappingFromVendor(vendorName, from); err != nil {
+			if jsonMode {
+				code := core.CLIErrorCodeForError(err)
+				if strings.Contains(err.Error(), "not found in vendor") {
+					code = core.ErrCodeMappingNotFound
+				}
+				os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+			}
+			tui.PrintError("Failed", err.Error())
+			os.Exit(core.CLIExitCodeForError(err))
+		}
+
+		if jsonMode {
+			core.EmitCLISuccess(map[string]interface{}{
+				"vendor":  vendorName,
+				"removed": from,
+			})
+		} else {
+			tui.PrintSuccess(fmt.Sprintf("Removed mapping: %s", from))
+		}
+
+	case "list-mappings":
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		var positionalArgs []string
+		for _, a := range args {
+			if !strings.HasPrefix(a, "--") {
+				positionalArgs = append(positionalArgs, a)
+			}
+		}
+
+		if len(positionalArgs) < 1 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor list-mappings <vendor> [--json]", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor list-mappings <vendor> [--json]")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		vendorName := positionalArgs[0]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		cfg, err := manager.GetConfig()
+		if err != nil {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeConfigError, err.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Error", err.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		vendor := core.FindVendor(cfg.Vendors, vendorName)
+		if vendor == nil {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeVendorNotFound, fmt.Sprintf("vendor '%s' not found", vendorName), core.ExitVendorNotFound))
+			}
+			tui.PrintError("Error", fmt.Sprintf("vendor '%s' not found", vendorName))
+			os.Exit(core.ExitVendorNotFound)
+		}
+
+		if jsonMode {
+			allMappings := make([]map[string]interface{}, 0)
+			for _, s := range vendor.Specs {
+				for _, m := range s.Mapping {
+					allMappings = append(allMappings, map[string]interface{}{
+						"from": m.From,
+						"to":   m.To,
+						"ref":  s.Ref,
+					})
+				}
+			}
+			core.EmitCLISuccess(map[string]interface{}{
+				"vendor":   vendorName,
+				"mappings": allMappings,
+			})
+		} else {
+			fmt.Printf("Mappings for %s:\n\n", vendorName)
+			for _, s := range vendor.Specs {
+				if len(s.Mapping) == 0 {
+					fmt.Printf("  %s: (no mappings)\n", s.Ref)
+					continue
+				}
+				for _, m := range s.Mapping {
+					dest := m.To
+					if dest == "" {
+						dest = "(auto)"
+					}
+					fmt.Printf("  [%s] %s → %s\n", s.Ref, m.From, dest)
+				}
+			}
+		}
+
+	case "update-mapping":
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		// Parse flags
+		newTo := ""
+		var positionalArgs []string
+
+		for i := 0; i < len(args); i++ {
+			switch {
+			case args[i] == "--to" && i+1 < len(args):
+				newTo = args[i+1]
+				i++
+			case !strings.HasPrefix(args[i], "--"):
+				positionalArgs = append(positionalArgs, args[i])
+			}
+		}
+
+		if len(positionalArgs) < 2 || newTo == "" {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor update-mapping <vendor> <from> --to <new-to>", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor update-mapping <vendor> <from> --to <new-to>")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		vendorName := positionalArgs[0]
+		from := positionalArgs[1]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		// Get old target for display
+		oldTo := ""
+		cfg, _ := manager.GetConfig() //nolint:errcheck
+		if v := core.FindVendor(cfg.Vendors, vendorName); v != nil {
+			for _, s := range v.Specs {
+				for _, m := range s.Mapping {
+					if m.From == from {
+						oldTo = m.To
+						break
+					}
+				}
+			}
+		}
+
+		if err := manager.UpdateMappingInVendor(vendorName, from, newTo); err != nil {
+			if jsonMode {
+				code := core.CLIErrorCodeForError(err)
+				if strings.Contains(err.Error(), "not found") {
+					code = core.ErrCodeMappingNotFound
+				}
+				os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+			}
+			tui.PrintError("Failed", err.Error())
+			os.Exit(core.CLIExitCodeForError(err))
+		}
+
+		if jsonMode {
+			core.EmitCLISuccess(map[string]interface{}{
+				"vendor": vendorName,
+				"from":   from,
+				"old_to": oldTo,
+				"new_to": newTo,
+			})
+		} else {
+			if oldTo != "" {
+				tui.PrintSuccess(fmt.Sprintf("Updated mapping target: %s → %s", oldTo, newTo))
+			} else {
+				tui.PrintSuccess(fmt.Sprintf("Updated mapping target for %s to %s", from, newTo))
+			}
+		}
+
+	case "show":
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		var positionalArgs []string
+		for _, a := range args {
+			if !strings.HasPrefix(a, "--") {
+				positionalArgs = append(positionalArgs, a)
+			}
+		}
+
+		if len(positionalArgs) < 1 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor show <vendor> [--json]", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor show <vendor> [--json]")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		vendorName := positionalArgs[0]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		data, err := manager.ShowVendor(vendorName)
+		if err != nil {
+			if jsonMode {
+				code := core.CLIErrorCodeForError(err)
+				os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+			}
+			tui.PrintError("Error", err.Error())
+			os.Exit(core.CLIExitCodeForError(err))
+		}
+
+		if jsonMode {
+			core.EmitCLISuccess(data)
+		} else {
+			// Human-readable output
+			fmt.Printf("  %s\n", data["name"])
+			fmt.Printf("    URL:      %s\n", data["url"])
+			if license, ok := data["license"]; ok && license != "" {
+				fmt.Printf("    License:  %s\n", license)
+			}
+			if groups, ok := data["groups"]; ok {
+				if g, ok := groups.([]string); ok && len(g) > 0 {
+					fmt.Printf("    Groups:   %s\n", strings.Join(g, ", "))
+				}
+			}
+
+			if specs, ok := data["specs"].([]map[string]interface{}); ok {
+				for _, spec := range specs {
+					refStr := fmt.Sprintf("%v", spec["ref"])
+					if hash, ok := spec["commit_hash"]; ok {
+						hashStr := fmt.Sprintf("%v", hash)
+						if len(hashStr) > 7 {
+							hashStr = hashStr[:7]
+						}
+						fmt.Printf("    Ref:      %s @ %s\n", refStr, hashStr)
+					} else {
+						fmt.Printf("    Ref:      %s (not synced)\n", refStr)
+					}
+					if tag, ok := spec["source_version_tag"]; ok && tag != "" {
+						fmt.Printf("    Version:  %s\n", tag)
+					}
+					if mappings, ok := spec["mappings"].([]map[string]interface{}); ok {
+						for i, m := range mappings {
+							dest := fmt.Sprintf("%v", m["to"])
+							if dest == "" {
+								dest = "(auto)"
+							}
+							prefix := "      ├─"
+							if i == len(mappings)-1 {
+								prefix = "      └─"
+							}
+							fmt.Printf("%s %s → %s\n", prefix, m["from"], dest)
+						}
+					}
+				}
+			}
+		}
+
+	case "check":
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		var positionalArgs []string
+		for _, a := range args {
+			if !strings.HasPrefix(a, "--") {
+				positionalArgs = append(positionalArgs, a)
+			}
+		}
+
+		if len(positionalArgs) < 1 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor check <vendor> [--json]", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor check <vendor> [--json]")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		vendorName := positionalArgs[0]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		result, err := manager.CheckVendorStatus(vendorName)
+		if err != nil {
+			if jsonMode {
+				code := core.CLIErrorCodeForError(err)
+				os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+			}
+			tui.PrintError("Error", err.Error())
+			os.Exit(core.CLIExitCodeForError(err))
+		}
+
+		if jsonMode {
+			core.EmitCLISuccess(result)
+		} else {
+			status := fmt.Sprintf("%v", result["status"])
+			switch status {
+			case "synced":
+				tui.PrintSuccess(fmt.Sprintf("%s: synced", vendorName))
+			case "stale":
+				tui.PrintWarning("Stale", fmt.Sprintf("%s needs syncing", vendorName))
+				if specs, ok := result["specs"].([]map[string]interface{}); ok {
+					for _, spec := range specs {
+						if spec["status"] != "synced" {
+							fmt.Printf("  %s: %s\n", spec["ref"], spec["status"])
+							if missing, ok := spec["missing_paths"].([]string); ok {
+								for _, p := range missing {
+									fmt.Printf("    • Missing: %s\n", p)
+								}
+							}
+						}
+					}
+				}
+			default:
+				fmt.Printf("%s: %s\n", vendorName, status)
+			}
+		}
+
+	case "preview":
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		var positionalArgs []string
+		for _, a := range args {
+			if !strings.HasPrefix(a, "--") {
+				positionalArgs = append(positionalArgs, a)
+			}
+		}
+
+		if len(positionalArgs) < 1 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor preview <vendor> [--json]", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor preview <vendor> [--json]")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		vendorName := positionalArgs[0]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		cfg, err := manager.GetConfig()
+		if err != nil {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeConfigError, err.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Error", err.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		vendor := core.FindVendor(cfg.Vendors, vendorName)
+		if vendor == nil {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeVendorNotFound, fmt.Sprintf("vendor '%s' not found", vendorName), core.ExitVendorNotFound))
+			}
+			tui.PrintError("Error", fmt.Sprintf("vendor '%s' not found", vendorName))
+			os.Exit(core.ExitVendorNotFound)
+		}
+
+		// Build preview data from config (what would be synced)
+		lock, _ := manager.GetLock() //nolint:errcheck
+		lockMap := make(map[string]string)
+		for _, entry := range lock.Vendors {
+			key := entry.Name + "@" + entry.Ref
+			lockMap[key] = entry.CommitHash
+		}
+
+		previewSpecs := make([]map[string]interface{}, 0, len(vendor.Specs))
+		totalFiles := 0
+		for _, spec := range vendor.Specs {
+			specPreview := map[string]interface{}{
+				"ref": spec.Ref,
+			}
+			if hash, ok := lockMap[vendorName+"@"+spec.Ref]; ok {
+				specPreview["locked_commit"] = hash
+			}
+
+			files := make([]map[string]interface{}, 0, len(spec.Mapping))
+			for _, m := range spec.Mapping {
+				dest := m.To
+				if dest == "" {
+					dest = "(auto)"
+				}
+				files = append(files, map[string]interface{}{
+					"from": m.From,
+					"to":   dest,
+				})
+			}
+			specPreview["files"] = files
+			totalFiles += len(spec.Mapping)
+			previewSpecs = append(previewSpecs, specPreview)
+		}
+
+		if jsonMode {
+			core.EmitCLISuccess(map[string]interface{}{
+				"vendor":      vendorName,
+				"url":         vendor.URL,
+				"specs":       previewSpecs,
+				"total_files": totalFiles,
+			})
+		} else {
+			fmt.Printf("Preview for %s (%s):\n\n", vendorName, vendor.URL)
+			for _, spec := range previewSpecs {
+				refStr := fmt.Sprintf("%v", spec["ref"])
+				if hash, ok := spec["locked_commit"]; ok {
+					hashStr := fmt.Sprintf("%v", hash)
+					if len(hashStr) > 7 {
+						hashStr = hashStr[:7]
+					}
+					fmt.Printf("  %s @ %s\n", refStr, hashStr)
+				} else {
+					fmt.Printf("  %s (not locked — will fetch latest)\n", refStr)
+				}
+				if files, ok := spec["files"].([]map[string]interface{}); ok {
+					for _, f := range files {
+						fmt.Printf("    %s → %s\n", f["from"], f["to"])
+					}
+				}
+			}
+			fmt.Printf("\n%s would be synced.\n", core.Pluralize(totalFiles, "file", "files"))
+		}
+
+	case "config":
+		flags, args := parseCommonFlags(os.Args[2:])
+		jsonMode := flags.Mode == core.OutputJSON
+
+		if len(args) < 1 {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor config <get|set|list> [args]", core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", "git-vendor config <get|set|list> [args]")
+			os.Exit(core.ExitInvalidArguments)
+		}
+
+		subCmd := args[0]
+		subArgs := args[1:]
+
+		if !core.IsVendorInitialized() {
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeNotInitialized, core.ErrNotInitialized.Error(), core.ExitGeneralError))
+			}
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(core.ExitGeneralError)
+		}
+
+		switch subCmd {
+		case "list":
+			cfg, err := manager.GetConfig()
+			if err != nil {
+				if jsonMode {
+					os.Exit(core.EmitCLIError(core.ErrCodeConfigError, err.Error(), core.ExitGeneralError))
+				}
+				tui.PrintError("Error", err.Error())
+				os.Exit(core.ExitGeneralError)
+			}
+
+			if jsonMode {
+				vendorData := make([]map[string]interface{}, 0, len(cfg.Vendors))
+				for _, v := range cfg.Vendors {
+					vd := map[string]interface{}{
+						"name":    v.Name,
+						"url":     v.URL,
+						"license": v.License,
+					}
+					if len(v.Groups) > 0 {
+						vd["groups"] = v.Groups
+					}
+					refs := make([]string, 0, len(v.Specs))
+					for _, s := range v.Specs {
+						refs = append(refs, s.Ref)
+					}
+					vd["refs"] = refs
+					mappingCount := 0
+					for _, s := range v.Specs {
+						mappingCount += len(s.Mapping)
+					}
+					vd["mapping_count"] = mappingCount
+					vendorData = append(vendorData, vd)
+				}
+				core.EmitCLISuccess(map[string]interface{}{
+					"vendors":      vendorData,
+					"vendor_count": len(cfg.Vendors),
+				})
+			} else {
+				if len(cfg.Vendors) == 0 {
+					fmt.Println("No vendors configured.")
+				} else {
+					for _, v := range cfg.Vendors {
+						fmt.Printf("vendors.%s.url = %s\n", v.Name, v.URL)
+						fmt.Printf("vendors.%s.license = %s\n", v.Name, v.License)
+						for _, s := range v.Specs {
+							fmt.Printf("vendors.%s.ref = %s\n", v.Name, s.Ref)
+						}
+						if len(v.Groups) > 0 {
+							fmt.Printf("vendors.%s.groups = %s\n", v.Name, strings.Join(v.Groups, ","))
+						}
+					}
+				}
+			}
+
+		case "get":
+			if len(subArgs) < 1 {
+				if jsonMode {
+					os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor config get <key>", core.ExitInvalidArguments))
+				}
+				tui.PrintError("Usage", "git-vendor config get <key>")
+				os.Exit(core.ExitInvalidArguments)
+			}
+
+			key := subArgs[0]
+			value, err := manager.GetConfigValue(key)
+			if err != nil {
+				if jsonMode {
+					code := core.ErrCodeInvalidKey
+					if core.IsVendorNotFound(err) {
+						code = core.ErrCodeVendorNotFound
+					}
+					os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+				}
+				tui.PrintError("Error", err.Error())
+				os.Exit(core.ExitGeneralError)
+			}
+
+			if jsonMode {
+				core.EmitCLISuccess(map[string]interface{}{
+					"key":   key,
+					"value": value,
+				})
+			} else {
+				fmt.Printf("%v\n", value)
+			}
+
+		case "set":
+			if len(subArgs) < 2 {
+				if jsonMode {
+					os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor config set <key> <value>", core.ExitInvalidArguments))
+				}
+				tui.PrintError("Usage", "git-vendor config set <key> <value>")
+				os.Exit(core.ExitInvalidArguments)
+			}
+
+			key := subArgs[0]
+			value := subArgs[1]
+			if err := manager.SetConfigValue(key, value); err != nil {
+				if jsonMode {
+					code := core.ErrCodeInvalidKey
+					if core.IsVendorNotFound(err) {
+						code = core.ErrCodeVendorNotFound
+					}
+					os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+				}
+				tui.PrintError("Error", err.Error())
+				os.Exit(core.ExitGeneralError)
+			}
+
+			if jsonMode {
+				core.EmitCLISuccess(map[string]interface{}{
+					"key":   key,
+					"value": value,
+				})
+			} else {
+				tui.PrintSuccess(fmt.Sprintf("Set %s = %s", key, value))
+			}
+
+		default:
+			if jsonMode {
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, fmt.Sprintf("unknown config subcommand: %s (use get, set, or list)", subCmd), core.ExitInvalidArguments))
+			}
+			tui.PrintError("Usage", fmt.Sprintf("unknown config subcommand: %s\nUsage: git-vendor config <get|set|list>", subCmd))
+			os.Exit(core.ExitInvalidArguments)
 		}
 
 	default:

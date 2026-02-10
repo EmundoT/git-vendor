@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/huh v0.3.0
 	github.com/charmbracelet/lipgloss v0.10.0
-	github.com/emundoT/git-plumbing v0.1.0
+	github.com/EmundoT/git-plumbing v0.1.0
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0
@@ -37,4 +37,4 @@ require (
 	golang.org/x/text v0.13.0 // indirect
 )
 
-replace github.com/emundoT/git-plumbing => ./pkg/git-plumbing
+replace github.com/EmundoT/git-plumbing => ./pkg/git-plumbing

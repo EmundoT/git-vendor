@@ -5,19 +5,17 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/EmundoT/git-vendor)](https://goreportcard.com/report/github.com/EmundoT/git-vendor)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A CLI tool for vendoring specific files/directories from Git repositories with deterministic locking.
+A CLI tool for vendoring specific files and directories from Git repositories with deterministic locking, license compliance, and vulnerability scanning.
 
 ## Table of Contents
 
-- [The Problem](#the-problem)
-- [The Solution](#the-solution)
-- [Key Features](#key-features)
+- [Why git-vendor?](#why-git-vendor)
+- [Feature Matrix](#feature-matrix)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Core Concepts](#core-concepts)
 - [Common Commands](#common-commands)
 - [Example Use Cases](#example-use-cases)
-- [Screenshot](#screenshot)
 - [Documentation](#documentation)
 - [Comparison](#comparison)
 - [FAQ](#faq)
@@ -28,45 +26,41 @@ A CLI tool for vendoring specific files/directories from Git repositories with d
 
 ---
 
-## The Problem
+## Why git-vendor?
 
-**Vendoring entire repositories wastes space.** You often need just a handful of files from a large codebase, but git submodules force you to checkout the entire repo.
+You need a few files from another repository. Your options today:
 
-**Manual copying is error-prone and hard to track.** Copy-pasting code loses provenance - where did this file come from? What version? How do you update it?
+| Approach | Problem |
+| --- | --- |
+| **Git submodules** | Checks out the entire repo, nested `.git` dirs, complex update commands |
+| **Package managers** | Language-specific, requires published packages, no file-level granularity |
+| **Manual copy-paste** | Loses provenance, no version tracking, no reproducibility |
 
-**Package managers don't work for cross-language projects.** npm, pip, and cargo are great for their ecosystems, but what if you need utility functions from a Python repo in your Go project? Or want to vendor config files and scripts?
+**git-vendor gives you file-level vendoring with full provenance.** Vendor `src/utils.go` instead of the entire repo. Lock to exact commit SHAs for reproducible builds. Auto-detect licenses for compliance. Scan for CVEs. All language-agnostic.
 
-**Git submodules are heavyweight.** Nested `.git` directories, complex commands (`git submodule update --init --recursive`), and entire repository checkouts make submodules cumbersome for simple vendoring needs.
+```bash
+git-vendor add    # Interactive wizard - paste a GitHub URL, select files
+git-vendor sync   # Download files at locked versions
+git-vendor verify # Confirm nothing has been tampered with
+```
 
----
+## Feature Matrix
 
-## The Solution
-
-**git-vendor lets you vendor exactly what you need** - specific files or directories - from any Git repository, with:
-
-- ✅ **Granular path control** - Vendor `src/utils.go`, not the entire repo
-- ✅ **Deterministic locking** - `vendor.lock` ensures reproducible builds with exact commit SHAs
-- ✅ **Interactive file browser** - TUI for easy path selection (no complex CLI flags)
-- ✅ **Multi-platform support** - Works with GitHub, GitLab, Bitbucket, and any Git server
-- ✅ **License compliance** - Automatic detection and tracking
-- ✅ **Smart caching** - 80% faster re-syncs with incremental cache
-
-**Think of it like package managers for Git files** - but language-agnostic and file-level granular.
-
----
-
-## Key Features
-
-- **Granular Path Vendoring** - Vendor specific files/directories, not entire repositories
-- **Deterministic Locking** - vendor.lock ensures reproducible builds across teams and environments
-- **Interactive TUI** - File browser for selecting paths (built with charmbracelet/huh)
-- **Multi-Platform** - GitHub, GitLab, Bitbucket, and generic Git servers
-- **Smart URL Parsing** - Paste file links directly - auto-extracts repo, branch, and path
-- **License Compliance** - Automatic detection with caching for audit
-- **Parallel Processing** - 3-5x speedup for multi-vendor projects with `--parallel` flag
-- **Custom Hooks** - Pre/post sync automation for build workflows
-- **Incremental Cache** - Skip unchanged files for faster re-syncs
-- **CI/CD Ready** - Non-interactive mode with `--yes`, `--quiet`, `--json` flags
+| Capability | Details |
+| --- | --- |
+| **Granular path vendoring** | Vendor specific files, directories, or even line ranges from source files |
+| **Deterministic locking** | `vendor.lock` with exact commit SHAs, file hashes (SHA-256), timestamps |
+| **Multi-platform** | GitHub, GitLab (self-hosted), Bitbucket, any Git server (HTTPS/SSH) |
+| **Interactive TUI** | File browser for remote repos, path mapping wizard (charmbracelet/huh) |
+| **License compliance** | Auto-detection via API, caching in `.git-vendor/licenses/`, SPDX identifiers |
+| **Vulnerability scanning** | CVE detection via OSV.dev, PURL-based queries, severity filtering |
+| **SBOM generation** | CycloneDX 1.5 and SPDX 2.3 output for supply chain compliance |
+| **Parallel processing** | 3-5x speedup with `--parallel` flag, configurable worker pool |
+| **Custom hooks** | Pre/post sync shell commands with environment variable injection |
+| **Incremental cache** | SHA-256 checksums skip unchanged files (~80% faster re-syncs) |
+| **Position extraction** | Vendor specific line/column ranges (`file.go:L5-L20`, `file.go:L5-EOF`) |
+| **CI/CD ready** | Non-interactive mode, JSON output, exit codes, deterministic builds |
+| **Git subcommand** | Works as both `git-vendor` and `git vendor` |
 
 ---
 
@@ -320,20 +314,15 @@ vendors:
 
 ---
 
-## Screenshot
-
-_Interactive file browser for selecting paths to vendor_
-
-> Note: TUI screenshot will be added in a future release
-
----
-
 ## Documentation
 
-- **[Commands Reference](./docs/COMMANDS.md)** - All 13 commands with examples and options
+- **[Commands Reference](./docs/COMMANDS.md)** - All commands with examples and options
+- **[Configuration Reference](./docs/CONFIGURATION.md)** - vendor.yml and vendor.lock format
 - **[Platform Support](./docs/PLATFORMS.md)** - GitHub, GitLab, Bitbucket, generic Git details
 - **[Advanced Usage](./docs/ADVANCED.md)** - Hooks, groups, parallel processing, caching, watch mode
-- **[Configuration Reference](./docs/CONFIGURATION.md)** - vendor.yml and vendor.lock format
+- **[CI/CD Integration](./docs/CI_CD.md)** - GitHub Actions, GitLab CI, CircleCI pipelines
+- **[FAQ](./docs/FAQ.md)** - Common questions and answers
+- **[Security Policy](./SECURITY.md)** - Vulnerability reporting and security model
 - **[Architecture](./docs/ARCHITECTURE.md)** - Technical design and extension points
 - **[Troubleshooting](./docs/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[Contributing](./CONTRIBUTING.md)** - Development setup and guidelines
@@ -382,40 +371,18 @@ _Interactive file browser for selecting paths to vendor_
 ## FAQ
 
 **Q: How is this different from git submodules?**
-
-A: Submodules vendor entire repos; git-vendor vendors specific files/directories with granular control. Plus, no nested `.git` directories - vendored files are plain copies.
+A: Submodules vendor entire repos; git-vendor vendors specific files/directories. No nested `.git` directories.
 
 **Q: Can I vendor from private repositories?**
-
-A: Yes! Set `GITHUB_TOKEN` or `GITLAB_TOKEN` environment variables for private GitHub/GitLab repos. For generic Git, use SSH keys.
-
-**Q: How do I update dependencies?**
-
-A: Run `git-vendor update` to fetch latest commits and update `vendor.lock`, then `git-vendor sync` to download the new versions.
+A: Yes. Set `GITHUB_TOKEN` or `GITLAB_TOKEN` for private repos. For generic Git, use SSH keys.
 
 **Q: Does it work with non-GitHub repositories?**
-
-A: Yes! Supports GitHub, GitLab, Bitbucket, and any Git server (HTTPS/SSH/Git protocol).
-
-**Q: How does license compliance work?**
-
-A: git-vendor auto-detects licenses via API (GitHub/GitLab) or LICENSE file (others) and caches them in `.git-vendor/licenses/` for audit. Pre-approved licenses (MIT, Apache-2.0, BSD, etc.) are automatically accepted.
+A: Yes. Supports GitHub, GitLab, Bitbucket, and any Git server (HTTPS/SSH).
 
 **Q: Can I automate vendoring in CI/CD?**
+A: Yes. Use `--yes --quiet` for non-interactive mode. See [CI/CD Guide](./docs/CI_CD.md).
 
-A: Yes! Use `--yes --quiet` flags for non-interactive mode. Commit both `vendor.yml` and `vendor.lock` for deterministic CI builds. [See CI/CD guide →](./docs/ADVANCED.md#cicd-integration)
-
-**Q: Why is re-syncing so much faster after the first time?**
-
-A: git-vendor uses incremental caching with SHA-256 file checksums. If files haven't changed, it skips git operations entirely (80% faster). Use `--force` to bypass the cache.
-
-**Q: Can I vendor multiple versions of the same library?**
-
-A: Yes! Use multi-ref tracking to vendor v1.0 and v2.0 to different local paths. [See example →](#3-track-multiple-versions)
-
-**Q: What if I need to vendor from a repository with a branch name containing slashes?**
-
-A: Use the base repository URL in the wizard and manually enter the ref name (e.g., `feature/new-api`). Smart URL parsing doesn't support slash-containing branch names due to ambiguity.
+[Full FAQ →](./docs/FAQ.md)
 
 ---
 

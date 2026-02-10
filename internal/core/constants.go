@@ -29,6 +29,12 @@ const (
 	CachePath = VendorDir + "/" + CacheDir
 )
 
+// Project-root configuration files (outside .git-vendor/).
+const (
+	// PolicyFile is the license policy configuration file at the project root.
+	PolicyFile = ".git-vendor-policy.yml"
+)
+
 // Git refs
 const (
 	// DefaultRef is the default git ref used when none is specified

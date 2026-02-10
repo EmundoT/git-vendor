@@ -3,7 +3,7 @@
 > **Status:** Draft
 > **Priority:** P1 - Agent/LLM Workflow Enabler
 > **Effort:** 2-3 weeks
-> **Dependencies:** 002 (Verify Hardening)
+> **Dependencies:** 002 (Verify Hardening), 075 (Vendor Compliance Modes — provides enforcement model)
 > **Blocks:** Agent handoff workflows, documentation compliance
 
 ---
@@ -84,7 +84,7 @@ vendors:
 
   - name: api-schema
     source: internal
-    strictness: strict  # fail on any drift
+    compliance: strict  # fail on any drift (see Spec 075)
     specs:
       - mapping:
           - from: api/schema.json
@@ -104,12 +104,17 @@ vendors:
 | `strictness` | `strict\|lenient` | `strict`: any drift fails, `lenient`: warn only |
 | `transform` | string | Transform to apply (see Transforms section) |
 
-### Strictness Levels
+### Compliance Levels (defined by Spec 075)
+
+Internal vendors use the compliance model from [Spec 075: Vendor Compliance Modes](075-vendor-compliance-modes.md). The per-vendor `compliance` field and global `compliance.default` / `compliance.mode` settings apply uniformly to both external and internal vendors.
 
 | Level | Behavior | Use Case |
 |-------|----------|----------|
 | `strict` | `verify` fails with exit 1 on any drift | Schema compliance |
 | `lenient` | `verify` warns (exit 2) but doesn't fail | Documentation |
+| `info` | `verify` reports drift, exit 0 | Experimental sync |
+
+> **Note:** Earlier drafts of this spec used a `strictness` field. This has been unified as `compliance` across all vendor types per Spec 075. See 075 for enforcement hooks, CLI flags, global defaults, and override mode.
 
 ---
 
@@ -421,7 +426,7 @@ vendors:
   # Internal: README quick reference from full docs
   - name: readme-commands
     source: internal
-    strictness: lenient
+    compliance: lenient
     specs:
       - mapping:
           - from: docs/COMMANDS.md
@@ -449,7 +454,7 @@ vendors:
   # Internal: Config docs from example file
   - name: config-docs
     source: internal
-    strictness: lenient
+    compliance: lenient
     specs:
       - mapping:
           - from: config.example.yaml
@@ -491,4 +496,5 @@ vendors:
 
 - ROADMAP.md Section 14 (Extensibility)
 - Spec 002: Verify Command Hardening
+- Spec 075: Vendor Compliance Modes (enforcement model, global defaults, override mode)
 - User feedback on documentation maintenance burden

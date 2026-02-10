@@ -96,7 +96,7 @@ The codebase follows clean architecture principles with proper separation of con
 
 1. **main.go** - Command dispatcher and CLI interface
 
-   - Routes commands (init, add, edit, remove, list, sync, update, validate, status, check-updates, diff, watch, completion)
+   - Routes commands (init, add, edit, remove, list, sync, update, validate, status, check-updates, diff, watch, license, completion)
    - Handles argument parsing and basic validation
    - Entry point for all user interactions
    - Version management (receives ldflags from GoReleaser, injects into version package)
@@ -120,10 +120,15 @@ The codebase follows clean architecture principles with proper separation of con
    - **cache_store.go**: `CacheStore` interface - Incremental sync cache
    - **parallel_executor.go**: `ParallelExecutor` - Worker pool for concurrent vendor processing
    - **diff_service.go**: Diff service - Commit comparison between locked and latest versions
+   - **drift_service.go**: `DriftService` - Three-way drift detection (local/upstream/conflict risk)
    - **watch_service.go**: Watch service - File monitoring for auto-sync on config changes
    - **update_checker.go**: Update checker - Check for available updates without modifying files
-   - **constants.go**: Path constants (`ConfigPath`, `LockPath`), git refs, license lists
+   - **license_policy.go**: License policy loader - Reads `.git-vendor-policy.yml`, validates, returns defaults if absent
+   - **license_policy_service.go**: `LicensePolicyServiceInterface` - Policy evaluation, report generation
+   - **constants.go**: Path constants (`ConfigPath`, `LockPath`, `PolicyFile`), git refs, license lists
    - **errors.go**: Sentinel errors and structured error types (see Error Handling)
+   - **config_commands.go**: LLM-friendly config manipulation (Spec 072): create, rename, mapping CRUD, show, config get/set
+   - **cli_response.go**: CLIResponse JSON type, exit/error codes for Spec 072 commands
    - **mocks_test.go**: Mock implementations for testing
 
 3. **internal/tui/wizard.go** - Interactive user interface
@@ -190,6 +195,13 @@ PositionSpec (internal/types/position.go)
   ├─ StartCol: int (1-indexed, 0 = no column)
   ├─ EndCol: int (1-indexed inclusive, 0 = no column)
   └─ ToEOF: bool (true = extract to end of file)
+
+LicensePolicy (.git-vendor-policy.yml)
+  └─ LicensePolicyRules
+      ├─ Allow: []string (SPDX identifiers explicitly permitted)
+      ├─ Deny: []string (SPDX identifiers explicitly blocked)
+      ├─ Warn: []string (SPDX identifiers that emit warnings)
+      └─ Unknown: string (action for undetected licenses: allow|warn|deny)
 ```
 
 ### File System Structure
@@ -205,6 +217,8 @@ All vendor-related files live in `./.git-vendor/`:
 ```
 
 Vendored files are copied to paths specified in the configuration (outside .git-vendor/ directory).
+
+An optional `.git-vendor-policy.yml` lives at the project root (outside `.git-vendor/`) and configures license policy enforcement.
 
 ## Key Operations
 
@@ -248,6 +262,49 @@ Automatic license detection via `GitHubLicenseChecker` (github_client.go:33):
 - Allowed by default: MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Unlicense, CC0-1.0
 - Other licenses prompt user confirmation via `tui.AskToOverrideCompliance()`
 - License files are automatically copied to `.git-vendor/licenses/{name}.txt`
+
+### License Policy Enforcement (Spec 013)
+
+Configurable license compliance policies via `.git-vendor-policy.yml`.
+
+**Policy file format:**
+
+```yaml
+license_policy:
+  allow:
+    - MIT
+    - Apache-2.0
+    - BSD-2-Clause
+    - BSD-3-Clause
+    - ISC
+  deny:
+    - GPL-2.0-only
+    - GPL-3.0-only
+    - AGPL-3.0-only
+  warn:
+    - LGPL-2.1-only
+    - MPL-2.0
+  unknown: warn  # what to do when license can't be detected: allow | warn | deny
+```
+
+**Evaluation order:** deny → allow → warn → unknown rule. Deny always wins.
+
+**Behavior during `git vendor add`:**
+- Policy file detection uses `os.Stat(PolicyFile)` — no heuristic guessing
+- When `.git-vendor-policy.yml` exists, `CheckCompliance` evaluates against the policy
+- Denied licenses hard-block the add (no user override)
+- Warned licenses prompt for user confirmation
+- A malformed policy file returns an error (no silent fallback to legacy behavior)
+- When no policy file exists, falls back to legacy `AllowedLicenses` list
+
+**Standalone `git vendor license` command:**
+- Reports license status for all vendored dependencies
+- `--policy <file>` overrides default policy location
+- `--format=json` for structured output
+- `--fail-on deny` (default) or `--fail-on warn` for CI gating
+- Exit codes: 0=PASS, 1=FAIL (denied), 2=WARN (warned)
+
+**Key files:** `internal/core/license_policy.go` (loader), `internal/core/license_policy_service.go` (evaluation+report), `internal/types/license_policy_types.go` (types)
 
 ### Position Extraction (Spec 071)
 
@@ -411,6 +468,9 @@ vendors:
 - **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
 - **`net/http.DetectContentType` for binary detection**: Rejected in favor of git's null-byte heuristic (scan first 8000 bytes for `\x00`). `DetectContentType` only inspects 512 bytes and can misclassify source code as `application/octet-stream`. The null-byte approach matches git's own `xdl_mmfile_istext` and has no false positives on valid text files including multi-byte UTF-8.
 - **Bare hex vs `sha256:` prefix in position verify**: `ComputeFileChecksum` returns bare hex, but `ExtractPosition` returns `"sha256:<hex>"`. When comparing hashes in `verifyPositions` for whole-file destinations (`destPos == nil`), MUST normalize `ComputeFileChecksum` output to `"sha256:"` prefix before comparing against `SourceHash`. Mixing formats causes false drift detection.
+- **`file://` URLs in vendor.yml**: MUST NOT allow `file://` scheme in vendor URLs. `ValidateVendorURL()` rejects `file://`, `ftp://`, `javascript:`, and `data:` schemes. Only `https://`, `http://`, `ssh://`, `git://`, `git+ssh://`, and SCP-style (`git@host:path`) are accepted (SEC-011).
+- **Logging URLs with credentials**: MUST NOT include raw URLs in error messages when the URL may contain embedded credentials (`https://user:token@host/repo`). Use `SanitizeURL()` to strip userinfo before logging (SEC-013).
+- **Unbounded YAML file reads**: MUST NOT read vendor.yml/vendor.lock without checking file size. `YAMLStore.Load()` enforces a 1 MB size limit (`maxYAMLFileSize`) to prevent memory exhaustion (SEC-020).
 
 ### Error Handling
 
@@ -447,7 +507,7 @@ Git operations use the `GitClient` interface (git_operations.go), delegating to 
 - `SystemGitClient` implements `GitClient` for production
 - Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`, `GetCommitLog`, `GetTagForCommit`
 - `gitFor(dir)` helper creates `*git.Git` instances per-call (cheap allocation, no I/O)
-- All git execution delegated to git-plumbing (`github.com/emundoT/git-plumbing`) — no direct `exec.Command` calls
+- All git execution delegated to git-plumbing (`github.com/EmundoT/git-plumbing`) — no direct `exec.Command` calls
 - `GetCommitLog` adapter converts `git.Commit` → `types.CommitInfo` with date formatting (`time.Time` → `"2006-01-02 15:04:05 -0700"`)
 - `GetTagForCommit` adapter calls `TagsAt()` then applies local semver preference via `isSemverTag()`
 - Standalone: `GetGitUserIdentity()` → `git.Git{}.UserIdentity()`, `IsGitInstalled()` → `git.IsInstalled()`
@@ -552,7 +612,7 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 
 **Runtime:**
 
-- `github.com/emundoT/git-plumbing` - Git CLI wrapper (self-vendored via git-vendor to `pkg/git-plumbing/`)
+- `github.com/EmundoT/git-plumbing` - Git CLI wrapper (self-vendored via git-vendor to `pkg/git-plumbing/`)
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
@@ -613,6 +673,12 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 26. **Empty file has 1 line**: A 0-byte file splits to `[""]` (1 empty line). `L1` extracts empty string. `L2+` errors.
 27. **Sequential PlaceContent calls operate on modified content**: When two vendors write to different positions in the same file, the second call sees the file as modified by the first. If the first call changes line count, the second call's position targets shifted lines.
 28. **L1-EOF hash equals whole-file hash**: `L1-EOF` extraction produces content byte-identical to the raw file (after CRLF normalization), so the hash matches `sha256(file_content)`.
+29. **URL scheme validation**: `ValidateVendorURL()` rejects `file://`, `ftp://`, `javascript:`, `data:` schemes. Allowed: `https://`, `http://`, `ssh://`, `git://`, `git+ssh://`, SCP-style, and bare hostnames. Called during config validation (SEC-011)
+30. **IsBinaryContent is exported**: The binary detection function (null-byte scan, first 8000 bytes) is exported as `IsBinaryContent()` for use in both position extraction and whole-file copy warnings (SEC-023)
+31. **CopyDir does not follow directory symlinks**: `filepath.Walk` uses `os.Lstat` which does not follow symlinks. Symlinks to directories cause CopyDir to error ("is a directory"). Symlinks to files are followed and content is dereferenced. This is safe behavior for vendored content (SEC-022)
+32. **YAML file size limit**: `YAMLStore.Load()` rejects files > 1 MB (`maxYAMLFileSize`). Normal configs are well under 100 KB (SEC-020)
+33. **Hook threat model**: See `docs/HOOK_THREAT_MODEL.md`. Hooks execute arbitrary shell commands by design — same trust model as npm scripts. Key mitigations: 5-min timeout, env var sanitization, project root working dir (SEC-012)
+34. **Policy file detection uses `os.Stat`, not heuristics**: `CheckCompliance` checks for `.git-vendor-policy.yml` existence with `os.Stat` — NOT by guessing from policy content. A policy file with only `allow` entries (no deny/warn) is correctly detected and enforced. A malformed policy file returns an error instead of silently degrading to legacy behavior.
 
 ## Quick Reference
 
@@ -629,12 +695,29 @@ git-vendor update [options]          # Update lockfile
 git-vendor validate                  # Validate config and detect conflicts
 git-vendor verify [options]          # Verify files against lockfile hashes
 git-vendor scan [options]            # Scan for CVE vulnerabilities (via OSV.dev)
+git-vendor license [options]         # Check license compliance against policy
 git-vendor status                    # Check if local files match lockfile
 git-vendor check-updates             # Preview available updates
 git-vendor diff <vendor>             # Show commit history between locked and latest
+git-vendor drift [options] [vendor]  # Detect drift from origin (local + upstream)
 git-vendor watch                     # Auto-sync on config changes
 git-vendor sbom [options]            # Generate SBOM (CycloneDX/SPDX)
 git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/powershell)
+
+# LLM-Friendly Commands (Spec 072) — non-interactive, JSON-capable
+git-vendor create <name> <url> [--ref <ref>] [--license <license>]   # Add vendor non-interactively
+git-vendor delete <name>             # Remove vendor (alias for remove)
+git-vendor rename <old> <new>        # Rename vendor across config/lock/license
+git-vendor add-mapping <vendor> <from> --to <to> [--ref <ref>]      # Add path mapping
+git-vendor remove-mapping <vendor> <from>                            # Remove path mapping
+git-vendor list-mappings <vendor>    # List mappings for a vendor
+git-vendor update-mapping <vendor> <from> --to <new-to>              # Update mapping destination
+git-vendor show <vendor>             # Show vendor details
+git-vendor check <vendor>            # Check per-vendor sync status
+git-vendor preview <vendor>          # Preview what would be synced
+git-vendor config list               # List all config key-value pairs
+git-vendor config get <key>          # Get config value (e.g., vendors.mylib.url)
+git-vendor config set <key> <value>  # Set config value
 ```
 
 ### Sync Command Flags
@@ -671,6 +754,34 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - **Added files**: Files in vendor directories but not in lockfile
 - **Position-level drift**: For position-extracted mappings, verifies the target range hash matches the stored `source_hash` (local-only, no cloning)
 
+### Drift Command Flags
+
+```bash
+--dependency <name>  # Scope to specific vendor (also accepts positional arg)
+--offline            # Skip upstream fetch, report only local drift
+--detail             # Show line-level diff output per file
+--format=<fmt>       # Output format: table (default), json, or detail
+# Exit codes: 0=CLEAN (no drift), 1=DRIFTED or CONFLICT
+```
+
+**Behavior:** The drift command compares vendored files against their origin to detect divergence:
+- **Local drift**: Diff between locked commit state and current local files (local modifications)
+- **Upstream drift**: Diff between locked commit state and upstream HEAD (upstream changes since vendoring)
+- **Conflict risk**: Files with both local and upstream changes (merge conflict risk)
+- **Drift score**: Line-level percentage per file and per dependency (0% = identical, 100% = fully rewritten)
+
+**Algorithm:**
+1. Clone source repo, checkout locked commit → read original files
+2. Checkout latest HEAD → read upstream files (skipped in `--offline` mode)
+3. Read local files from disk
+4. Compute LCS-based line diff for local drift and upstream drift
+5. Report per-file and aggregate drift statistics
+
+**Limitations:**
+- Position-extracted mappings (`:L5-L20`) are skipped — use `verify` for position-level checks
+- LCS algorithm is O(n*m) per file; very large files (>10K lines) may be slow
+- Upstream fetch requires network access; use `--offline` for local-only analysis
+
 ### Scan Command Flags
 
 ```bash
@@ -690,6 +801,17 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - Commit-level queries may miss vulnerabilities announced against version ranges
 
 **Cache:** Results cached in `.git-vendor/.cache/osv/` with 24-hour TTL. Stale cache used as fallback when network unavailable.
+
+### License Command Flags
+
+```bash
+--policy <file>   # Path to policy file (default: .git-vendor-policy.yml)
+--format=<fmt>    # Output format: table (default) or json
+--fail-on <level> # Fail threshold: deny (default) or warn
+# Exit codes: 0=PASS, 1=FAIL (denied), 2=WARN (warned)
+```
+
+**Behavior:** The license command evaluates all vendored dependencies against the license policy. Without a policy file, uses the default `AllowedLicenses` list. With a policy file, uses deny/warn/allow semantics with configurable unknown-license handling.
 
 ### SBOM Command Flags
 
@@ -714,7 +836,42 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - Config: `.git-vendor/vendor.yml`
 - Lock: `.git-vendor/vendor.lock`
 - Licenses: `.git-vendor/licenses/<name>.txt`
+- Policy: `.git-vendor-policy.yml` (optional, project root)
 - Vendored files: User-specified paths (outside .git-vendor/)
+
+### LLM-Friendly CLI (Spec 072)
+
+Non-interactive CLI commands for programmatic vendor management. All support `--json` flag for structured output.
+
+**JSON Output Schema** (new commands only — existing commands retain their `JSONOutput` format):
+
+```json
+{
+  "success": true,
+  "data": { ... }
+}
+```
+
+Error response:
+
+```json
+{
+  "success": false,
+  "error": { "code": "VENDOR_NOT_FOUND", "message": "..." }
+}
+```
+
+**Exit Codes** (new commands): 0=Success, 1=General error, 2=Vendor not found, 3=Invalid arguments, 4=Config validation failed, 5=Network error.
+
+**Error Codes**: `VENDOR_NOT_FOUND`, `VENDOR_EXISTS`, `MAPPING_NOT_FOUND`, `MAPPING_EXISTS`, `INVALID_ARGUMENTS`, `NOT_INITIALIZED`, `CONFIG_ERROR`, `VALIDATION_FAILED`, `NETWORK_ERROR`, `INTERNAL_ERROR`, `REF_NOT_FOUND`, `INVALID_KEY`.
+
+**Config Key Format**: `vendors.<name>.<field>` where field is `url`, `license`, `ref`, `groups`, `name` (read-only).
+
+**Key Files:**
+- `internal/core/cli_response.go`: `CLIResponse` type, exit/error code constants, emit helpers
+- `internal/core/config_commands.go`: Config manipulation methods on VendorSyncer
+- `main.go`: CLI command cases (create, delete, rename, add-mapping, remove-mapping, list-mappings, update-mapping, show, check, preview, config)
+- `internal/core/config_commands_test.go`: 35 unit tests covering all new methods
 
 ### Important Functions by File
 
@@ -763,6 +920,7 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `ExtractPosition()` - Read file, extract content at PositionSpec, return content + SHA-256 hash
 - `PlaceContent()` - Write extracted content into target file at specified position
 - `extractColumns()` / `placeColumns()` - Column-precise extraction and placement
+- `IsBinaryContent()` - SEC-023: Exported null-byte binary detection (first 8000 bytes)
 
 **file_copy_service.go:**
 
@@ -770,10 +928,37 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `copyWithPosition()` - Position-aware file copy (extract → place → track)
 - `checkLocalModifications()` - Detect local changes at target position before overwrite
 
+**config_commands.go:**
+
+- `CreateVendorEntry()` - Non-interactive vendor creation (config-only, no sync)
+- `RenameVendor()` - Rename vendor across config, lockfile, and license file
+- `AddMappingToVendor()` - Add path mapping to vendor's BranchSpec
+- `RemoveMappingFromVendor()` - Remove path mapping by source path
+- `UpdateMappingInVendor()` - Change mapping destination
+- `ShowVendor()` - Detailed vendor info combining config and lockfile
+- `GetConfigValue()` / `SetConfigValue()` - Dotted key-path config access
+- `CheckVendorStatus()` - Per-vendor sync status check
+
+**cli_response.go:**
+
+- `CLIResponse` / `CLIErrorDetail` - JSON output types for Spec 072 commands
+- `EmitCLISuccess()` / `EmitCLIError()` - JSON output helpers
+- `CLIExitCodeForError()` / `CLIErrorCodeForError()` - Error-to-code mappers
+- Exit code and error code constants
+
 **hook_service.go:**
 
 - `ExecutePreSync()` / `ExecutePostSync()` - Run pre/post sync shell hooks with timeout and env injection
 - `sanitizeEnvValue()` - Strip newlines/null bytes from environment variable values
+
+**drift_service.go:**
+
+- `Drift()` - Core drift detection: clones source, compares locked/local/upstream file states
+- `driftForVendorRef()` - Per-vendor three-way comparison (locked commit, local files, upstream HEAD)
+- `lineDiff()` - LCS-based line-level diff between two file contents
+- `longestCommonSubsequence()` - O(n*m) two-row DP for LCS length
+- `computeDriftSummary()` - Aggregate per-dependency stats into DriftSummary
+- `FormatDriftOutput()` - Human-readable table output for drift results
 
 **errors.go:**
 
@@ -787,12 +972,26 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `GetTagForCommit()` - Get tag for commit with semver preference (wraps `TagsAt()`)
 - `GetGitUserIdentity()` - Get git user identity string (delegates to `git.Git{}.UserIdentity()`)
 - `ParseSmartURL()` - Extract repo/ref/path from GitHub URLs
+- `ValidateVendorURL()` - SEC-011: Reject dangerous URL schemes (file://, ftp://, etc.)
+- `SanitizeURL()` - SEC-013: Strip credentials from URLs for safe logging
 - `GitClient.ListTree()` - Browse remote directories via git ls-tree
 
 **github_client.go:**
 
 - `CheckLicense()` - Query GitHub API for license
 - `IsAllowed()` - Validate against allowed licenses
+
+**license_policy.go:**
+
+- `LoadLicensePolicy()` - Load and parse `.git-vendor-policy.yml` (falls back to default)
+- `DefaultLicensePolicy()` - Built-in policy from `AllowedLicenses`
+- `validatePolicy()` - Check for duplicate licenses across lists
+
+**license_policy_service.go:**
+
+- `Evaluate()` - Determine policy decision (allow/deny/warn) for a license
+- `GenerateReport()` - Full compliance report for all vendors
+- `buildReason()` - Human-readable explanation for policy decisions
 
 **filesystem.go:**
 
