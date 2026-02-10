@@ -19,7 +19,7 @@ func ExtractPosition(filePath string, pos *types.PositionSpec) (string, string, 
 		return "", "", fmt.Errorf("read file %s: %w", filePath, err)
 	}
 
-	if isBinaryContent(data) {
+	if IsBinaryContent(data) {
 		return "", "", fmt.Errorf("position extraction on binary file %s is not supported", filePath)
 	}
 
@@ -150,7 +150,7 @@ func PlaceContent(filePath string, content string, pos *types.PositionSpec) erro
 		return fmt.Errorf("read target file %s: %w", filePath, err)
 	}
 
-	if isBinaryContent(data) {
+	if IsBinaryContent(data) {
 		return fmt.Errorf("position placement into binary file %s is not supported", filePath)
 	}
 
@@ -237,12 +237,15 @@ func placeColumns(lines []string, replacement string, pos *types.PositionSpec, f
 	return strings.Join(result, "\n"), nil
 }
 
-// isBinaryContent checks whether data appears to be binary by scanning for null
+// IsBinaryContent checks whether data appears to be binary by scanning for null
 // bytes in the first 8000 bytes. Matches git's binary detection heuristic
 // (xdiff/xutils.c:xdl_mmfile_istext). Position extraction on binary files
 // produces garbage output, so ExtractPosition and PlaceContent reject binary
 // content with a clear error.
-func isBinaryContent(data []byte) bool {
+//
+// SEC-023: Exported for use by file_copy_service.go to warn on whole-file binary
+// copies and by tests to verify binary detection behavior.
+func IsBinaryContent(data []byte) bool {
 	limit := 8000
 	if len(data) < limit {
 		limit = len(data)

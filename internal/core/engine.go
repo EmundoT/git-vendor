@@ -3,7 +3,7 @@ package core
 import (
 	"os"
 
-	git "github.com/emundoT/git-plumbing"
+	git "github.com/EmundoT/git-plumbing"
 
 	"github.com/EmundoT/git-vendor/internal/core/providers"
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -247,6 +247,11 @@ func (m *Manager) EvaluateLicensePolicy(license, policyPath string) string {
 	}
 	svc := NewLicensePolicyService(&policy, policyPath, m.syncer.configStore, m.syncer.lockStore)
 	return svc.Evaluate(license)
+}
+
+// Drift detects drift between vendored files and their origin
+func (m *Manager) Drift(opts DriftOptions) (*types.DriftResult, error) {
+	return m.syncer.Drift(opts)
 }
 
 // MigrateLockfile updates an existing lockfile to add missing metadata fields

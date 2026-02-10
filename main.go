@@ -1179,6 +1179,109 @@ func main() {
 			fmt.Println()
 		}
 
+	case "drift":
+		// Parse command-specific flags
+		format := "table"
+		dependency := ""
+		offline := false
+		detail := false
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case arg == "--format=detail":
+				format = "detail"
+				detail = true
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+				if format == "detail" {
+					detail = true
+				}
+			case arg == "--detail":
+				detail = true
+			case arg == "--offline":
+				offline = true
+			case strings.HasPrefix(arg, "--dependency="):
+				dependency = strings.TrimPrefix(arg, "--dependency=")
+			case arg == "--dependency":
+				if i+1 < len(os.Args) {
+					dependency = os.Args[i+1]
+					i++
+				} else {
+					tui.PrintError("Invalid Flag", "--dependency requires a vendor name")
+					os.Exit(1)
+				}
+			case !strings.HasPrefix(arg, "--"):
+				dependency = arg
+			}
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		// Run drift detection
+		result, err := manager.Drift(core.DriftOptions{
+			Dependency: dependency,
+			Offline:    offline,
+			Detail:     detail,
+		})
+		if err != nil {
+			tui.PrintError("Drift Detection Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			// Table/detail format
+			fmt.Println("Analyzing drift for vendored dependencies...")
+			fmt.Println()
+
+			for i := range result.Dependencies {
+				fmt.Print(core.FormatDriftOutput(&result.Dependencies[i], offline))
+				fmt.Println()
+			}
+
+			// Summary
+			fmt.Printf("Summary: %d dependencies analyzed\n", result.Summary.TotalDependencies)
+			if result.Summary.Clean > 0 {
+				fmt.Printf("  \u2713 %s with no drift\n", core.Pluralize(result.Summary.Clean, "dependency", "dependencies"))
+			}
+			if result.Summary.DriftedLocal > 0 {
+				fmt.Printf("  \u0394 %s with local drift\n", core.Pluralize(result.Summary.DriftedLocal, "dependency", "dependencies"))
+			}
+			if result.Summary.DriftedUpstream > 0 {
+				fmt.Printf("  \u2191 %s with upstream drift\n", core.Pluralize(result.Summary.DriftedUpstream, "dependency", "dependencies"))
+			}
+			if result.Summary.ConflictRisk > 0 {
+				fmt.Printf("  \u26A0 %s with conflict risk\n", core.Pluralize(result.Summary.ConflictRisk, "dependency", "dependencies"))
+			}
+			fmt.Printf("  Overall drift score: %.0f%%\n", result.Summary.OverallDriftScore)
+			fmt.Println()
+			fmt.Printf("Result: %s\n", result.Summary.Result)
+		}
+
+		// Exit codes: 0=CLEAN, 1=DRIFTED/CONFLICT
+		switch result.Summary.Result {
+		case "CLEAN":
+			os.Exit(0)
+		default:
+			os.Exit(1)
+		}
+
 	case "watch":
 		// Parse common flags
 		flags, _ := parseCommonFlags(os.Args[2:])
