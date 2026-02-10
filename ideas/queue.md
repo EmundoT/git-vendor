@@ -10,7 +10,7 @@
 | 002 | completed | Verify Command Hardening | Bulletproof integrity check: detect modified, added, deleted files with JSON output | [spec](specs/complete/002-verify-command-hardening.md) |
 | 003 | completed | Lockfile Metadata Enrichment | Add license_spdx, source_version_tag, vendored_at, vendored_by to lock entries | [spec](specs/complete/003-lockfile-metadata-enrichment.md) |
 | 004 | pending | Comprehensive Test Suite | Achieve ≥80% coverage with integration tests for all commands | - |
-| 005 | pending | Documentation Overhaul | Rewrite README, create docs/ with COMMANDS.md, CI_CD.md, SECURITY.md | - |
+| 005 | completed | Documentation Overhaul | README rewritten, docs/ created with COMMANDS.md, CI_CD.md, SECURITY.md, and 12+ additional docs | - |
 
 ## Phase 2: Supply Chain Intelligence (P0)
 
@@ -37,8 +37,8 @@
 
 | ID | Status | Title | Brief | Spec |
 |----|--------|-------|-------|------|
-| 071 | pending | Position Extraction | Line/column range extraction in path mappings (from: file:L5-L20) | [spec](specs/in-progress/071-position-extraction.md) |
-| 072 | pending | LLM-Friendly CLI | CLI commands for vendor management without editing YAML, JSON output | [spec](specs/in-progress/072-llm-friendly-cli.md) |
+| 071 | completed | Position Extraction | Line/column range extraction in path mappings (from: file:L5-L20) | [spec](specs/in-progress/071-position-extraction.md) |
+| 072 | completed | LLM-Friendly CLI | CLI commands for vendor management without editing YAML, JSON output | [spec](specs/in-progress/072-llm-friendly-cli.md) |
 | 073 | pending | Vendor Variables + File Watcher | $v{name:L5-L20} inline syntax with auto-expansion on save | [spec](specs/in-progress/073-vendor-variables.md) |
 | 074 | pending | VS Code Extension | IDE integration: variable styling, hover preview, autocomplete, integrated watch | [spec](specs/in-progress/074-vscode-extension.md) |
 
