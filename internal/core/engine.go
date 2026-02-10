@@ -15,6 +15,7 @@ var Verbose = false
 
 // Manager provides the main API for git-vendor operations.
 // Manager delegates to VendorSyncer for all business logic.
+// All long-running methods accept context.Context for cancellation support.
 type Manager struct {
 	RootDir string
 	syncer  *VendorSyncer
@@ -104,9 +105,10 @@ func (m *Manager) ParseSmartURL(rawURL string) (string, string, string) {
 	return m.syncer.ParseSmartURL(rawURL)
 }
 
-// FetchRepoDir fetches directory listing from a remote repository
-func (m *Manager) FetchRepoDir(url, ref, subdir string) ([]string, error) {
-	return m.syncer.FetchRepoDir(url, ref, subdir)
+// FetchRepoDir fetches directory listing from a remote repository.
+// ctx controls cancellation of git clone/fetch/ls-tree operations.
+func (m *Manager) FetchRepoDir(ctx context.Context, url, ref, subdir string) ([]string, error) {
+	return m.syncer.FetchRepoDir(ctx, url, ref, subdir)
 }
 
 // ListLocalDir lists contents of a local directory
@@ -129,39 +131,46 @@ func (m *Manager) AddVendor(spec *types.VendorSpec) error {
 	return m.syncer.AddVendor(spec)
 }
 
-// Sync performs locked synchronization
-func (m *Manager) Sync() error {
-	return m.syncer.Sync()
+// Sync performs locked synchronization.
+// ctx controls cancellation of git operations during sync.
+func (m *Manager) Sync(ctx context.Context) error {
+	return m.syncer.Sync(ctx)
 }
 
-// SyncDryRun performs a dry-run sync
-func (m *Manager) SyncDryRun() error {
-	return m.syncer.SyncDryRun()
+// SyncDryRun performs a dry-run sync.
+// ctx controls cancellation of the preview operation.
+func (m *Manager) SyncDryRun(ctx context.Context) error {
+	return m.syncer.SyncDryRun(ctx)
 }
 
-// SyncWithOptions performs sync with vendor filter, force, and cache options
-func (m *Manager) SyncWithOptions(vendorName string, force, noCache bool) error {
-	return m.syncer.SyncWithOptions(vendorName, force, noCache)
+// SyncWithOptions performs sync with vendor filter, force, and cache options.
+// ctx controls cancellation of git operations during sync.
+func (m *Manager) SyncWithOptions(ctx context.Context, vendorName string, force, noCache bool) error {
+	return m.syncer.SyncWithOptions(ctx, vendorName, force, noCache)
 }
 
-// SyncWithGroup performs sync for all vendors in a group
-func (m *Manager) SyncWithGroup(groupName string, force, noCache bool) error {
-	return m.syncer.SyncWithGroup(groupName, force, noCache)
+// SyncWithGroup performs sync for all vendors in a group.
+// ctx controls cancellation of git operations during sync.
+func (m *Manager) SyncWithGroup(ctx context.Context, groupName string, force, noCache bool) error {
+	return m.syncer.SyncWithGroup(ctx, groupName, force, noCache)
 }
 
-// SyncWithParallel performs sync with parallel processing
-func (m *Manager) SyncWithParallel(vendorName string, force, noCache bool, parallelOpts types.ParallelOptions) error {
-	return m.syncer.SyncWithParallel(vendorName, force, noCache, parallelOpts)
+// SyncWithParallel performs sync with parallel processing.
+// ctx controls cancellation of git operations during sync.
+func (m *Manager) SyncWithParallel(ctx context.Context, vendorName string, force, noCache bool, parallelOpts types.ParallelOptions) error {
+	return m.syncer.SyncWithParallel(ctx, vendorName, force, noCache, parallelOpts)
 }
 
-// UpdateAll updates all vendors and regenerates lockfile
-func (m *Manager) UpdateAll() error {
-	return m.syncer.UpdateAll()
+// UpdateAll updates all vendors and regenerates lockfile.
+// ctx controls cancellation of git operations during update.
+func (m *Manager) UpdateAll(ctx context.Context) error {
+	return m.syncer.UpdateAll(ctx)
 }
 
-// UpdateAllWithParallel updates all vendors with parallel processing
-func (m *Manager) UpdateAllWithParallel(parallelOpts types.ParallelOptions) error {
-	return m.syncer.UpdateAllWithParallel(parallelOpts)
+// UpdateAllWithParallel updates all vendors with parallel processing.
+// ctx controls cancellation of git operations during update.
+func (m *Manager) UpdateAllWithParallel(ctx context.Context, parallelOpts types.ParallelOptions) error {
+	return m.syncer.UpdateAllWithParallel(ctx, parallelOpts)
 }
 
 // CheckGitHubLicense checks a repository's license via GitHub API
@@ -205,14 +214,16 @@ func (m *Manager) CheckSyncStatus() (types.SyncStatus, error) {
 	return m.syncer.CheckSyncStatus()
 }
 
-// CheckUpdates checks for available updates for all vendors
-func (m *Manager) CheckUpdates() ([]types.UpdateCheckResult, error) {
-	return m.syncer.CheckUpdates()
+// CheckUpdates checks for available updates for all vendors.
+// ctx controls cancellation of git fetch operations for each vendor.
+func (m *Manager) CheckUpdates(ctx context.Context) ([]types.UpdateCheckResult, error) {
+	return m.syncer.CheckUpdates(ctx)
 }
 
-// Verify checks all vendored files against the lockfile
-func (m *Manager) Verify() (*types.VerifyResult, error) {
-	return m.syncer.Verify()
+// Verify checks all vendored files against the lockfile.
+// ctx is accepted for cancellation support and future network-based verification.
+func (m *Manager) Verify(ctx context.Context) (*types.VerifyResult, error) {
+	return m.syncer.Verify(ctx)
 }
 
 // Scan performs vulnerability scanning against OSV.dev.
@@ -252,9 +263,10 @@ func (m *Manager) EvaluateLicensePolicy(license, policyPath string) string {
 	return svc.Evaluate(license)
 }
 
-// Drift detects drift between vendored files and their origin
-func (m *Manager) Drift(opts DriftOptions) (*types.DriftResult, error) {
-	return m.syncer.Drift(opts)
+// Drift detects drift between vendored files and their origin.
+// ctx controls cancellation of git operations (clone, fetch, checkout).
+func (m *Manager) Drift(ctx context.Context, opts DriftOptions) (*types.DriftResult, error) {
+	return m.syncer.Drift(ctx, opts)
 }
 
 // MigrateLockfile updates an existing lockfile to add missing metadata fields

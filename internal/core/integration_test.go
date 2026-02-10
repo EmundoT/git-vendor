@@ -524,7 +524,7 @@ func TestIntegration_FullWorkflow_InitAddSyncUpdate(t *testing.T) {
 	}
 
 	// Step 3: UpdateAll (generates lockfile)
-	err = manager.UpdateAll()
+	err = manager.UpdateAll(context.Background())
 	if err != nil {
 		t.Fatalf("UpdateAll failed: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestIntegration_FullWorkflow_InitAddSyncUpdate(t *testing.T) {
 	}
 
 	// Step 4: Sync (copies files at locked version)
-	err = manager.Sync()
+	err = manager.Sync(context.Background())
 	if err != nil {
 		t.Fatalf("Sync failed: %v", err)
 	}
@@ -607,10 +607,10 @@ func TestIntegration_SyncWithOptions(t *testing.T) {
 		},
 	}
 	manager.SaveVendor(spec)
-	manager.UpdateAll()
+	manager.UpdateAll(context.Background())
 
 	// Test: Sync specific vendor
-	err := manager.SyncWithOptions("test-vendor", false, false)
+	err := manager.SyncWithOptions(context.Background(), "test-vendor", false, false)
 	if err != nil {
 		t.Fatalf("SyncWithOptions failed: %v", err)
 	}
@@ -622,13 +622,13 @@ func TestIntegration_SyncWithOptions(t *testing.T) {
 	}
 
 	// Test: Sync with force (should succeed even if already synced)
-	err = manager.SyncWithOptions("test-vendor", true, false)
+	err = manager.SyncWithOptions(context.Background(), "test-vendor", true, false)
 	if err != nil {
 		t.Fatalf("SyncWithOptions(force) failed: %v", err)
 	}
 
 	// Test: Sync with noCache
-	err = manager.SyncWithOptions("test-vendor", false, true)
+	err = manager.SyncWithOptions(context.Background(), "test-vendor", false, true)
 	if err != nil {
 		t.Fatalf("SyncWithOptions(noCache) failed: %v", err)
 	}
@@ -695,14 +695,14 @@ func TestIntegration_ParallelSync(t *testing.T) {
 
 	manager.SaveVendor(spec1)
 	manager.SaveVendor(spec2)
-	manager.UpdateAll()
+	manager.UpdateAll(context.Background())
 
 	// Test: Parallel sync with 2 workers
 	parallelOpts := types.ParallelOptions{
 		Enabled:    true,
 		MaxWorkers: 2,
 	}
-	err := manager.SyncWithParallel("", false, false, parallelOpts)
+	err := manager.SyncWithParallel(context.Background(), "", false, false, parallelOpts)
 	if err != nil {
 		t.Fatalf("SyncWithParallel failed: %v", err)
 	}
@@ -799,14 +799,14 @@ func TestIntegration_GroupOperations(t *testing.T) {
 	manager.SaveVendor(frontendSpec)
 	manager.SaveVendor(backendSpec)
 	manager.SaveVendor(toolsSpec)
-	manager.UpdateAll()
+	manager.UpdateAll(context.Background())
 
 	// Define file paths
 	frontendFile := filepath.Join(projectDir, "public/ui.js")
 	backendFile := filepath.Join(projectDir, "server/api.go")
 
 	// Test: Sync only frontend group
-	err := manager.SyncWithGroup("frontend", false, false)
+	err := manager.SyncWithGroup(context.Background(), "frontend", false, false)
 	if err != nil {
 		t.Fatalf("SyncWithGroup(frontend) failed: %v", err)
 	}
@@ -820,7 +820,7 @@ func TestIntegration_GroupOperations(t *testing.T) {
 	// The important test is that a second group sync only updates that group
 
 	// Test: Sync backend group
-	err = manager.SyncWithGroup("backend", false, false)
+	err = manager.SyncWithGroup(context.Background(), "backend", false, false)
 	if err != nil {
 		t.Fatalf("SyncWithGroup(backend) failed: %v", err)
 	}

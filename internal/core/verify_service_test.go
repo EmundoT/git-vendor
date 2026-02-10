@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -122,7 +123,7 @@ func TestVerify_AllPass(t *testing.T) {
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
 
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -194,7 +195,7 @@ func TestVerify_ModifiedFile(t *testing.T) {
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
 
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -278,7 +279,7 @@ func TestVerify_DeletedFile(t *testing.T) {
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
 
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -394,7 +395,7 @@ func TestVerify_AddedFile(t *testing.T) {
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), ".")
 
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -463,7 +464,7 @@ func TestVerify_JSONOutput(t *testing.T) {
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
 
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -552,7 +553,7 @@ func TestVerify_FallbackToCache(t *testing.T) {
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
 
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -638,7 +639,7 @@ func TestVerify_IntegrationWithRealFiles(t *testing.T) {
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
 
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -684,7 +685,7 @@ func TestVerify_IntegrationWithRealFiles(t *testing.T) {
 		},
 	}, nil)
 
-	result, err = service.Verify()
+	result, err = service.Verify(context.Background())
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -766,7 +767,7 @@ func TestVerify_PositionExtraction_Verified(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -863,7 +864,7 @@ func TestVerify_PositionExtraction_Modified(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -941,7 +942,7 @@ func TestVerify_PositionExtraction_WholeFileDest(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1006,7 +1007,7 @@ func TestVerify_PositionExtraction_DeletedFile(t *testing.T) {
 	fs.EXPECT().Stat(destFile).Return(nil, os.ErrNotExist)
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, tmpDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1076,7 +1077,7 @@ func TestVerify_EmptyLockfile_NoCacheFallback(t *testing.T) {
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
 
 	// No cache available either → should error
-	_, err := service.Verify()
+	_, err := service.Verify(context.Background())
 	if err == nil {
 		t.Fatal("Expected error for empty lockfile with no cache, got nil")
 	}
@@ -1127,7 +1128,7 @@ func TestVerify_EmptyLockfile_WithCacheFallback(t *testing.T) {
 	fs.EXPECT().Stat("lib/file.go").Return(&mockFileInfo{isDir: false}, nil)
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -1206,7 +1207,7 @@ func TestVerify_MixedPositionAndWholeFile_SameVendor(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1295,7 +1296,7 @@ func TestVerify_PositionDriftAtTargetRange(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1367,7 +1368,7 @@ func TestVerify_MultipleVendors_MixedResults(t *testing.T) {
 	fs.EXPECT().Stat("lib/vendor-c/file.go").Return(nil, os.ErrNotExist)
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1429,7 +1430,7 @@ func TestVerify_CacheFallback_StaleCache(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
-	_, err := service.Verify()
+	_, err := service.Verify(context.Background())
 
 	// Should error because no valid hashes available
 	if err == nil {
@@ -1520,7 +1521,7 @@ func TestVerify_PositionExtraction_FileShrunk(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1611,7 +1612,7 @@ func TestVerify_PositionExtraction_MixedResults(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1685,7 +1686,7 @@ func TestVerify_PositionExtraction_MultipleVendorsWithPositions(t *testing.T) {
 	}, nil)
 
 	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1751,7 +1752,7 @@ func TestVerify_PositionExtraction_EmptyToProducesDeleted(t *testing.T) {
 	fs.EXPECT().Stat("lib/file.go").Return(&mockFileInfo{isDir: false}, nil)
 
 	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
-	result, err := service.Verify()
+	result, err := service.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

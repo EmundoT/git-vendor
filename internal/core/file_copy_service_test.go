@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -187,7 +188,7 @@ func TestCopyMappings_AutoNaming(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -232,7 +233,7 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -262,7 +263,7 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {

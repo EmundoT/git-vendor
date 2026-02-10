@@ -9,8 +9,9 @@ import (
 
 // UpdateCheckerInterface defines the contract for checking vendor updates.
 // UpdateCheckerInterface enables mocking in tests and alternative update check strategies.
+// ctx is accepted for cancellation of network operations (git fetch).
 type UpdateCheckerInterface interface {
-	CheckUpdates() ([]types.UpdateCheckResult, error)
+	CheckUpdates(ctx context.Context) ([]types.UpdateCheckResult, error)
 }
 
 // Compile-time interface satisfaction check.
@@ -42,8 +43,9 @@ func NewUpdateChecker(
 	}
 }
 
-// CheckUpdates compares lockfile commit hashes with latest available commits
-func (c *UpdateChecker) CheckUpdates() ([]types.UpdateCheckResult, error) {
+// CheckUpdates compares lockfile commit hashes with latest available commits.
+// ctx controls cancellation of git fetch operations for each vendor.
+func (c *UpdateChecker) CheckUpdates(ctx context.Context) ([]types.UpdateCheckResult, error) {
 	config, err := c.configStore.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
@@ -68,6 +70,9 @@ func (c *UpdateChecker) CheckUpdates() ([]types.UpdateCheckResult, error) {
 
 	// Check each vendor's specs
 	for _, vendor := range config.Vendors {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		for _, spec := range vendor.Specs {
 			// Get locked details
 			lockEntry, hasLock := lockMap[vendor.Name][spec.Ref]
@@ -77,7 +82,7 @@ func (c *UpdateChecker) CheckUpdates() ([]types.UpdateCheckResult, error) {
 			}
 
 			// Fetch latest commit hash for the ref
-			latestHash, err := c.fetchLatestHash(vendor.URL, spec.Ref)
+			latestHash, err := c.fetchLatestHash(ctx, vendor.URL, spec.Ref)
 			if err != nil {
 				// Failed to fetch, skip this vendor (don't fail entire check)
 				c.ui.ShowWarning("Fetch Failed", fmt.Sprintf("Could not check updates for %s @ %s: %s", vendor.Name, spec.Ref, err.Error()))
@@ -101,16 +106,15 @@ func (c *UpdateChecker) CheckUpdates() ([]types.UpdateCheckResult, error) {
 	return results, nil
 }
 
-// fetchLatestHash fetches the latest commit hash for a given ref
-func (c *UpdateChecker) fetchLatestHash(url, ref string) (string, error) {
+// fetchLatestHash fetches the latest commit hash for a given ref.
+// ctx controls cancellation of git operations.
+func (c *UpdateChecker) fetchLatestHash(ctx context.Context, url, ref string) (string, error) {
 	// Create temporary directory for fetch
 	tempDir, err := c.fs.CreateTemp("", "update-check-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	defer c.fs.RemoveAll(tempDir) //nolint:errcheck
-
-	ctx := context.Background()
 
 	// Initialize git repo
 	if err := c.gitClient.Init(ctx, tempDir); err != nil {
