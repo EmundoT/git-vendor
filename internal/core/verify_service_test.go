@@ -311,8 +311,8 @@ func TestVerify_DeletedFile(t *testing.T) {
 }
 
 func TestVerify_AddedFile(t *testing.T) {
-	// This test requires a real filesystem for the walkdir to work
-	// Create temporary directory and work from within it
+	// Requires a real filesystem for the walkdir to work
+	// Create temporary directory and work from within the directory
 	tmpDir, err := os.MkdirTemp("", "verify-added-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -965,7 +965,7 @@ func TestVerify_PositionExtraction_WholeFileDest(t *testing.T) {
 func TestVerify_PositionExtraction_DeletedFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	destFile := filepath.Join(tmpDir, "lib", "missing.go")
-	// Don't create the file — it's been deleted
+	// Don't create the file — simulate a deleted destination
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

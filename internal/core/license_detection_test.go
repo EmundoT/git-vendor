@@ -15,7 +15,6 @@ import (
 // License Content Parsing Tests
 // ============================================================================
 
-// TestParseLicenseFromContent_MIT verifies MIT license detection
 func TestParseLicenseFromContent_MIT(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -63,7 +62,6 @@ THE SOFTWARE IS PROVIDED "AS IS"...`,
 	}
 }
 
-// TestParseLicenseFromContent_Apache verifies Apache 2.0 license detection
 func TestParseLicenseFromContent_Apache(t *testing.T) {
 	content := `Apache License
 Version 2.0, January 2004
@@ -77,7 +75,6 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION`
 	}
 }
 
-// TestParseLicenseFromContent_BSD verifies BSD license detection
 func TestParseLicenseFromContent_BSD(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -119,7 +116,6 @@ modification, are permitted provided that the following conditions are met:
 	}
 }
 
-// TestParseLicenseFromContent_GPL verifies GPL license detection
 func TestParseLicenseFromContent_GPL(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -157,7 +153,6 @@ This program is free software...`,
 	}
 }
 
-// TestParseLicenseFromContent_ISC verifies ISC license detection
 func TestParseLicenseFromContent_ISC(t *testing.T) {
 	content := `ISC License
 
@@ -170,7 +165,6 @@ and associated documentation files...`
 	}
 }
 
-// TestParseLicenseFromContent_Unlicense verifies Unlicense detection
 func TestParseLicenseFromContent_Unlicense(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -196,7 +190,6 @@ func TestParseLicenseFromContent_Unlicense(t *testing.T) {
 	}
 }
 
-// TestParseLicenseFromContent_Unknown verifies unknown license handling
 func TestParseLicenseFromContent_Unknown(t *testing.T) {
 	content := `This is a proprietary license.
 You may not use this software without written permission.`
@@ -211,8 +204,6 @@ You may not use this software without written permission.`
 // FallbackLicenseChecker Tests
 // ============================================================================
 
-// TestFallbackChecker_LicenseFileFound verifies successful license detection
-// from LICENSE file using mocked filesystem and git client
 func TestFallbackChecker_LicenseFileFound(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -238,7 +229,7 @@ func TestFallbackChecker_LicenseFileFound(t *testing.T) {
 	fs.EXPECT().RemoveAll("/tmp/test123").Return(nil)
 
 	// Note: FallbackChecker uses os.ReadFile directly, not FileSystem.ReadFile
-	// In integration tests, this would read a real file from the cloned repo
+	// In integration tests, FallbackChecker would read a real file from the cloned repo
 	// For unit tests, we verify the clone happened with correct parameters
 
 	checker := NewFallbackLicenseChecker(fs, git)
@@ -256,7 +247,6 @@ func TestFallbackChecker_LicenseFileFound(t *testing.T) {
 	}
 }
 
-// TestFallbackChecker_CloneFails verifies error handling when git clone fails
 func TestFallbackChecker_CloneFails(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -291,7 +281,6 @@ func TestFallbackChecker_CloneFails(t *testing.T) {
 	}
 }
 
-// TestFallbackChecker_TempDirFails verifies error handling when temp dir creation fails
 func TestFallbackChecker_TempDirFails(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -323,7 +312,6 @@ func TestFallbackChecker_TempDirFails(t *testing.T) {
 // MultiPlatformLicenseChecker Tests
 // ============================================================================
 
-// TestMultiPlatformChecker_DetectsGitHub verifies GitHub provider detection
 func TestMultiPlatformChecker_DetectsGitHub(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -343,7 +331,6 @@ func TestMultiPlatformChecker_DetectsGitHub(t *testing.T) {
 	}
 }
 
-// TestMultiPlatformChecker_DetectsGitLab verifies GitLab provider detection
 func TestMultiPlatformChecker_DetectsGitLab(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -363,7 +350,6 @@ func TestMultiPlatformChecker_DetectsGitLab(t *testing.T) {
 	}
 }
 
-// TestMultiPlatformChecker_DetectsBitbucket verifies Bitbucket provider detection
 func TestMultiPlatformChecker_DetectsBitbucket(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -383,7 +369,6 @@ func TestMultiPlatformChecker_DetectsBitbucket(t *testing.T) {
 	}
 }
 
-// TestMultiPlatformChecker_IsAllowed verifies license allowlist checking
 func TestMultiPlatformChecker_IsAllowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

@@ -10,7 +10,6 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
-// TestParallelExecutor_SyncMultipleVendors tests parallel sync with multiple vendors
 func TestParallelExecutor_SyncMultipleVendors(t *testing.T) {
 	// Create 5 test vendors
 	vendors := []types.VendorSpec{
@@ -68,7 +67,6 @@ func TestParallelExecutor_SyncMultipleVendors(t *testing.T) {
 	}
 }
 
-// TestParallelExecutor_WorkerCountLimit tests that worker count is capped at maximum
 func TestParallelExecutor_WorkerCountLimit(t *testing.T) {
 	// Create executor requesting 100 workers
 	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 100}, &SilentUICallback{})
@@ -98,7 +96,6 @@ func TestParallelExecutor_WorkerCountLimit(t *testing.T) {
 	}
 }
 
-// TestParallelExecutor_FailFast tests that errors are returned when a vendor fails
 func TestParallelExecutor_FailFast(t *testing.T) {
 	vendors := []types.VendorSpec{
 		{Name: "vendor-1", URL: "https://github.com/test/repo1", License: "MIT"},
@@ -163,7 +160,6 @@ func TestParallelExecutor_FailFast(t *testing.T) {
 	}
 }
 
-// TestParallelExecutor_ThreadSafety tests concurrent access safety
 func TestParallelExecutor_ThreadSafety(t *testing.T) {
 	// Create many vendors to stress test concurrency
 	var vendors []types.VendorSpec
@@ -215,11 +211,10 @@ func TestParallelExecutor_ThreadSafety(t *testing.T) {
 		t.Errorf("Expected counter to be 20, got %d", counter)
 	}
 
-	// Note: Run this test with -race flag to detect race conditions:
+	// Note: Run TestParallelExecutor_ThreadSafety with -race flag to detect race conditions:
 	// go test -race -run TestParallelExecutor_ThreadSafety
 }
 
-// TestParallelExecutor_ExecuteParallelUpdate tests parallel update functionality
 func TestParallelExecutor_ExecuteParallelUpdate(t *testing.T) {
 	vendors := []types.VendorSpec{
 		{Name: "vendor-1", URL: "https://github.com/test/repo1", License: "MIT"},
@@ -258,7 +253,6 @@ func TestParallelExecutor_ExecuteParallelUpdate(t *testing.T) {
 	}
 }
 
-// TestParallelExecutor_EmptyVendorList tests handling of empty vendor list
 func TestParallelExecutor_EmptyVendorList(t *testing.T) {
 	executor := NewParallelExecutor(types.ParallelOptions{MaxWorkers: 2}, &SilentUICallback{})
 
@@ -279,7 +273,6 @@ func TestParallelExecutor_EmptyVendorList(t *testing.T) {
 	}
 }
 
-// TestParallelExecutor_SingleVendor tests that single vendor doesn't create excessive workers
 func TestParallelExecutor_SingleVendor(t *testing.T) {
 	vendors := []types.VendorSpec{
 		{Name: "single-vendor", URL: "https://github.com/test/repo", License: "MIT"},
@@ -320,7 +313,6 @@ func TestParallelExecutor_SingleVendor(t *testing.T) {
 	}
 }
 
-// TestParallelExecutor_ForceOption tests that force option is applied
 func TestParallelExecutor_ForceOption(t *testing.T) {
 	vendors := []types.VendorSpec{
 		{Name: "vendor-1", URL: "https://github.com/test/repo1", License: "MIT"},

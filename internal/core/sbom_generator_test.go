@@ -257,7 +257,7 @@ func TestGenerateCycloneDX_EmptyLockfile(t *testing.T) {
 		t.Fatalf("Failed to parse CycloneDX JSON: %v", err)
 	}
 
-	// Verify it's still a valid CycloneDX document
+	// Verify output is still a valid CycloneDX document
 	if result["bomFormat"] != "CycloneDX" {
 		t.Errorf("Expected bomFormat 'CycloneDX', got %v", result["bomFormat"])
 	}
@@ -607,7 +607,7 @@ func TestGenerateSPDX_EmptyLockfile(t *testing.T) {
 		t.Fatalf("Failed to parse SPDX JSON: %v", err)
 	}
 
-	// Verify it's still a valid SPDX document
+	// Verify output is still a valid SPDX document
 	if result["spdxVersion"] != "SPDX-2.3" {
 		t.Errorf("Expected spdxVersion 'SPDX-2.3', got %v", result["spdxVersion"])
 	}
@@ -991,7 +991,7 @@ func TestGenerate_WithValidation(t *testing.T) {
 		t.Fatalf("CycloneDX validation failed: %v", err)
 	}
 
-	// Verify it's valid by parsing with CycloneDX library
+	// Verify output is valid by parsing with CycloneDX library
 	decoder := cdx.NewBOMDecoder(strings.NewReader(string(output)), cdx.BOMFileFormatJSON)
 	var bom cdx.BOM
 	if err := decoder.Decode(&bom); err != nil {
@@ -1133,7 +1133,7 @@ func TestGenerate_VeryLongVendorName(t *testing.T) {
 		t.Fatalf("CycloneDX generation with long name failed: %v", err)
 	}
 
-	// Verify it's valid JSON
+	// Verify output is valid JSON
 	var resultCDX map[string]interface{}
 	if err := json.Unmarshal(outputCDX, &resultCDX); err != nil {
 		t.Fatalf("CycloneDX output not valid JSON: %v", err)
@@ -1181,8 +1181,8 @@ func TestGenerate_ConcurrentSafety(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	// We'll create multiple generators and run them concurrently
-	// Each needs its own mocks
+	// Create multiple generators and run them concurrently
+	// Each generator needs dedicated mocks
 	const numGoroutines = 10
 
 	var wg sync.WaitGroup

@@ -15,8 +15,8 @@ import (
 // They are used in tests that construct SyncService directly (bypassing
 // VendorSyncer/createMockSyncer) to control specific dependencies like CacheStore.
 // Gomock mocks are not generated for HookExecutor, FileCopyServiceInterface,
-// or LicenseServiceInterface because these interfaces are only mocked at this
-// level — the existing gomock mocks target lower-level infrastructure (GitClient,
+// or LicenseServiceInterface because these interfaces are only mocked at the
+// service-stub level — the existing gomock mocks target lower-level infrastructure (GitClient,
 // FileSystem, ConfigStore, LockStore, LicenseChecker).
 
 // stubHookExecutor is a no-op HookExecutor for tests that don't exercise hooks.

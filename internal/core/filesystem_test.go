@@ -514,7 +514,7 @@ func TestCopyFile_FollowsSymlinks(t *testing.T) {
 		t.Fatalf("Failed to create real file: %v", err)
 	}
 
-	// Create a symlink to it
+	// Create a symlink to realFile
 	symlink := filepath.Join(tempDir, "link.txt")
 	if err := os.Symlink(realFile, symlink); err != nil {
 		t.Skipf("Symlinks not supported: %v", err)
@@ -587,10 +587,9 @@ func TestCopyDir_SkipsGitDirectories(t *testing.T) {
 //	filepath.Join(rootDir, "licenses", vendorName+".txt")
 //
 // If vendorName contains path traversal sequences, the resulting path escapes
-// the vendor/licenses/ directory. ValidateDestPath is NOT called on this path.
+// the vendor/licenses/ directory. ValidateDestPath is NOT called on the license path.
 //
-// This test demonstrates the attack vector by showing that ValidateDestPath
-// WOULD catch these paths if it were called.
+// ValidateDestPath WOULD catch these paths if called on the constructed license path.
 func TestValidateDestPath_LicensePathTraversalVector(t *testing.T) {
 	// These are vendorName values that, when used in
 	// filepath.Join("vendor", "licenses", vendorName+".txt"),
@@ -626,10 +625,10 @@ func TestValidateDestPath_LicensePathTraversalVector(t *testing.T) {
 			// Show the resulting path escapes vendor/licenses/
 			t.Logf("vendorName=%q → dest=%q → cleaned=%q", tt.vendorName, dest, cleaned)
 
-			// ValidateDestPath WOULD catch this if called
+			// ValidateDestPath WOULD catch the cleaned path if called
 			err := ValidateDestPath(cleaned)
 			if err == nil {
-				// If ValidateDestPath doesn't catch it, the path may still be within
+				// If ValidateDestPath accepts the path, the path may still be within
 				// the project but outside vendor/licenses/. Log for audit review.
 				t.Logf("AUDIT: ValidateDestPath accepted %q — path stays within project but escapes vendor/licenses/", cleaned)
 			}
@@ -756,7 +755,7 @@ func TestValidateVendorName_LicensePathSafety(t *testing.T) {
 // ============================================================================
 
 // TestNewRootedFileSystem_ValidateWritePath verifies that a rooted filesystem
-// rejects writes outside the project root and accepts writes within it.
+// rejects writes outside the project root and accepts writes within the root.
 func TestNewRootedFileSystem_ValidateWritePath(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewRootedFileSystem(tempDir)
@@ -827,7 +826,7 @@ func TestRootedFileSystem_CopyFile_BlocksEscape(t *testing.T) {
 	escapeDst := filepath.Join(filepath.Dir(tempDir), "escaped.txt")
 	_, err := fs.CopyFile(srcFile, escapeDst)
 	if err == nil {
-		os.Remove(escapeDst) // cleanup in case it was created
+		os.Remove(escapeDst) // cleanup in case escapeDst was created
 		t.Fatal("CopyFile should block write outside project root")
 	}
 	if !strings.Contains(err.Error(), "write blocked") {
@@ -943,7 +942,7 @@ func TestPlaceContent_SelfValidation_AllowsAbsolutePaths(t *testing.T) {
 // TestPlaceContent_SelfValidation_AllowsSafeRelativePaths verifies that PlaceContent
 // allows valid relative paths (the production use case).
 func TestPlaceContent_SelfValidation_AllowsSafeRelativePaths(t *testing.T) {
-	// Create a temp dir and chdir into it so relative paths resolve there
+	// Create a temp dir and chdir into the temp dir so relative paths resolve there
 	tempDir := t.TempDir()
 	origDir, _ := os.Getwd()
 	os.Chdir(tempDir)
