@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	git "github.com/emundoT/git-plumbing"
+	git "github.com/EmundoT/git-plumbing"
 
 	"github.com/EmundoT/git-vendor/internal/core/providers"
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -220,6 +220,42 @@ func (m *Manager) Scan(ctx context.Context, failOn string) (*types.ScanResult, e
 	return m.syncer.Scan(ctx, failOn)
 }
 
+// LicenseReport generates a license compliance report.
+// policyPath overrides the default policy file location; empty string uses PolicyFile constant.
+// failOn: "deny" (default) or "warn" to also fail on warnings.
+func (m *Manager) LicenseReport(policyPath, failOn string) (*types.LicenseReportResult, error) {
+	if policyPath == "" {
+		policyPath = PolicyFile
+	}
+	policy, err := LoadLicensePolicy(policyPath)
+	if err != nil {
+		return nil, err
+	}
+	svc := NewLicensePolicyService(&policy, policyPath, m.syncer.configStore, m.syncer.lockStore)
+	return m.syncer.LicenseReport(svc, failOn)
+}
+
+// EvaluateLicensePolicy loads the policy and evaluates a single license.
+// EvaluateLicensePolicy is used during "add" to check a license against the policy.
+// policyPath overrides the default policy file location; empty string uses PolicyFile constant.
+func (m *Manager) EvaluateLicensePolicy(license, policyPath string) string {
+	if policyPath == "" {
+		policyPath = PolicyFile
+	}
+	policy, err := LoadLicensePolicy(policyPath)
+	if err != nil {
+		// If policy can't be loaded, fall back to default allow-list behavior
+		policy = DefaultLicensePolicy()
+	}
+	svc := NewLicensePolicyService(&policy, policyPath, m.syncer.configStore, m.syncer.lockStore)
+	return svc.Evaluate(license)
+}
+
+// Drift detects drift between vendored files and their origin
+func (m *Manager) Drift(opts DriftOptions) (*types.DriftResult, error) {
+	return m.syncer.Drift(opts)
+}
+
 // MigrateLockfile updates an existing lockfile to add missing metadata fields
 func (m *Manager) MigrateLockfile() (int, error) {
 	return m.syncer.MigrateLockfile()
@@ -239,6 +275,53 @@ func (m *Manager) WatchConfig(callback func() error) error {
 func (m *Manager) GenerateSBOM(format SBOMFormat, projectName string) ([]byte, error) {
 	generator := NewSBOMGenerator(m.syncer.lockStore, m.syncer.configStore, projectName)
 	return generator.Generate(format)
+}
+
+// === LLM-Friendly CLI Commands (Spec 072) ===
+
+// CreateVendorEntry adds a new vendor to config without triggering sync/update.
+func (m *Manager) CreateVendorEntry(name, url, ref, license string) error {
+	return m.syncer.CreateVendorEntry(name, url, ref, license)
+}
+
+// RenameVendor renames a vendor across config, lockfile, and license file.
+func (m *Manager) RenameVendor(oldName, newName string) error {
+	return m.syncer.RenameVendor(oldName, newName)
+}
+
+// AddMappingToVendor adds a path mapping to an existing vendor.
+func (m *Manager) AddMappingToVendor(vendorName, from, to, ref string) error {
+	return m.syncer.AddMappingToVendor(vendorName, from, to, ref)
+}
+
+// RemoveMappingFromVendor removes a path mapping from a vendor by source path.
+func (m *Manager) RemoveMappingFromVendor(vendorName, from string) error {
+	return m.syncer.RemoveMappingFromVendor(vendorName, from)
+}
+
+// UpdateMappingInVendor changes the destination of an existing mapping.
+func (m *Manager) UpdateMappingInVendor(vendorName, from, newTo string) error {
+	return m.syncer.UpdateMappingInVendor(vendorName, from, newTo)
+}
+
+// ShowVendor returns detailed vendor info combining config and lockfile data.
+func (m *Manager) ShowVendor(name string) (map[string]interface{}, error) {
+	return m.syncer.ShowVendor(name)
+}
+
+// GetConfigValue retrieves a config value by dotted key path.
+func (m *Manager) GetConfigValue(key string) (interface{}, error) {
+	return m.syncer.GetConfigValue(key)
+}
+
+// SetConfigValue sets a config value by dotted key path.
+func (m *Manager) SetConfigValue(key, value string) error {
+	return m.syncer.SetConfigValue(key, value)
+}
+
+// CheckVendorStatus checks the sync status of a single vendor.
+func (m *Manager) CheckVendorStatus(vendorName string) (map[string]interface{}, error) {
+	return m.syncer.CheckVendorStatus(vendorName)
 }
 
 // UpdateVerboseMode updates the verbose flag for git operations

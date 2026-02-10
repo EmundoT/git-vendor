@@ -2,10 +2,12 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
-	git "github.com/emundoT/git-plumbing"
+	git "github.com/EmundoT/git-plumbing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )
@@ -178,4 +180,89 @@ func ParseSmartURL(rawURL string) (baseURL, ref, path string) {
 // cleanURL trims whitespace and backslashes
 func cleanURL(raw string) string {
 	return strings.TrimLeft(strings.TrimSpace(raw), "\\")
+}
+
+// allowedURLSchemes lists URL schemes safe for git clone operations.
+var allowedURLSchemes = []string{
+	"https", "http", "ssh", "git", "git+ssh",
+}
+
+// ValidateVendorURL checks that a repository URL uses a safe scheme.
+// Rejects file://, ftp://, and other non-git schemes that could access the
+// local filesystem or use insecure protocols.
+//
+// SEC-011: Accepted schemes: https, http, ssh, git, git+ssh, and SCP-style
+// (git@host:owner/repo). Bare hostnames without a scheme are also accepted
+// for compatibility with custom git server configurations.
+func ValidateVendorURL(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return fmt.Errorf("vendor URL must not be empty")
+	}
+
+	lower := strings.ToLower(rawURL)
+
+	// SCP-style SSH URLs (git@host:owner/repo) — allowed
+	if strings.Contains(rawURL, "@") && !strings.Contains(rawURL, "://") {
+		return nil
+	}
+
+	// Reject non-hierarchical schemes (javascript:, data:, vbscript:) that use ":"
+	// but not "://". These can never be valid git URLs.
+	if idx := strings.Index(lower, ":"); idx > 0 && !strings.Contains(rawURL, "://") {
+		prefix := lower[:idx]
+		switch prefix {
+		case "javascript", "data", "vbscript":
+			return fmt.Errorf("URL scheme %q: is not allowed: not a valid git URL", prefix)
+		}
+	}
+
+	// Check if URL has a scheme (contains "://")
+	if !strings.Contains(rawURL, "://") {
+		// No scheme — bare hostname or relative path; allow for compat
+		return nil
+	}
+
+	// Parse to extract the scheme
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL %q: %w", rawURL, err)
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	for _, allowed := range allowedURLSchemes {
+		if scheme == allowed {
+			return nil
+		}
+	}
+
+	// Provide specific guidance for known dangerous schemes
+	switch scheme {
+	case "file":
+		return fmt.Errorf("URL scheme \"file://\" is not allowed: local filesystem access via vendor URLs is a security risk")
+	case "ftp", "ftps":
+		return fmt.Errorf("URL scheme %q is not allowed: FTP is insecure and not supported for git operations", lower[:strings.Index(lower, "://")+3])
+	default:
+		return fmt.Errorf("URL scheme %q is not allowed: use https://, ssh://, or git:// instead", scheme)
+	}
+}
+
+// SanitizeURL removes embedded credentials from a URL for safe logging.
+// Strips userinfo (user:password@) from URLs with a scheme.
+// SCP-style URLs (git@host:path) are returned unchanged because "git" is the
+// username, not a secret.
+func SanitizeURL(rawURL string) string {
+	// SCP-style SSH (git@host:owner/repo) — no secret, return as-is
+	if !strings.Contains(rawURL, "://") {
+		return rawURL
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	if parsed.User != nil {
+		parsed.User = nil
+		return parsed.String()
+	}
+	return rawURL
 }

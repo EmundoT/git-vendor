@@ -1377,9 +1377,9 @@ func TestIsBinaryContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isBinaryContent(tt.data)
+			got := IsBinaryContent(tt.data)
 			if got != tt.want {
-				t.Errorf("isBinaryContent(%q) = %v, want %v", tt.name, got, tt.want)
+				t.Errorf("IsBinaryContent(%q) = %v, want %v", tt.name, got, tt.want)
 			}
 		})
 	}
@@ -2020,7 +2020,7 @@ func TestExtractThenPlace_ColumnRoundTrip(t *testing.T) {
 // Tests merged from main — Binary Input (updated for binary rejection)
 // Binary files are now rejected by ExtractPosition and PlaceContent (with position).
 // These tests verify the rejection behavior matches the guard implemented in
-// position_extract.go via isBinaryContent().
+// position_extract.go via IsBinaryContent().
 // ============================================================================
 
 // TestExtractPosition_BinaryFileInput_Rejected verifies that ExtractPosition rejects

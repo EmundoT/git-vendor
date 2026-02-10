@@ -72,6 +72,11 @@ func (s *ValidationService) validateVendor(vendor *types.VendorSpec) error {
 		return fmt.Errorf("vendor %s has no URL", vendor.Name)
 	}
 
+	// SEC-011: Reject dangerous URL schemes (file://, ftp://, etc.)
+	if err := ValidateVendorURL(vendor.URL); err != nil {
+		return fmt.Errorf("vendor %s: %w", vendor.Name, err)
+	}
+
 	// Validate vendor has at least one spec
 	if len(vendor.Specs) == 0 {
 		return fmt.Errorf("vendor %s has no specs configured", vendor.Name)

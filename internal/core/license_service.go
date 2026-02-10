@@ -1,8 +1,12 @@
 package core
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+
+	"github.com/EmundoT/git-vendor/internal/types"
 )
 
 // LicenseServiceInterface defines the contract for license checking and file management.
@@ -35,8 +39,14 @@ func NewLicenseService(licenseChecker LicenseChecker, fs FileSystem, rootDir str
 	}
 }
 
-// CheckCompliance checks license compliance for a URL
-// Returns the detected license or error
+// CheckCompliance checks license compliance for a URL.
+// When a .git-vendor-policy.yml file exists on disk, CheckCompliance evaluates the
+// detected license against the policy's deny/warn/allow lists.
+// Denied licenses block the add (no user override). Warned licenses prompt
+// for confirmation. Allowed licenses pass silently.
+// A malformed policy file returns an error (no silent fallback).
+// When no policy file exists, CheckCompliance falls back to the legacy
+// AllowedLicenses list with a confirmation prompt for unlisted licenses.
 func (s *LicenseService) CheckCompliance(url string) (string, error) {
 	detectedLicense, err := s.licenseChecker.CheckLicense(url)
 	if err != nil {
@@ -44,9 +54,22 @@ func (s *LicenseService) CheckCompliance(url string) (string, error) {
 		detectedLicense = "UNKNOWN"
 	}
 
-	// Check if license is allowed
+	// Check if a policy file exists on disk (not a heuristic — actual stat)
+	_, statErr := os.Stat(PolicyFile)
+	if statErr == nil {
+		// Policy file exists — load and enforce it
+		policy, policyErr := LoadLicensePolicy(PolicyFile)
+		if policyErr != nil {
+			return "", fmt.Errorf("license policy error: %w", policyErr)
+		}
+		return s.checkWithPolicy(detectedLicense, &policy)
+	}
+	if !errors.Is(statErr, os.ErrNotExist) {
+		return "", fmt.Errorf("check policy file: %w", statErr)
+	}
+
+	// No policy file — legacy AllowedLicenses check
 	if !s.licenseChecker.IsAllowed(detectedLicense) {
-		// Ask user for confirmation
 		if !s.ui.AskConfirmation(
 			fmt.Sprintf("Accept %s License?", detectedLicense),
 			"This license is not in the allowed list. Continue anyway?",
@@ -54,11 +77,37 @@ func (s *LicenseService) CheckCompliance(url string) (string, error) {
 			return "", ErrComplianceFailed
 		}
 	} else {
-		// Show compliance success
 		s.ui.ShowLicenseCompliance(detectedLicense)
 	}
 
 	return detectedLicense, nil
+}
+
+// checkWithPolicy evaluates a license using the policy file's deny/warn/allow semantics.
+// Denied licenses are hard-blocked (no user override). Warned licenses prompt for confirmation.
+func (s *LicenseService) checkWithPolicy(license string, policy *types.LicensePolicy) (string, error) {
+	svc := NewLicensePolicyService(policy, PolicyFile, nil, nil)
+	decision := svc.Evaluate(license)
+
+	switch decision {
+	case types.PolicyDeny:
+		s.ui.ShowError("License Denied",
+			fmt.Sprintf("%s is denied by license policy (%s)", license, PolicyFile))
+		return "", ErrComplianceFailed
+
+	case types.PolicyWarn:
+		if !s.ui.AskConfirmation(
+			fmt.Sprintf("License Warning: %s", license),
+			fmt.Sprintf("This license triggers a policy warning (%s). Continue anyway?", PolicyFile),
+		) {
+			return "", ErrComplianceFailed
+		}
+		return license, nil
+
+	default: // allow
+		s.ui.ShowLicenseCompliance(license)
+		return license, nil
+	}
 }
 
 // CopyLicense copies license file from temp repo to .git-vendor/licenses.
