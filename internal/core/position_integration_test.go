@@ -64,6 +64,14 @@ func (s *stubGitClient) GetCommitLog(_ context.Context, _, _, _ string, _ int) (
 func (s *stubGitClient) GetTagForCommit(_ context.Context, _, _ string) (string, error) {
 	return "", nil
 }
+func (s *stubGitClient) Add(_ context.Context, _ string, _ ...string) error { return nil }
+func (s *stubGitClient) Commit(_ context.Context, _ string, _ types.CommitOptions) error {
+	return nil
+}
+func (s *stubGitClient) AddNote(_ context.Context, _, _, _, _ string) error { return nil }
+func (s *stubGitClient) GetNote(_ context.Context, _, _, _ string) (string, error) {
+	return "", nil
+}
 
 // stubLicenseService and stubHookExecutor are defined in testhelpers_gomock_test.go.
 

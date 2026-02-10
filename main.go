@@ -430,6 +430,7 @@ func main() {
 		groupName := ""
 		parallel := false
 		workers := 0
+		commit := false
 
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
@@ -440,6 +441,8 @@ func main() {
 				force = true
 			case arg == "--no-cache":
 				noCache = true
+			case arg == "--commit":
+				commit = true
 			case arg == "--parallel":
 				parallel = true
 			case arg == "--workers":
@@ -480,6 +483,12 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Guard: --commit is incompatible with --dry-run
+		if commit && dryRun {
+			fmt.Println("Warning: --commit ignored during --dry-run")
+			commit = false
+		}
+
 		if dryRun {
 			if err := manager.SyncDryRun(); err != nil {
 				callback.ShowError("Preview Failed", err.Error())
@@ -515,6 +524,15 @@ func main() {
 				}
 			}
 			callback.ShowSuccess("Synced.")
+
+			// Auto-commit if --commit flag is set
+			if commit {
+				if err := manager.CommitVendorChanges("sync", vendorName); err != nil {
+					callback.ShowError("Commit Failed", err.Error())
+					os.Exit(1)
+				}
+				callback.ShowSuccess("Committed vendor changes.")
+			}
 		}
 
 	case "update":
@@ -533,6 +551,7 @@ func main() {
 		// Parse command-specific flags
 		parallel := false
 		workers := 0
+		commit := false
 
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
@@ -540,6 +559,8 @@ func main() {
 			case "--verbose", "-v":
 				core.Verbose = true
 				manager.UpdateVerboseMode(true)
+			case "--commit":
+				commit = true
 			case "--parallel":
 				parallel = true
 			case "--workers":
@@ -578,6 +599,15 @@ func main() {
 			}
 		}
 		callback.ShowSuccess("Updated all vendors.")
+
+		// Auto-commit if --commit flag is set
+		if commit {
+			if err := manager.CommitVendorChanges("update", ""); err != nil {
+				callback.ShowError("Commit Failed", err.Error())
+				os.Exit(1)
+			}
+			callback.ShowSuccess("Committed vendor changes.")
+		}
 
 	case "validate":
 		// Parse common flags
@@ -1113,6 +1143,48 @@ func main() {
 				os.Exit(1)
 			}
 		}
+
+	case "annotate":
+		// Retroactively attach vendor metadata as a git note to an existing commit
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		commitHash := ""
+		vendorFilter := ""
+		for i := 0; i < len(os.Args[2:]); i++ {
+			arg := os.Args[2+i]
+			switch {
+			case arg == "--commit":
+				if i+1 < len(os.Args[2:]) {
+					commitHash = os.Args[2+i+1]
+					i++
+				} else {
+					tui.PrintError("Invalid Flag", "--commit requires a commit hash")
+					os.Exit(1)
+				}
+			case arg == "--vendor":
+				if i+1 < len(os.Args[2:]) {
+					vendorFilter = os.Args[2+i+1]
+					i++
+				} else {
+					tui.PrintError("Invalid Flag", "--vendor requires a vendor name")
+					os.Exit(1)
+				}
+			default:
+				// First positional arg is commit hash
+				if commitHash == "" {
+					commitHash = arg
+				}
+			}
+		}
+
+		if err := manager.AnnotateVendorCommit(commitHash, vendorFilter); err != nil {
+			tui.PrintError("Annotate Failed", err.Error())
+			os.Exit(1)
+		}
+		tui.PrintSuccess("Vendor metadata attached as git note.")
 
 	case "completion":
 		// Generate shell completion script

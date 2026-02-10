@@ -19,6 +19,7 @@ type SyncOptions struct {
 	Force      bool
 	NoCache    bool                  // Disable incremental sync cache
 	Parallel   types.ParallelOptions // Parallel processing options
+	Commit     bool                  // Auto-commit after sync with vendor trailers
 }
 
 // RefMetadata holds per-ref metadata collected during sync

@@ -80,6 +80,22 @@ type CloneOptions struct {
 	Depth      int
 }
 
+// Trailer represents a single key-value git trailer.
+// Multiple Trailers with the same Key are valid for multi-valued trailers
+// (e.g., multiple Vendor-Name entries in a multi-vendor commit).
+type Trailer struct {
+	Key   string
+	Value string
+}
+
+// CommitOptions holds options for creating a git commit with structured trailers.
+// CommitOptions is used by CommitVendorChanges to pass message and trailer data
+// to the GitClient.Commit adapter. Trailers are ordered and support duplicate keys.
+type CommitOptions struct {
+	Message  string
+	Trailers []Trailer
+}
+
 // VendorStatus represents the sync status of a vendor
 type VendorStatus struct {
 	Name          string
