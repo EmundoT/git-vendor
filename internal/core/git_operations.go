@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	git "github.com/emundoT/git-plumbing"
+	git "github.com/EmundoT/git-plumbing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )

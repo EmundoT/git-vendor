@@ -3,7 +3,7 @@ package core
 import (
 	"os"
 
-	git "github.com/emundoT/git-plumbing"
+	git "github.com/EmundoT/git-plumbing"
 
 	"github.com/EmundoT/git-vendor/internal/core/providers"
 	"github.com/EmundoT/git-vendor/internal/types"
