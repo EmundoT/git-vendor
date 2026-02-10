@@ -96,7 +96,7 @@ The codebase follows clean architecture principles with proper separation of con
 
 1. **main.go** - Command dispatcher and CLI interface
 
-   - Routes commands (init, add, edit, remove, list, sync, update, validate, status, check-updates, diff, watch, completion)
+   - Routes commands (init, add, edit, remove, list, sync, update, validate, status, check-updates, diff, watch, license, completion)
    - Handles argument parsing and basic validation
    - Entry point for all user interactions
    - Version management (receives ldflags from GoReleaser, injects into version package)
@@ -122,7 +122,9 @@ The codebase follows clean architecture principles with proper separation of con
    - **diff_service.go**: Diff service - Commit comparison between locked and latest versions
    - **watch_service.go**: Watch service - File monitoring for auto-sync on config changes
    - **update_checker.go**: Update checker - Check for available updates without modifying files
-   - **constants.go**: Path constants (`ConfigPath`, `LockPath`), git refs, license lists
+   - **license_policy.go**: License policy loader - Reads `.git-vendor-policy.yml`, validates, returns defaults if absent
+   - **license_policy_service.go**: `LicensePolicyServiceInterface` - Policy evaluation, report generation
+   - **constants.go**: Path constants (`ConfigPath`, `LockPath`, `PolicyFile`), git refs, license lists
    - **errors.go**: Sentinel errors and structured error types (see Error Handling)
    - **mocks_test.go**: Mock implementations for testing
 
@@ -190,6 +192,13 @@ PositionSpec (internal/types/position.go)
   ├─ StartCol: int (1-indexed, 0 = no column)
   ├─ EndCol: int (1-indexed inclusive, 0 = no column)
   └─ ToEOF: bool (true = extract to end of file)
+
+LicensePolicy (.git-vendor-policy.yml)
+  └─ LicensePolicyRules
+      ├─ Allow: []string (SPDX identifiers explicitly permitted)
+      ├─ Deny: []string (SPDX identifiers explicitly blocked)
+      ├─ Warn: []string (SPDX identifiers that emit warnings)
+      └─ Unknown: string (action for undetected licenses: allow|warn|deny)
 ```
 
 ### File System Structure
@@ -205,6 +214,8 @@ All vendor-related files live in `./.git-vendor/`:
 ```
 
 Vendored files are copied to paths specified in the configuration (outside .git-vendor/ directory).
+
+An optional `.git-vendor-policy.yml` lives at the project root (outside `.git-vendor/`) and configures license policy enforcement.
 
 ## Key Operations
 
@@ -248,6 +259,49 @@ Automatic license detection via `GitHubLicenseChecker` (github_client.go:33):
 - Allowed by default: MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Unlicense, CC0-1.0
 - Other licenses prompt user confirmation via `tui.AskToOverrideCompliance()`
 - License files are automatically copied to `.git-vendor/licenses/{name}.txt`
+
+### License Policy Enforcement (Spec 013)
+
+Configurable license compliance policies via `.git-vendor-policy.yml`.
+
+**Policy file format:**
+
+```yaml
+license_policy:
+  allow:
+    - MIT
+    - Apache-2.0
+    - BSD-2-Clause
+    - BSD-3-Clause
+    - ISC
+  deny:
+    - GPL-2.0-only
+    - GPL-3.0-only
+    - AGPL-3.0-only
+  warn:
+    - LGPL-2.1-only
+    - MPL-2.0
+  unknown: warn  # what to do when license can't be detected: allow | warn | deny
+```
+
+**Evaluation order:** deny → allow → warn → unknown rule. Deny always wins.
+
+**Behavior during `git vendor add`:**
+- Policy file detection uses `os.Stat(PolicyFile)` — no heuristic guessing
+- When `.git-vendor-policy.yml` exists, `CheckCompliance` evaluates against the policy
+- Denied licenses hard-block the add (no user override)
+- Warned licenses prompt for user confirmation
+- A malformed policy file returns an error (no silent fallback to legacy behavior)
+- When no policy file exists, falls back to legacy `AllowedLicenses` list
+
+**Standalone `git vendor license` command:**
+- Reports license status for all vendored dependencies
+- `--policy <file>` overrides default policy location
+- `--format=json` for structured output
+- `--fail-on deny` (default) or `--fail-on warn` for CI gating
+- Exit codes: 0=PASS, 1=FAIL (denied), 2=WARN (warned)
+
+**Key files:** `internal/core/license_policy.go` (loader), `internal/core/license_policy_service.go` (evaluation+report), `internal/types/license_policy_types.go` (types)
 
 ### Position Extraction (Spec 071)
 
@@ -611,6 +665,7 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 26. **Empty file has 1 line**: A 0-byte file splits to `[""]` (1 empty line). `L1` extracts empty string. `L2+` errors.
 27. **Sequential PlaceContent calls operate on modified content**: When two vendors write to different positions in the same file, the second call sees the file as modified by the first. If the first call changes line count, the second call's position targets shifted lines.
 28. **L1-EOF hash equals whole-file hash**: `L1-EOF` extraction produces content byte-identical to the raw file (after CRLF normalization), so the hash matches `sha256(file_content)`.
+29. **Policy file detection uses `os.Stat`, not heuristics**: `CheckCompliance` checks for `.git-vendor-policy.yml` existence with `os.Stat` — NOT by guessing from policy content. A policy file with only `allow` entries (no deny/warn) is correctly detected and enforced. A malformed policy file returns an error instead of silently degrading to legacy behavior.
 
 ## Quick Reference
 
@@ -627,6 +682,7 @@ git-vendor update [options]          # Update lockfile
 git-vendor validate                  # Validate config and detect conflicts
 git-vendor verify [options]          # Verify files against lockfile hashes
 git-vendor scan [options]            # Scan for CVE vulnerabilities (via OSV.dev)
+git-vendor license [options]         # Check license compliance against policy
 git-vendor status                    # Check if local files match lockfile
 git-vendor check-updates             # Preview available updates
 git-vendor diff <vendor>             # Show commit history between locked and latest
@@ -689,6 +745,17 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 **Cache:** Results cached in `.git-vendor/.cache/osv/` with 24-hour TTL. Stale cache used as fallback when network unavailable.
 
+### License Command Flags
+
+```bash
+--policy <file>   # Path to policy file (default: .git-vendor-policy.yml)
+--format=<fmt>    # Output format: table (default) or json
+--fail-on <level> # Fail threshold: deny (default) or warn
+# Exit codes: 0=PASS, 1=FAIL (denied), 2=WARN (warned)
+```
+
+**Behavior:** The license command evaluates all vendored dependencies against the license policy. Without a policy file, uses the default `AllowedLicenses` list. With a policy file, uses deny/warn/allow semantics with configurable unknown-license handling.
+
 ### SBOM Command Flags
 
 ```bash
@@ -712,6 +779,7 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - Config: `.git-vendor/vendor.yml`
 - Lock: `.git-vendor/vendor.lock`
 - Licenses: `.git-vendor/licenses/<name>.txt`
+- Policy: `.git-vendor-policy.yml` (optional, project root)
 - Vendored files: User-specified paths (outside .git-vendor/)
 
 ### Important Functions by File
@@ -791,6 +859,18 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 - `CheckLicense()` - Query GitHub API for license
 - `IsAllowed()` - Validate against allowed licenses
+
+**license_policy.go:**
+
+- `LoadLicensePolicy()` - Load and parse `.git-vendor-policy.yml` (falls back to default)
+- `DefaultLicensePolicy()` - Built-in policy from `AllowedLicenses`
+- `validatePolicy()` - Check for duplicate licenses across lists
+
+**license_policy_service.go:**
+
+- `Evaluate()` - Determine policy decision (allow/deny/warn) for a license
+- `GenerateReport()` - Full compliance report for all vendors
+- `buildReason()` - Human-readable explanation for policy decisions
 
 **filesystem.go:**
 

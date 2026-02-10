@@ -218,6 +218,37 @@ func (m *Manager) Scan(failOn string) (*types.ScanResult, error) {
 	return m.syncer.Scan(failOn)
 }
 
+// LicenseReport generates a license compliance report.
+// policyPath overrides the default policy file location; empty string uses PolicyFile constant.
+// failOn: "deny" (default) or "warn" to also fail on warnings.
+func (m *Manager) LicenseReport(policyPath, failOn string) (*types.LicenseReportResult, error) {
+	if policyPath == "" {
+		policyPath = PolicyFile
+	}
+	policy, err := LoadLicensePolicy(policyPath)
+	if err != nil {
+		return nil, err
+	}
+	svc := NewLicensePolicyService(&policy, policyPath, m.syncer.configStore, m.syncer.lockStore)
+	return m.syncer.LicenseReport(svc, failOn)
+}
+
+// EvaluateLicensePolicy loads the policy and evaluates a single license.
+// EvaluateLicensePolicy is used during "add" to check a license against the policy.
+// policyPath overrides the default policy file location; empty string uses PolicyFile constant.
+func (m *Manager) EvaluateLicensePolicy(license, policyPath string) string {
+	if policyPath == "" {
+		policyPath = PolicyFile
+	}
+	policy, err := LoadLicensePolicy(policyPath)
+	if err != nil {
+		// If policy can't be loaded, fall back to default allow-list behavior
+		policy = DefaultLicensePolicy()
+	}
+	svc := NewLicensePolicyService(&policy, policyPath, m.syncer.configStore, m.syncer.lockStore)
+	return svc.Evaluate(license)
+}
+
 // MigrateLockfile updates an existing lockfile to add missing metadata fields
 func (m *Manager) MigrateLockfile() (int, error) {
 	return m.syncer.MigrateLockfile()

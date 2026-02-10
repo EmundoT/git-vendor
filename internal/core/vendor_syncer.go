@@ -512,6 +512,11 @@ func (s *VendorSyncer) Scan(failOn string) (*types.ScanResult, error) {
 	return s.vulnScanner.Scan(failOn)
 }
 
+// LicenseReport generates a license compliance report using the provided policy service.
+func (s *VendorSyncer) LicenseReport(policyService LicensePolicyServiceInterface, failOn string) (*types.LicenseReportResult, error) {
+	return policyService.GenerateReport(failOn)
+}
+
 // MigrateLockfile updates an existing lockfile to add missing metadata fields.
 // For fields that can't be computed (VendoredAt, VendoredBy), it uses best guesses.
 // Returns the number of entries migrated and any error.
