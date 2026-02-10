@@ -30,7 +30,9 @@ func NewFileCopyService(fs FileSystem) *FileCopyService {
 	}
 }
 
-// CopyMappings copies all files according to path mappings for a vendor spec
+// CopyMappings copies all files according to path mappings for a vendor spec.
+// Security: CopyMappings validates all destination paths via ValidateDestPath
+// in copyMapping before any file I/O occurs.
 func (s *FileCopyService) CopyMappings(tempDir string, vendor *types.VendorSpec, spec types.BranchSpec) (CopyStats, error) {
 	var totalStats CopyStats
 

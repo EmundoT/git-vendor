@@ -9,7 +9,7 @@ import (
 )
 
 // ValidationServiceInterface defines the contract for config validation and conflict detection.
-// This interface enables mocking in tests and potential alternative validation strategies.
+// ValidationServiceInterface enables mocking in tests and alternative validation strategies.
 type ValidationServiceInterface interface {
 	ValidateConfig() error
 	DetectConflicts() ([]types.PathConflict, error)

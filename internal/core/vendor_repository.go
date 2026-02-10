@@ -7,7 +7,7 @@ import (
 )
 
 // VendorRepositoryInterface defines the contract for vendor CRUD operations.
-// This interface enables mocking in tests and potential alternative storage backends.
+// VendorRepositoryInterface enables mocking in tests and alternative storage backends.
 type VendorRepositoryInterface interface {
 	Find(name string) (*types.VendorSpec, error)
 	FindAll() ([]types.VendorSpec, error)

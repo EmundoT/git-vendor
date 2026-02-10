@@ -473,7 +473,7 @@ func TestValidateConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tempDir := t.TempDir()
-			vendorDir := filepath.Join(tempDir, "vendor")
+			vendorDir := filepath.Join(tempDir, VendorDir)
 			m := newTestManager(vendorDir)
 			// Create vendor directory before saving config
 			_ = os.MkdirAll(vendorDir, 0755)
@@ -510,7 +510,7 @@ func TestValidateConfig(t *testing.T) {
 func TestDetectConflicts_EmptyOwners(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	// Create Manager with proper initialization
@@ -572,7 +572,7 @@ func TestDetectConflicts_EmptyOwners(t *testing.T) {
 // TestDetectConflicts_NoPanic tests that DetectConflicts handles edge cases safely
 func TestDetectConflicts_NoPanic(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	configStore := NewFileConfigStore(vendorDir)
@@ -629,7 +629,7 @@ func TestDetectConflicts_NoPanic(t *testing.T) {
 func TestDetectConflicts_Comprehensive(t *testing.T) {
 	t.Run("Detect same path conflict", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		// Create vendor directory before saving config
 		_ = os.MkdirAll(vendorDir, 0755)
@@ -679,7 +679,7 @@ func TestDetectConflicts_Comprehensive(t *testing.T) {
 
 	t.Run("No conflict for different paths", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		// Create vendor directory before saving config
 		_ = os.MkdirAll(vendorDir, 0755)
@@ -735,7 +735,7 @@ func TestDetectConflicts_Comprehensive(t *testing.T) {
 // TestValidateConfig_LoadError tests error handling when config fails to load
 func TestValidateConfig_LoadError(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	m := newTestManager(vendorDir)
@@ -754,7 +754,7 @@ func TestValidateConfig_LoadError(t *testing.T) {
 // TestDetectConflicts_LoadError tests error handling when config fails to load
 func TestDetectConflicts_LoadError(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
 	m := newTestManager(vendorDir)
@@ -776,7 +776,7 @@ func TestDetectConflicts_LoadError(t *testing.T) {
 // TestBuildPathOwnershipMap_DotDestination tests auto-path with "." destination
 func TestBuildPathOwnershipMap_DotDestination(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	m := newTestManager(vendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
@@ -817,7 +817,7 @@ func TestBuildPathOwnershipMap_DotDestination(t *testing.T) {
 // TestIsSubPath_EdgeCases tests edge cases in path overlap detection
 func TestIsSubPath_EdgeCases(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	m := newTestManager(vendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
@@ -911,7 +911,7 @@ func TestIsSubPath_EdgeCases(t *testing.T) {
 // TestDetectConflicts_MultipleOwnersPerPath tests multiple owners for a single path
 func TestDetectConflicts_MultipleOwnersPerPath(t *testing.T) {
 	tempDir := t.TempDir()
-	vendorDir := filepath.Join(tempDir, "vendor")
+	vendorDir := filepath.Join(tempDir, VendorDir)
 	m := newTestManager(vendorDir)
 	_ = os.MkdirAll(vendorDir, 0755)
 
