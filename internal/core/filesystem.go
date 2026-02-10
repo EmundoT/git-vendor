@@ -34,7 +34,9 @@ func (s *CopyStats) Add(other CopyStats) {
 	s.Warnings = append(s.Warnings, other.Warnings...)
 }
 
-// FileSystem abstracts file system operations for testing
+// FileSystem abstracts file system operations for testing.
+// Implementations that support write validation (e.g., rooted filesystems) SHOULD
+// enforce path containment in ValidateWritePath, CopyFile, and CopyDir.
 type FileSystem interface {
 	CopyFile(src, dst string) (CopyStats, error)
 	CopyDir(src, dst string) (CopyStats, error)
@@ -44,18 +46,66 @@ type FileSystem interface {
 	Remove(path string) error
 	CreateTemp(dir, pattern string) (string, error)
 	RemoveAll(path string) error
+	// ValidateWritePath checks that path is a safe write destination.
+	// For rooted filesystems, this verifies the resolved path is within projectRoot.
+	// For unrooted filesystems, this returns nil (no restriction).
+	ValidateWritePath(path string) error
 }
 
-// OSFileSystem implements FileSystem using standard os package
-type OSFileSystem struct{}
+// OSFileSystem implements FileSystem using standard os package.
+// When projectRoot is set (via NewRootedFileSystem), write operations self-validate
+// that destinations resolve within the root — preventing path traversal even if
+// callers forget to call ValidateDestPath.
+type OSFileSystem struct {
+	projectRoot string // Absolute path; empty = unrooted (no write validation)
+}
 
-// NewOSFileSystem creates a new OSFileSystem
+// NewOSFileSystem creates an unrooted OSFileSystem with no write validation.
+// Use NewRootedFileSystem for production code that handles user-controlled paths.
 func NewOSFileSystem() *OSFileSystem {
 	return &OSFileSystem{}
 }
 
-// CopyFile copies a single file from src to dst
+// NewRootedFileSystem creates an OSFileSystem that validates all write destinations
+// resolve within projectRoot. Production code SHOULD use this constructor.
+func NewRootedFileSystem(projectRoot string) *OSFileSystem {
+	abs, err := filepath.Abs(projectRoot)
+	if err != nil {
+		abs = projectRoot
+	}
+	return &OSFileSystem{projectRoot: abs}
+}
+
+// ValidateWritePath checks that path resolves within projectRoot.
+// Returns nil if the filesystem is unrooted (projectRoot is empty).
+func (fs *OSFileSystem) ValidateWritePath(path string) error {
+	if fs.projectRoot == "" {
+		return nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("cannot resolve write path %q: %w", path, err)
+	}
+	// Check containment: resolved path must be within projectRoot.
+	// Use separator suffix to prevent prefix collision (e.g., /tmp/foo vs /tmp/foobar).
+	root := fs.projectRoot + string(filepath.Separator)
+	if abs != fs.projectRoot && !strings.HasPrefix(abs, root) {
+		return fmt.Errorf("write blocked: path %q resolves to %q which is outside project root %q", path, abs, fs.projectRoot)
+	}
+	return nil
+}
+
+// CopyFile copies a single file from src to dst.
+//
+// Security: When the filesystem is rooted (created via NewRootedFileSystem), CopyFile
+// self-validates that dst resolves within projectRoot. For unrooted filesystems,
+// callers MUST call ValidateDestPath(dst) before invoking CopyFile with user-controlled
+// destination paths. See file_copy_service.go:copyMapping for the caller-level validation.
 func (fs *OSFileSystem) CopyFile(src, dst string) (CopyStats, error) {
+	if err := fs.ValidateWritePath(dst); err != nil {
+		return CopyStats{}, err
+	}
+
 	source, err := os.Open(src)
 	if err != nil {
 		return CopyStats{}, err
@@ -76,8 +126,17 @@ func (fs *OSFileSystem) CopyFile(src, dst string) (CopyStats, error) {
 	return CopyStats{FileCount: 1, ByteCount: bytes}, nil
 }
 
-// CopyDir recursively copies a directory from src to dst
+// CopyDir recursively copies a directory from src to dst.
+//
+// Security: When the filesystem is rooted (created via NewRootedFileSystem), CopyDir
+// self-validates that dst resolves within projectRoot. For unrooted filesystems,
+// callers MUST call ValidateDestPath(dst) before invoking CopyDir with user-controlled
+// destination paths.
 func (fs *OSFileSystem) CopyDir(src, dst string) (CopyStats, error) {
+	if err := fs.ValidateWritePath(dst); err != nil {
+		return CopyStats{}, err
+	}
+
 	var stats CopyStats
 
 	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
@@ -172,6 +231,12 @@ func ValidateDestPath(destPath string) error {
 	}
 	destPath = pathPart
 
+	// Reject embedded null bytes — defense in depth (OS also rejects at syscall level,
+	// but fail early with a clear message instead of relying on EINVAL).
+	if strings.ContainsRune(destPath, 0) {
+		return fmt.Errorf("invalid destination path: (null bytes are not allowed)")
+	}
+
 	// Clean the path to normalize it
 	cleaned := filepath.Clean(destPath)
 
@@ -197,5 +262,25 @@ func ValidateDestPath(destPath string) error {
 		return fmt.Errorf("invalid destination path: %s (path traversal with .. is not allowed)", destPath)
 	}
 
+	return nil
+}
+
+// ValidateVendorName ensures a vendor name is safe for use in filesystem paths.
+// Rejects names containing path separators, traversal sequences, or null bytes.
+// Called during config validation and before license file copy to block malicious
+// vendor.yml entries before they reach any filesystem operation.
+func ValidateVendorName(name string) error {
+	if name == "" {
+		return fmt.Errorf("vendor name must not be empty")
+	}
+	if strings.ContainsRune(name, 0) {
+		return fmt.Errorf("invalid vendor name %q: null bytes are not allowed", name)
+	}
+	if strings.ContainsAny(name, "/\\") {
+		return fmt.Errorf("invalid vendor name %q: path separators are not allowed", name)
+	}
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("invalid vendor name %q: path traversal sequences are not allowed", name)
+	}
 	return nil
 }

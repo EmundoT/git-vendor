@@ -213,3 +213,87 @@ func IsValidationError(err error) bool {
 	var e *ValidationError
 	return errors.As(err, &e)
 }
+
+// HookError is returned when a pre/post-sync hook fails.
+type HookError struct {
+	VendorName string
+	Phase      string // "pre-sync" or "post-sync"
+	Command    string // The hook command (truncated to 80 chars in Error() output)
+	Cause      error
+}
+
+func (e *HookError) Error() string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Error: %s hook failed", e.Phase))
+	if e.VendorName != "" {
+		b.WriteString(fmt.Sprintf(" for vendor '%s'", e.VendorName))
+	}
+	if e.Cause != nil {
+		b.WriteString(fmt.Sprintf("\n  Context: %v", e.Cause))
+	}
+	if e.Command != "" {
+		cmd := e.Command
+		if len(cmd) > 80 {
+			cmd = cmd[:80] + "..."
+		}
+		b.WriteString(fmt.Sprintf("\n  Command: %s", cmd))
+	}
+	b.WriteString("\n  Fix: Check the hook command in vendor.yml and ensure it exits successfully")
+	return b.String()
+}
+
+func (e *HookError) Unwrap() error {
+	return e.Cause
+}
+
+// NewHookError creates a HookError.
+func NewHookError(vendorName, phase, command string, cause error) *HookError {
+	return &HookError{VendorName: vendorName, Phase: phase, Command: command, Cause: cause}
+}
+
+// IsHookError returns true if err is a HookError.
+func IsHookError(err error) bool {
+	var e *HookError
+	return errors.As(err, &e)
+}
+
+// OSVAPIError is returned when the OSV.dev API returns a non-OK response.
+type OSVAPIError struct {
+	StatusCode int
+	Body       string // Truncated response body for diagnostics
+}
+
+func (e *OSVAPIError) Error() string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Error: OSV.dev API returned HTTP %d", e.StatusCode))
+	switch {
+	case e.StatusCode == 429:
+		b.WriteString("\n  Context: Rate limited by OSV.dev API")
+		b.WriteString("\n  Fix: Wait a few minutes before retrying, or use cached results")
+	case e.StatusCode >= 500:
+		b.WriteString("\n  Context: OSV.dev server error (transient)")
+		b.WriteString("\n  Fix: Retry the scan later; cached results will be used if available")
+	case e.StatusCode >= 400:
+		b.WriteString("\n  Context: Client error — request may be malformed")
+		if e.Body != "" {
+			b.WriteString(fmt.Sprintf(" (%s)", e.Body))
+		}
+		b.WriteString("\n  Fix: Check vendor configuration and retry; if the issue persists, file a bug")
+	}
+	return b.String()
+}
+
+// NewOSVAPIError creates an OSVAPIError.
+func NewOSVAPIError(statusCode int, body string) *OSVAPIError {
+	// Truncate body for error message readability
+	if len(body) > 200 {
+		body = body[:200] + "..."
+	}
+	return &OSVAPIError{StatusCode: statusCode, Body: body}
+}
+
+// IsOSVAPIError returns true if err is an OSVAPIError.
+func IsOSVAPIError(err error) bool {
+	var e *OSVAPIError
+	return errors.As(err, &e)
+}

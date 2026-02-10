@@ -78,7 +78,7 @@ go install github.com/EmundoT/git-vendor@latest
 
 # Works as both 'git-vendor' and 'git vendor'
 
-# 2. Initialize vendor directory
+# 2. Initialize .git-vendor directory
 git-vendor init
 
 # 3. Add a dependency (interactive wizard)
@@ -93,7 +93,7 @@ git-vendor sync
 
 **What just happened?**
 
-- `init` created `vendor/vendor.yml`, `vendor/vendor.lock`, and `vendor/licenses/`
+- `init` created `.git-vendor/vendor.yml`, `.git-vendor/vendor.lock`, and `.git-vendor/licenses/`
 - `add` launched an interactive wizard to configure path mappings
 - `sync` downloaded files and locked to exact commit SHAs
 - Your files are now vendored with full provenance tracking!
@@ -209,7 +209,7 @@ Leave `to` empty for automatic naming based on source filename.
 
 | Command         | Description                                       |
 | --------------- | ------------------------------------------------- |
-| `init`          | Initialize vendor directory                       |
+| `init`          | Initialize .git-vendor directory                  |
 | `add`           | Add vendor dependency (interactive)               |
 | `sync`          | Download files to locked versions                 |
 | `update`        | Fetch latest commits, update lockfile             |
@@ -399,7 +399,7 @@ A: Yes! Supports GitHub, GitLab, Bitbucket, and any Git server (HTTPS/SSH/Git pr
 
 **Q: How does license compliance work?**
 
-A: git-vendor auto-detects licenses via API (GitHub/GitLab) or LICENSE file (others) and caches them in `vendor/licenses/` for audit. Pre-approved licenses (MIT, Apache-2.0, BSD, etc.) are automatically accepted.
+A: git-vendor auto-detects licenses via API (GitHub/GitLab) or LICENSE file (others) and caches them in `.git-vendor/licenses/` for audit. Pre-approved licenses (MIT, Apache-2.0, BSD, etc.) are automatically accepted.
 
 **Q: Can I automate vendoring in CI/CD?**
 

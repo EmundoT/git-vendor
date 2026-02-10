@@ -42,9 +42,15 @@ func (s *ValidationService) ValidateConfig() error {
 		return fmt.Errorf("no vendors configured. Run 'git-vendor add' to add your first dependency")
 	}
 
-	// Check for duplicate vendor names
+	// Check for duplicate vendor names and validate name safety
 	names := make(map[string]bool)
 	for _, vendor := range config.Vendors {
+		// SEC-001: Reject vendor names containing path traversal sequences.
+		// Vendor names are used in filesystem paths (license files, cache files).
+		if err := ValidateVendorName(vendor.Name); err != nil {
+			return fmt.Errorf("vendor config rejected: %w", err)
+		}
+
 		if names[vendor.Name] {
 			return fmt.Errorf("duplicate vendor name: %s", vendor.Name)
 		}
@@ -52,7 +58,7 @@ func (s *ValidationService) ValidateConfig() error {
 
 		// Validate vendor
 		if err := s.validateVendor(&vendor); err != nil {
-			return err
+			return fmt.Errorf("ValidateConfig: %w", err)
 		}
 	}
 
@@ -74,7 +80,7 @@ func (s *ValidationService) validateVendor(vendor *types.VendorSpec) error {
 	// Validate each spec
 	for _, spec := range vendor.Specs {
 		if err := s.validateSpec(vendor.Name, spec); err != nil {
-			return err
+			return fmt.Errorf("validateVendor: %w", err)
 		}
 	}
 
@@ -105,7 +111,7 @@ func (s *ValidationService) validateSpec(vendorName string, spec types.BranchSpe
 func (s *ValidationService) DetectConflicts() ([]types.PathConflict, error) {
 	config, err := s.configStore.Load()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("DetectConflicts: load config: %w", err)
 	}
 
 	// Build path ownership map
