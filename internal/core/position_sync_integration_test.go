@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -92,7 +93,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 		manager.SaveVendor(spec)
 
 		// First sync
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("First sync: %v", err)
 		}
 
@@ -103,7 +104,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 		}
 
 		// Second sync (should cache-hit)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("Second sync: %v", err)
 		}
 
@@ -142,7 +143,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("First sync: %v", err)
 		}
 
@@ -152,7 +153,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 		}
 
 		// Second sync
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("Second sync: %v", err)
 		}
 
@@ -176,12 +177,12 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("First sync: %v", err)
 		}
 
 		// Force sync should still succeed
-		if err := manager.SyncWithOptions("force-pos", true, false); err != nil {
+		if err := manager.SyncWithOptions(context.Background(), "force-pos", true, false); err != nil {
 			t.Fatalf("Force sync: %v", err)
 		}
 
@@ -210,12 +211,12 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("First sync: %v", err)
 		}
 
 		// noCache sync
-		if err := manager.SyncWithOptions("nocache-pos", false, true); err != nil {
+		if err := manager.SyncWithOptions(context.Background(), "nocache-pos", false, true); err != nil {
 			t.Fatalf("noCache sync: %v", err)
 		}
 
@@ -239,7 +240,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("First sync: %v", err)
 		}
 
@@ -247,7 +248,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 		writeFile(t, filepath.Join(projectDir, "inv/snippet.txt"), "TAMPERED\n")
 
 		// Third sync should re-download (cache invalidated by file content change)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("Sync after tamper: %v", err)
 		}
 
@@ -271,7 +272,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("First sync: %v", err)
 		}
 
@@ -286,7 +287,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 		}
 
 		// Second sync
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("Second sync: %v", err)
 		}
 
@@ -310,7 +311,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("First sync: %v", err)
 		}
 
@@ -321,7 +322,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 		}
 
 		// Second sync
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("Second sync: %v", err)
 		}
 
@@ -347,7 +348,7 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 		manager.SaveVendor(spec)
 
 		for i := 1; i <= 3; i++ {
-			if err := manager.Sync(); err != nil {
+			if err := manager.Sync(context.Background()); err != nil {
 				t.Fatalf("Sync #%d: %v", i, err)
 			}
 		}
@@ -395,7 +396,7 @@ func TestIntegration_MixedWholeFileAndPositionMappings(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("Sync: %v", err)
 		}
 		return projectDir, manager, cleanup
@@ -447,7 +448,7 @@ func TestIntegration_MixedWholeFileAndPositionMappings(t *testing.T) {
 		_, manager, cleanup := setupMixed(t, "mixed-vpass")
 		defer cleanup()
 
-		result, err := manager.Verify()
+		result, err := manager.Verify(context.Background())
 		if err != nil {
 			t.Fatalf("Verify: %v", err)
 		}
@@ -465,7 +466,7 @@ func TestIntegration_MixedWholeFileAndPositionMappings(t *testing.T) {
 
 		writeFile(t, filepath.Join(projectDir, "dest/whole.txt"), "tampered\n")
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		if result.Summary.Result != "FAIL" {
 			t.Error("Expected FAIL")
 		}
@@ -495,7 +496,7 @@ func TestIntegration_MixedWholeFileAndPositionMappings(t *testing.T) {
 		writeFile(t, filepath.Join(projectDir, "dest/lib.go"),
 			"line1\nline2\nTAMPERED\nTAMPERED\nTAMPERED\nline6\nline7\nline8\n")
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		if result.Summary.Result != "FAIL" {
 			t.Error("Expected FAIL")
 		}
@@ -525,7 +526,7 @@ func TestIntegration_MixedWholeFileAndPositionMappings(t *testing.T) {
 		writeFile(t, filepath.Join(projectDir, "dest/lib.go"),
 			"line1\nline2\nTAMPERED\nTAMPERED\nTAMPERED\nline6\nline7\nline8\n")
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		if result.Summary.Result != "FAIL" {
 			t.Error("Expected FAIL")
 		}
@@ -609,12 +610,12 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		targetFile, _ := filepath.Abs("out/target.txt")
 		os.Remove(targetFile)
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		if result.Summary.Result != "FAIL" {
 			t.Errorf("Result = %q, want FAIL", result.Summary.Result)
 		}
@@ -637,7 +638,7 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		lock, _ := manager.GetLock()
 		expectedHash := lock.Vendors[0].Positions[0].SourceHash
@@ -645,7 +646,7 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 		targetFile, _ := filepath.Abs("out/target.txt")
 		os.Remove(targetFile)
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		f := findFileStatus(result, "position", "deleted")
 		if f == nil {
 			t.Fatal("No deleted position entry found")
@@ -669,12 +670,12 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		targetFile, _ := filepath.Abs("out/target.txt")
 		os.Remove(targetFile)
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		f := findFileStatus(result, "position", "deleted")
 		if f == nil {
 			t.Fatal("No deleted position entry")
@@ -707,7 +708,7 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		lock, _ := manager.GetLock()
 		storedHash := lock.Vendors[0].Positions[0].SourceHash
@@ -733,18 +734,18 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		targetFile := filepath.Join(projectDir, "out/target.txt")
 		os.Remove(targetFile)
 
-		result1, _ := manager.Verify()
+		result1, _ := manager.Verify(context.Background())
 		if result1.Summary.Deleted == 0 {
 			t.Error("Expected deleted before re-sync")
 		}
 
 		// Re-sync restores
-		manager.SyncWithOptions("del-recover", true, true)
+		manager.SyncWithOptions(context.Background(), "del-recover", true, true)
 
 		if _, err := os.Stat(targetFile); errors.Is(err, os.ErrNotExist) {
 			t.Error("File not restored after re-sync")
@@ -770,11 +771,11 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		os.RemoveAll(filepath.Join(projectDir, "deep"))
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		if result.Summary.Deleted == 0 {
 			t.Error("Expected deleted when parent dir removed")
 		}
@@ -799,12 +800,12 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		// Delete only the first file
 		os.Remove(filepath.Join(projectDir, "out/first.txt"))
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		deleted := countVerifyByTypeStatus(result, "position", "deleted")
 		if deleted == 0 {
 			t.Error("Expected at least one deleted position entry")
@@ -831,11 +832,11 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		os.Remove("out/single.txt")
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		f := findFileStatus(result, "position", "deleted")
 		if f == nil {
 			t.Fatal("No deleted entry")
@@ -877,7 +878,7 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		if err := manager.Sync(); err != nil {
+		if err := manager.Sync(context.Background()); err != nil {
 			t.Fatalf("Sync: %v", err)
 		}
 		return projectDir, manager, funcsFile, cleanup
@@ -891,7 +892,7 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 		writeFile(t, funcsFile,
 			"package lib\n\n// HEADER\n// EXTRA\nfunc A() {}\nfunc B() {}\nfunc C() {}\n\n// footer\n")
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		if countVerifyByTypeStatus(result, "position", "modified") == 0 {
 			t.Error("Expected modified position after line insertion")
 		}
@@ -904,7 +905,7 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 		writeFile(t, funcsFile,
 			"package lib\n\n// HEADER\n// EXTRA\nfunc A() {}\nfunc B() {}\nfunc C() {}\n\n// footer\n")
 
-		manager.SyncWithOptions("shift-restore", true, true)
+		manager.SyncWithOptions(context.Background(), "shift-restore", true, true)
 
 		content, _ := os.ReadFile(funcsFile)
 		lines := strings.Split(string(content), "\n")
@@ -920,9 +921,9 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 		writeFile(t, funcsFile,
 			"package lib\n\n// HEADER\nfunc A() {}\nfunc B() {}\nfunc C() {}\n\n// footer\n")
 
-		manager.SyncWithOptions("shift-verify", true, true)
+		manager.SyncWithOptions(context.Background(), "shift-verify", true, true)
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		if countVerifyByTypeStatus(result, "position", "verified") == 0 {
 			t.Error("Expected verified after re-sync")
 		}
@@ -936,7 +937,7 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 		writeFile(t, funcsFile,
 			"package lib\n\nTAMPER1\nTAMPER2\nTAMPER3\n\n// footer\n")
 
-		manager.SyncWithOptions("shift-before", true, true)
+		manager.SyncWithOptions(context.Background(), "shift-before", true, true)
 
 		content, _ := os.ReadFile(funcsFile)
 		lines := strings.Split(string(content), "\n")
@@ -952,7 +953,7 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 		writeFile(t, funcsFile,
 			"package lib\n\nTAMPER1\nTAMPER2\nTAMPER3\n\n// footer\n")
 
-		manager.SyncWithOptions("shift-after", true, true)
+		manager.SyncWithOptions(context.Background(), "shift-after", true, true)
 
 		content, _ := os.ReadFile(funcsFile)
 		lines := strings.Split(string(content), "\n")
@@ -973,7 +974,7 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 		writeFile(t, funcsFile,
 			"package lib\n\nEX1\nEX2\nEX3\nEX4\nEX5\n\n// footer\n")
 
-		manager.SyncWithOptions("shift-shrunk", true, true)
+		manager.SyncWithOptions(context.Background(), "shift-shrunk", true, true)
 
 		content, _ := os.ReadFile(funcsFile)
 		lines := strings.Split(string(content), "\n")
@@ -989,7 +990,7 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 
 		// Re-sync 3 times
 		for i := 0; i < 3; i++ {
-			manager.SyncWithOptions("shift-idempotent", true, true)
+			manager.SyncWithOptions(context.Background(), "shift-idempotent", true, true)
 		}
 
 		content, _ := os.ReadFile(funcsFile)
@@ -1003,7 +1004,7 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 		_, manager, _, cleanup := setupShift(t, "shift-initial")
 		defer cleanup()
 
-		result, _ := manager.Verify()
+		result, _ := manager.Verify(context.Background())
 		if countVerifyByTypeStatus(result, "position", "verified") == 0 {
 			t.Error("Initial sync not verified")
 		}
@@ -1043,7 +1044,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, err := os.ReadFile(logFile)
 		if err != nil {
@@ -1072,7 +1073,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, err := os.ReadFile(logFile)
 		if err != nil {
@@ -1101,7 +1102,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, _ := os.ReadFile(logFile)
 		if !strings.Contains(string(data), "env-name-vendor") {
@@ -1127,7 +1128,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, _ := os.ReadFile(logFile)
 		if !strings.Contains(string(data), "file://"+srcRepo) {
@@ -1155,7 +1156,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, _ := os.ReadFile(logFile)
 		val := strings.TrimSpace(string(data))
@@ -1182,7 +1183,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, _ := os.ReadFile(logFile)
 		val := strings.TrimSpace(string(data))
@@ -1209,7 +1210,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, _ := os.ReadFile(logFile)
 		val := strings.TrimSpace(string(data))
@@ -1236,7 +1237,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, _ := os.ReadFile(logFile)
 		val := strings.TrimSpace(string(data))
@@ -1264,7 +1265,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 		}
 		manager.SaveVendor(spec)
 
-		err := manager.Sync()
+		err := manager.Sync(context.Background())
 		if err == nil {
 			t.Error("Expected sync to fail when pre-sync hook exits 1")
 		}
@@ -1295,7 +1296,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, _ := os.ReadFile(logFile)
 		if !strings.Contains(string(data), "EXISTS") {
@@ -1328,7 +1329,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		manager.Sync()
+		manager.Sync(context.Background())
 
 		data, _ := os.ReadFile(logFile)
 		log := string(data)

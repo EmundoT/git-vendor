@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,8 +20,9 @@ type expectedFileInfo struct {
 
 // VerifyServiceInterface defines the contract for file verification against lockfile.
 // VerifyServiceInterface enables mocking in tests and alternative verification strategies.
+// ctx is accepted for cancellation support and future network-based verification.
 type VerifyServiceInterface interface {
-	Verify() (*types.VerifyResult, error)
+	Verify(ctx context.Context) (*types.VerifyResult, error)
 }
 
 // Compile-time interface satisfaction check.
@@ -52,8 +54,9 @@ func NewVerifyService(
 	}
 }
 
-// Verify checks all vendored files against the lockfile
-func (s *VerifyService) Verify() (*types.VerifyResult, error) {
+// Verify checks all vendored files against the lockfile.
+// ctx is accepted for cancellation support and future network-based verification.
+func (s *VerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 	// Load lockfile
 	lock, err := s.lockStore.Load()
 	if err != nil {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -25,7 +26,7 @@ var (
 // VendorManager defines the interface for vendor management operations used by the wizard.
 type VendorManager interface {
 	ParseSmartURL(string) (string, string, string)
-	FetchRepoDir(string, string, string) ([]string, error)
+	FetchRepoDir(context.Context, string, string, string) ([]string, error)
 	ListLocalDir(string) ([]string, error)
 	GetLockHash(vendorName, ref string) string
 	DetectConflicts() ([]types.PathConflict, error)
@@ -303,7 +304,7 @@ func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 
 	currentDir := ""
 	for {
-		items, err := mgr.FetchRepoDir(url, ref, currentDir)
+		items, err := mgr.FetchRepoDir(context.Background(), url, ref, currentDir)
 		if err != nil {
 			PrintError("Error", err.Error())
 			return ""
