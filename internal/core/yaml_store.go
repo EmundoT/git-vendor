@@ -10,7 +10,7 @@ import (
 )
 
 // YAMLStore provides generic YAML file I/O operations.
-// This consolidates duplicate code between ConfigStore and LockStore.
+// YAMLStore consolidates duplicate code between ConfigStore and LockStore.
 // It's a perfect use case for Go 1.18+ generics.
 type YAMLStore[T any] struct {
 	rootDir      string

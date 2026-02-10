@@ -172,6 +172,12 @@ VendorLock (vendor.lock)
       ├─ CommitHash: exact commit SHA
       ├─ LicensePath: path to cached license
       ├─ Updated: timestamp
+      ├─ FileHashes: map[string]string (path → SHA-256 hash)
+      ├─ LicenseSPDX: SPDX license identifier (schema v1.1)
+      ├─ SourceVersionTag: git tag matching commit (schema v1.1)
+      ├─ VendoredAt: ISO 8601 initial vendoring timestamp (schema v1.1)
+      ├─ VendoredBy: git user identity (schema v1.1)
+      ├─ LastSyncedAt: ISO 8601 most recent sync timestamp (schema v1.1)
       └─ Positions: []PositionLock (omitempty)
           └─ PositionLock
               ├─ From: source path with position (e.g., "api/constants.go:L4-L6")
@@ -217,7 +223,7 @@ Vendored files are copied to paths specified in the configuration (outside .git-
 
 ### Smart URL Parsing
 
-The `ParseSmartURL` function (git_operations.go:183) extracts repository, ref, and path from GitHub URLs:
+The `ParseSmartURL` function (git_operations.go:164) extracts repository, ref, and path from GitHub URLs:
 
 - `github.com/owner/repo` → base URL, no ref, no path
 - `github.com/owner/repo/blob/main/path/to/file.go` → base URL, "main", "path/to/file.go"
@@ -227,7 +233,7 @@ The `ParseSmartURL` function (git_operations.go:183) extracts repository, ref, a
 
 ### Remote Directory Browsing
 
-The `FetchRepoDir` function (vendor_syncer.go:632) browses remote repository contents without full checkout:
+The `FetchRepoDir` function (vendor_syncer.go:385, delegating to remote_explorer.go:40) browses remote repository contents without full checkout:
 
 1. Clone with `--filter=blob:none --no-checkout --depth 1`
 2. Fetch specific ref if needed
@@ -681,7 +687,7 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - Results cached for 24 hours (configurable via `GIT_VENDOR_CACHE_TTL` env var)
 - Commit-level queries may miss vulnerabilities announced against version ranges
 
-**Cache:** Results cached in `.git-vendor-cache/osv/` with 24-hour TTL. Stale cache used as fallback when network unavailable.
+**Cache:** Results cached in `.git-vendor/.cache/osv/` with 24-hour TTL. Stale cache used as fallback when network unavailable.
 
 ### SBOM Command Flags
 

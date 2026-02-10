@@ -65,23 +65,7 @@ func (s *stubGitClient) GetTagForCommit(_ context.Context, _, _ string) (string,
 	return "", nil
 }
 
-// stubLicenseService implements LicenseServiceInterface with no-op behavior.
-type stubLicenseService struct{}
-
-func (s *stubLicenseService) CheckCompliance(_ string) (string, error) { return "MIT", nil }
-func (s *stubLicenseService) CopyLicense(_, _ string) error            { return nil }
-func (s *stubLicenseService) GetLicensePath(_ string) string           { return "" }
-func (s *stubLicenseService) CheckLicense(_ string) (string, error)    { return "MIT", nil }
-
-// stubHookExecutor implements HookExecutor with no-op behavior.
-type stubHookExecutor struct{}
-
-func (s *stubHookExecutor) ExecutePreSync(_ *types.VendorSpec, _ *types.HookContext) error {
-	return nil
-}
-func (s *stubHookExecutor) ExecutePostSync(_ *types.VendorSpec, _ *types.HookContext) error {
-	return nil
-}
+// stubLicenseService and stubHookExecutor are defined in testhelpers_gomock_test.go.
 
 // positionHash computes the sha256 hash in the format used by ExtractPosition.
 func positionHash(content string) string {

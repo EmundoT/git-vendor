@@ -49,7 +49,7 @@ const (
 var cvssScoreRegex = regexp.MustCompile(`^(\d+\.?\d*)$`)
 
 // VulnScannerInterface defines the contract for vulnerability scanning.
-// This interface enables mocking in tests and potential alternative implementations.
+// VulnScannerInterface enables mocking in tests and alternative implementations.
 type VulnScannerInterface interface {
 	// Scan performs vulnerability scanning on all vendored dependencies.
 	// failOn specifies the severity threshold (critical|high|medium|low) for failing.

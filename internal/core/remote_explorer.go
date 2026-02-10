@@ -10,7 +10,7 @@ import (
 )
 
 // RemoteExplorerInterface defines the contract for remote repository browsing and URL parsing.
-// This interface enables mocking in tests and potential alternative exploration strategies.
+// RemoteExplorerInterface enables mocking in tests and alternative exploration strategies.
 type RemoteExplorerInterface interface {
 	FetchRepoDir(url, ref, subdir string) ([]string, error)
 	ListLocalDir(path string) ([]string, error)

@@ -131,7 +131,7 @@ func (fs *OSFileSystem) CopyFile(src, dst string) (CopyStats, error) {
 // Security: When the filesystem is rooted (created via NewRootedFileSystem), CopyDir
 // self-validates that dst resolves within projectRoot. For unrooted filesystems,
 // callers MUST call ValidateDestPath(dst) before invoking CopyDir with user-controlled
-// destination paths.
+// destination paths. See file_copy_service.go:copyMapping for the caller-level validation.
 func (fs *OSFileSystem) CopyDir(src, dst string) (CopyStats, error) {
 	if err := fs.ValidateWritePath(dst); err != nil {
 		return CopyStats{}, err
