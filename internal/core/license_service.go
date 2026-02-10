@@ -6,7 +6,7 @@ import (
 )
 
 // LicenseServiceInterface defines the contract for license checking and file management.
-// This interface enables mocking in tests and potential alternative license backends.
+// LicenseServiceInterface enables mocking in tests and alternative license backends.
 type LicenseServiceInterface interface {
 	CheckCompliance(url string) (string, error)
 	CopyLicense(tempDir, vendorName string) error

@@ -38,7 +38,7 @@ const (
 )
 
 // AllowedLicenses defines the list of open-source licenses permitted by default.
-// These are SPDX license identifiers.
+// AllowedLicenses uses SPDX license identifiers.
 var AllowedLicenses = []string{
 	"MIT",
 	"Apache-2.0",
@@ -50,7 +50,7 @@ var AllowedLicenses = []string{
 }
 
 // LicenseFileNames lists standard filenames checked when searching for repository licenses.
-// These are checked in order when detecting licenses via file content.
+// LicenseFileNames entries are checked in order when detecting licenses via file content.
 var LicenseFileNames = []string{
 	"LICENSE",
 	"LICENSE.txt",

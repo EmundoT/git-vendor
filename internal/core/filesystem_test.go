@@ -567,7 +567,7 @@ func TestCopyDir_SkipsGitDirectories(t *testing.T) {
 	}
 
 	// Verify .git was not copied
-	if _, err := os.Stat(filepath.Join(destDir, ".git", "HEAD")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destDir, ".git", "HEAD")); !errors.Is(err, os.ErrNotExist) {
 		t.Error(".git directory should not be copied")
 	}
 

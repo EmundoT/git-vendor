@@ -18,7 +18,7 @@ type expectedFileInfo struct {
 }
 
 // VerifyServiceInterface defines the contract for file verification against lockfile.
-// This interface enables mocking in tests and potential alternative verification strategies.
+// VerifyServiceInterface enables mocking in tests and alternative verification strategies.
 type VerifyServiceInterface interface {
 	Verify() (*types.VerifyResult, error)
 }

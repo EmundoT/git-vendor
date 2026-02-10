@@ -17,7 +17,7 @@ import (
 // =============================================================================
 
 // Sentinel errors for common error conditions.
-// These can be used with errors.Is() for error type checking.
+// Sentinel errors can be used with errors.Is() for error type checking.
 var (
 	// ErrNotInitialized indicates the vendor directory doesn't exist
 	ErrNotInitialized = errors.New("vendor directory not found. Run 'git-vendor init' first")

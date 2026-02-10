@@ -9,7 +9,7 @@ import (
 )
 
 // UpdateServiceInterface defines the contract for update operations and lockfile regeneration.
-// This interface enables mocking in tests and potential alternative update strategies.
+// UpdateServiceInterface enables mocking in tests and alternative update strategies.
 type UpdateServiceInterface interface {
 	UpdateAll() error
 	UpdateAllWithOptions(parallelOpts types.ParallelOptions) error
