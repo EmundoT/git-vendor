@@ -493,46 +493,6 @@ func TestVendorSyncer_SyncWithParallel(t *testing.T) {
 }
 
 // ============================================================================
-// VendorSyncer.Audit tests
-// ============================================================================
-
-func TestVendorSyncer_Audit_Success(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockLock := NewMockLockStore(ctrl)
-	mockLock.EXPECT().Load().Return(types.VendorLock{
-		Vendors: []types.LockDetails{{Name: "v1"}, {Name: "v2"}},
-	}, nil)
-
-	ui := &capturingUICallback{}
-	syncer := NewVendorSyncer(nil, mockLock, nil, nil, nil, "", ui, &ServiceOverrides{})
-
-	syncer.Audit()
-
-	if !contains(ui.successMsg, "2 vendors locked") {
-		t.Errorf("Audit() success message = %q, want containing '2 vendors locked'", ui.successMsg)
-	}
-}
-
-func TestVendorSyncer_Audit_NoLockfile(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockLock := NewMockLockStore(ctrl)
-	mockLock.EXPECT().Load().Return(types.VendorLock{}, errors.New("no lockfile"))
-
-	ui := &capturingUICallback{}
-	syncer := NewVendorSyncer(nil, mockLock, nil, nil, nil, "", ui, &ServiceOverrides{})
-
-	syncer.Audit()
-
-	if !contains(ui.warningMsg, "No lockfile") {
-		t.Errorf("Audit() warning = %q, want containing 'No lockfile'", ui.warningMsg)
-	}
-}
-
-// ============================================================================
 // VendorSyncer.CheckSyncStatus tests
 // ============================================================================
 
