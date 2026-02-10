@@ -184,9 +184,10 @@ func (m *Manager) GetLock() (types.VendorLock, error) {
 	return m.syncer.lockStore.Load()
 }
 
-// Audit checks lockfile status
-func (m *Manager) Audit() {
-	m.syncer.Audit()
+// RunAudit runs the unified audit (verify + scan + license + drift) and returns a combined result.
+// ctx controls cancellation for network-dependent sub-checks (scan, drift).
+func (m *Manager) RunAudit(ctx context.Context, opts AuditOptions) (*types.AuditResult, error) {
+	return m.syncer.RunAudit(ctx, opts)
 }
 
 // DetectConflicts checks for path conflicts between vendors

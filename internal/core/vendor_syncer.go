@@ -89,6 +89,7 @@ type VendorSyncer struct {
 	verifyService VerifyServiceInterface
 	vulnScanner   VulnScannerInterface
 	driftService  DriftServiceInterface
+	auditService  AuditServiceInterface
 
 	// Infrastructure dependencies
 	configStore    ConfigStore
@@ -114,6 +115,7 @@ type ServiceOverrides struct {
 	VerifyService VerifyServiceInterface
 	VulnScanner   VulnScannerInterface
 	DriftService  DriftServiceInterface
+	AuditService  AuditServiceInterface
 }
 
 // NewVendorSyncer creates a new VendorSyncer with injected dependencies.
@@ -150,6 +152,7 @@ func NewVendorSyncer(
 	verifyService := NewVerifyService(configStore, lockStore, cache, fs, rootDir)
 	vulnScanner := VulnScannerInterface(NewVulnScanner(lockStore, configStore))
 	driftSvc := DriftServiceInterface(NewDriftService(configStore, lockStore, gitClient, fs, rootDir))
+	auditSvc := AuditServiceInterface(NewAuditService(verifyService, vulnScanner, driftSvc, configStore, lockStore))
 
 	// Apply overrides where provided
 	syncer := &VendorSyncer{
@@ -163,6 +166,7 @@ func NewVendorSyncer(
 		verifyService:  verifyService,
 		vulnScanner:    vulnScanner,
 		driftService:   driftSvc,
+		auditService:   auditSvc,
 		configStore:    configStore,
 		lockStore:      lockStore,
 		gitClient:      gitClient,
@@ -201,6 +205,9 @@ func NewVendorSyncer(
 	}
 	if overrides.DriftService != nil {
 		syncer.driftService = overrides.DriftService
+	}
+	if overrides.AuditService != nil {
+		syncer.auditService = overrides.AuditService
 	}
 
 	return syncer
@@ -369,14 +376,10 @@ func (s *VendorSyncer) GetLockHash(vendorName, ref string) string {
 	return s.lockStore.GetHash(vendorName, ref)
 }
 
-// Audit checks lockfile status
-func (s *VendorSyncer) Audit() {
-	lock, err := s.lockStore.Load()
-	if err != nil {
-		s.ui.ShowWarning("Audit Failed", "No lockfile.")
-		return
-	}
-	s.ui.ShowSuccess(fmt.Sprintf("Audit Passed. %d vendors locked.", len(lock.Vendors)))
+// RunAudit runs the unified audit (verify + scan + license + drift) and returns a combined result.
+// ctx controls cancellation for network-dependent sub-checks.
+func (s *VendorSyncer) RunAudit(ctx context.Context, opts AuditOptions) (*types.AuditResult, error) {
+	return s.auditService.Audit(ctx, opts)
 }
 
 // ValidateConfig performs comprehensive config validation
