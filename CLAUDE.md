@@ -120,6 +120,7 @@ The codebase follows clean architecture principles with proper separation of con
    - **cache_store.go**: `CacheStore` interface - Incremental sync cache
    - **parallel_executor.go**: `ParallelExecutor` - Worker pool for concurrent vendor processing
    - **diff_service.go**: Diff service - Commit comparison between locked and latest versions
+   - **drift_service.go**: `DriftService` - Three-way drift detection (local/upstream/conflict risk)
    - **watch_service.go**: Watch service - File monitoring for auto-sync on config changes
    - **update_checker.go**: Update checker - Check for available updates without modifying files
    - **constants.go**: Path constants (`ConfigPath`, `LockPath`), git refs, license lists
@@ -638,6 +639,7 @@ git-vendor scan [options]            # Scan for CVE vulnerabilities (via OSV.dev
 git-vendor status                    # Check if local files match lockfile
 git-vendor check-updates             # Preview available updates
 git-vendor diff <vendor>             # Show commit history between locked and latest
+git-vendor drift [options] [vendor]  # Detect drift from origin (local + upstream)
 git-vendor watch                     # Auto-sync on config changes
 git-vendor sbom [options]            # Generate SBOM (CycloneDX/SPDX)
 git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/powershell)
@@ -676,6 +678,34 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - **Deleted files**: Files in lockfile but missing from disk
 - **Added files**: Files in vendor directories but not in lockfile
 - **Position-level drift**: For position-extracted mappings, verifies the target range hash matches the stored `source_hash` (local-only, no cloning)
+
+### Drift Command Flags
+
+```bash
+--dependency <name>  # Scope to specific vendor (also accepts positional arg)
+--offline            # Skip upstream fetch, report only local drift
+--detail             # Show line-level diff output per file
+--format=<fmt>       # Output format: table (default), json, or detail
+# Exit codes: 0=CLEAN (no drift), 1=DRIFTED or CONFLICT
+```
+
+**Behavior:** The drift command compares vendored files against their origin to detect divergence:
+- **Local drift**: Diff between locked commit state and current local files (local modifications)
+- **Upstream drift**: Diff between locked commit state and upstream HEAD (upstream changes since vendoring)
+- **Conflict risk**: Files with both local and upstream changes (merge conflict risk)
+- **Drift score**: Line-level percentage per file and per dependency (0% = identical, 100% = fully rewritten)
+
+**Algorithm:**
+1. Clone source repo, checkout locked commit → read original files
+2. Checkout latest HEAD → read upstream files (skipped in `--offline` mode)
+3. Read local files from disk
+4. Compute LCS-based line diff for local drift and upstream drift
+5. Report per-file and aggregate drift statistics
+
+**Limitations:**
+- Position-extracted mappings (`:L5-L20`) are skipped — use `verify` for position-level checks
+- LCS algorithm is O(n*m) per file; very large files (>10K lines) may be slow
+- Upstream fetch requires network access; use `--offline` for local-only analysis
 
 ### Scan Command Flags
 
@@ -781,6 +811,15 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 
 - `ExecutePreSync()` / `ExecutePostSync()` - Run pre/post sync shell hooks with timeout and env injection
 - `sanitizeEnvValue()` - Strip newlines/null bytes from environment variable values
+
+**drift_service.go:**
+
+- `Drift()` - Core drift detection: clones source, compares locked/local/upstream file states
+- `driftForVendorRef()` - Per-vendor three-way comparison (locked commit, local files, upstream HEAD)
+- `lineDiff()` - LCS-based line-level diff between two file contents
+- `longestCommonSubsequence()` - O(n*m) two-row DP for LCS length
+- `computeDriftSummary()` - Aggregate per-dependency stats into DriftSummary
+- `FormatDriftOutput()` - Human-readable table output for drift results
 
 **errors.go:**
 
