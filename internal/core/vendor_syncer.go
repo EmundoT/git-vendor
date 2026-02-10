@@ -519,6 +519,11 @@ func (s *VendorSyncer) Scan(failOn string) (*types.ScanResult, error) {
 	return s.vulnScanner.Scan(failOn)
 }
 
+// LicenseReport generates a license compliance report using the provided policy service.
+func (s *VendorSyncer) LicenseReport(policyService LicensePolicyServiceInterface, failOn string) (*types.LicenseReportResult, error) {
+	return policyService.GenerateReport(failOn)
+}
+
 // Drift detects drift between vendored files and their origin
 func (s *VendorSyncer) Drift(opts DriftOptions) (*types.DriftResult, error) {
 	return s.driftService.Drift(opts)
