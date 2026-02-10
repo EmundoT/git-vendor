@@ -25,7 +25,7 @@ const (
 )
 
 // ScanResult represents the complete vulnerability scan output.
-// This is the top-level structure returned by the scan command
+// ScanResult is the top-level structure returned by the scan command
 // and used for both JSON and table output formats.
 type ScanResult struct {
 	SchemaVersion string           `json:"schema_version"`
@@ -35,7 +35,7 @@ type ScanResult struct {
 }
 
 // ScanSummary contains aggregate statistics for the scan.
-// It provides a quick overview of the scan results including
+// ScanSummary provides a quick overview of the scan results including
 // counts by severity level and the overall result determination.
 type ScanSummary struct {
 	TotalDependencies int        `json:"total_dependencies"`
@@ -71,8 +71,8 @@ type DependencyScan struct {
 }
 
 // Vulnerability represents a single CVE/vulnerability finding.
-// This structure is designed to capture essential vulnerability information
-// from the OSV.dev API response in a normalized format.
+// Vulnerability captures essential vulnerability information from the
+// OSV.dev API response in a normalized format.
 type Vulnerability struct {
 	ID           string   `json:"id"`
 	Aliases      []string `json:"aliases"`
