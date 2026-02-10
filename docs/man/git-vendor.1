@@ -1,0 +1,167 @@
+.TH GIT-VENDOR 1 "2025-01-01" "git-vendor" "User Commands"
+.SH NAME
+git-vendor \- vendor specific files from Git repositories
+.SH SYNOPSIS
+.B git-vendor
+.I command
+[options]
+.SH DESCRIPTION
+git-vendor is a CLI tool for vendoring specific files and directories from Git
+repositories with deterministic locking, license compliance, and vulnerability
+scanning. It supports granular path mapping, allowing you to vendor individual
+files or line ranges rather than entire repositories.
+.PP
+git-vendor works as both a standalone command and a git subcommand:
+.B git-vendor sync
+and
+.B git vendor sync
+are equivalent.
+.SH COMMANDS
+.TP
+.B init
+Initialize the .git-vendor directory structure (vendor.yml, vendor.lock, licenses/).
+.TP
+.B add
+Add a vendor dependency using an interactive wizard. Paste a GitHub/GitLab URL
+to auto-extract repository, ref, and path.
+.TP
+.B edit
+Edit an existing vendor dependency interactively.
+.TP
+.B remove \fIname\fR
+Remove a vendor dependency by name and clean up its license file.
+.TP
+.B list
+List all configured vendors with their refs and path mappings.
+.TP
+.B sync \fR[\fIoptions\fR] [\fIvendor\fR]
+Sync dependencies at locked commit versions. Downloads files according to
+vendor.lock. If no lockfile exists, runs update first.
+.TP
+.B update \fR[\fIoptions\fR]
+Fetch latest commits for all vendors and regenerate vendor.lock.
+.TP
+.B validate
+Validate vendor.yml configuration and detect path conflicts between vendors.
+.TP
+.B verify \fR[\fB\-\-format=\fItable\fR|\fIjson\fR]
+Verify vendored files against SHA-256 hashes stored in vendor.lock.
+Exit code 0 = PASS, 1 = FAIL, 2 = WARN.
+.TP
+.B scan \fR[\fB\-\-fail-on \fIseverity\fR] [\fB\-\-format=\fItable\fR|\fIjson\fR]
+Scan vendored dependencies for known CVE vulnerabilities via OSV.dev.
+.TP
+.B sbom \fR[\fB\-\-format=\fIcyclonedx\fR|\fIspdx\fR] [\fB\-\-output \fIfile\fR]
+Generate a Software Bill of Materials from the lockfile.
+.TP
+.B status
+Check if local files are in sync with the lockfile.
+.TP
+.B check-updates
+Preview available updates without modifying files.
+.TP
+.B diff \fIvendor-name\fR
+Show commit history between the locked version and the latest available version.
+.TP
+.B watch
+Watch vendor.yml for changes and auto-sync (1-second debounce).
+.TP
+.B completion \fIshell\fR
+Generate shell completion scripts (bash, zsh, fish, powershell).
+.SH SYNC OPTIONS
+.TP
+.B \-\-dry-run
+Preview sync operations without making changes.
+.TP
+.B \-\-force
+Re-download all files, ignoring cache.
+.TP
+.B \-\-no-cache
+Disable incremental sync cache for this run.
+.TP
+.B \-\-parallel
+Enable parallel processing with worker pool.
+.TP
+.B \-\-workers \fIN\fR
+Set worker count for parallel mode (default: NumCPU, max 8). Requires \-\-parallel.
+.TP
+.B \-\-group \fIname\fR
+Sync only vendors in the specified group.
+.SH GLOBAL OPTIONS
+.TP
+.B \-\-verbose, \-v
+Show git commands being executed.
+.TP
+.B \-\-version
+Show version information.
+.TP
+.B \-\-help, \-h
+Show help.
+.SH FILES
+.TP
+.I .git-vendor/vendor.yml
+Vendor configuration file defining dependencies, refs, and path mappings.
+.TP
+.I .git-vendor/vendor.lock
+Lock file with exact commit hashes, SHA-256 file hashes, and timestamps.
+.TP
+.I .git-vendor/licenses/
+Directory containing cached license files for each vendor.
+.TP
+.I .git-vendor/.cache/
+Incremental sync cache (auto-generated, do not commit).
+.SH ENVIRONMENT
+.TP
+.B GITHUB_TOKEN
+GitHub personal access token. Increases API rate limits and enables private
+repository access for license detection and cloning.
+.TP
+.B GITLAB_TOKEN
+GitLab personal access token. Enables private repository access and license
+detection via GitLab API.
+.TP
+.B GIT_VENDOR_CACHE_TTL
+Duration for vulnerability scan cache (default: 24h).
+.SH EXIT STATUS
+.TP
+.B 0
+Success (or PASS for verify/scan commands).
+.TP
+.B 1
+Failure: errors, verification failures (modified/deleted files), or
+vulnerabilities found above threshold.
+.TP
+.B 2
+Warning: added files detected (verify), or scan incomplete.
+.SH EXAMPLES
+Initialize and add a dependency:
+.PP
+.RS
+.nf
+git-vendor init
+git-vendor add
+# Paste: https://github.com/owner/repo/blob/main/src/utils.go
+git-vendor sync
+.fi
+.RE
+.PP
+Parallel sync with force refresh:
+.PP
+.RS
+.nf
+git-vendor sync --parallel --force
+.fi
+.RE
+.PP
+CI/CD verification pipeline:
+.PP
+.RS
+.nf
+git-vendor validate && git-vendor sync && git-vendor verify
+.fi
+.RE
+.SH SEE ALSO
+.BR git (1),
+.BR git-submodule (1)
+.SH BUGS
+Report bugs at https://github.com/EmundoT/git-vendor/issues

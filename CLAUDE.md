@@ -447,7 +447,7 @@ Git operations use the `GitClient` interface (git_operations.go), delegating to 
 - `SystemGitClient` implements `GitClient` for production
 - Methods: `Init`, `AddRemote`, `Fetch`, `FetchAll`, `Checkout`, `GetHeadHash`, `Clone`, `ListTree`, `GetCommitLog`, `GetTagForCommit`
 - `gitFor(dir)` helper creates `*git.Git` instances per-call (cheap allocation, no I/O)
-- All git execution delegated to git-plumbing (`github.com/emundoT/git-plumbing`) — no direct `exec.Command` calls
+- All git execution delegated to git-plumbing (`github.com/EmundoT/git-plumbing`) — no direct `exec.Command` calls
 - `GetCommitLog` adapter converts `git.Commit` → `types.CommitInfo` with date formatting (`time.Time` → `"2006-01-02 15:04:05 -0700"`)
 - `GetTagForCommit` adapter calls `TagsAt()` then applies local semver preference via `isSemverTag()`
 - Standalone: `GetGitUserIdentity()` → `git.Git{}.UserIdentity()`, `IsGitInstalled()` → `git.IsInstalled()`
@@ -552,7 +552,7 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 
 **Runtime:**
 
-- `github.com/emundoT/git-plumbing` - Git CLI wrapper (self-vendored via git-vendor to `pkg/git-plumbing/`)
+- `github.com/EmundoT/git-plumbing` - Git CLI wrapper (self-vendored via git-vendor to `pkg/git-plumbing/`)
 - `github.com/charmbracelet/huh` - TUI forms
 - `github.com/charmbracelet/lipgloss` - styling
 - `gopkg.in/yaml.v3` - config file parsing
