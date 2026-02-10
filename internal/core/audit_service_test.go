@@ -19,7 +19,7 @@ type stubAuditVerifyService struct {
 	called bool
 }
 
-func (s *stubAuditVerifyService) Verify() (*types.VerifyResult, error) {
+func (s *stubAuditVerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 	s.called = true
 	return s.result, s.err
 }
@@ -47,7 +47,7 @@ type stubAuditDriftService struct {
 	called bool
 }
 
-func (s *stubAuditDriftService) Drift(_ DriftOptions) (*types.DriftResult, error) {
+func (s *stubAuditDriftService) Drift(_ context.Context, _ DriftOptions) (*types.DriftResult, error) {
 	s.called = true
 	return s.result, s.err
 }

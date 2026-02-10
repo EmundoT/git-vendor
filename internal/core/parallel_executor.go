@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"sync"
@@ -39,11 +40,14 @@ func NewParallelExecutor(opts types.ParallelOptions, ui UICallback) *ParallelExe
 	}
 }
 
-// SyncVendorFunc is a function type that syncs a single vendor
-type SyncVendorFunc func(v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error)
+// SyncVendorFunc is a function type that syncs a single vendor.
+// ctx controls cancellation of git operations for this vendor.
+type SyncVendorFunc func(ctx context.Context, v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error)
 
-// ExecuteParallelSync processes vendors in parallel using a worker pool
+// ExecuteParallelSync processes vendors in parallel using a worker pool.
+// ctx controls cancellation — passed to each worker goroutine.
 func (p *ParallelExecutor) ExecuteParallelSync(
+	ctx context.Context,
 	vendors []types.VendorSpec,
 	lockMap map[string]map[string]string,
 	opts SyncOptions,
@@ -67,7 +71,7 @@ func (p *ParallelExecutor) ExecuteParallelSync(
 	var wg sync.WaitGroup
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
-		go p.syncWorker(&wg, jobs, results, lockMap, opts, syncFunc)
+		go p.syncWorker(ctx, &wg, jobs, results, lockMap, opts, syncFunc)
 	}
 
 	// Send all vendors to the jobs channel
@@ -102,8 +106,10 @@ func (p *ParallelExecutor) ExecuteParallelSync(
 	return allResults, nil
 }
 
-// syncWorker is a worker goroutine that processes vendors from the jobs channel
+// syncWorker is a worker goroutine that processes vendors from the jobs channel.
+// ctx controls cancellation — checked before each vendor sync.
 func (p *ParallelExecutor) syncWorker(
+	ctx context.Context,
 	wg *sync.WaitGroup,
 	jobs <-chan types.VendorSpec,
 	results chan<- VendorResult,
@@ -114,6 +120,15 @@ func (p *ParallelExecutor) syncWorker(
 	defer wg.Done()
 
 	for vendor := range jobs {
+		// Short-circuit if context is cancelled
+		if ctx.Err() != nil {
+			results <- VendorResult{
+				Vendor: vendor,
+				Error:  ctx.Err(),
+			}
+			continue
+		}
+
 		// Get locked refs for this vendor (thread-safe read from lockMap)
 		var lockedRefs map[string]string
 		if lockMap != nil {
@@ -126,7 +141,7 @@ func (p *ParallelExecutor) syncWorker(
 		}
 
 		// Execute sync for this vendor
-		updatedRefs, stats, err := syncFunc(vendor, lockedRefs, opts)
+		updatedRefs, stats, err := syncFunc(ctx, vendor, lockedRefs, opts)
 
 		// Send result
 		results <- VendorResult{
@@ -138,11 +153,14 @@ func (p *ParallelExecutor) syncWorker(
 	}
 }
 
-// UpdateVendorFunc is a function type that updates a single vendor
-type UpdateVendorFunc func(v types.VendorSpec, opts SyncOptions) (map[string]RefMetadata, error)
+// UpdateVendorFunc is a function type that updates a single vendor.
+// ctx controls cancellation of git operations for this vendor.
+type UpdateVendorFunc func(ctx context.Context, v types.VendorSpec, opts SyncOptions) (map[string]RefMetadata, error)
 
-// ExecuteParallelUpdate processes vendor updates in parallel
+// ExecuteParallelUpdate processes vendor updates in parallel.
+// ctx controls cancellation — passed to each worker goroutine.
 func (p *ParallelExecutor) ExecuteParallelUpdate(
+	ctx context.Context,
 	vendors []types.VendorSpec,
 	updateFunc UpdateVendorFunc,
 ) ([]VendorResult, error) {
@@ -164,7 +182,7 @@ func (p *ParallelExecutor) ExecuteParallelUpdate(
 	var wg sync.WaitGroup
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
-		go p.updateWorker(&wg, jobs, results, updateFunc)
+		go p.updateWorker(ctx, &wg, jobs, results, updateFunc)
 	}
 
 	// Send jobs
@@ -197,8 +215,10 @@ func (p *ParallelExecutor) ExecuteParallelUpdate(
 	return allResults, nil
 }
 
-// updateWorker processes vendor updates
+// updateWorker processes vendor updates.
+// ctx controls cancellation — checked before each vendor update.
 func (p *ParallelExecutor) updateWorker(
+	ctx context.Context,
 	wg *sync.WaitGroup,
 	jobs <-chan types.VendorSpec,
 	results chan<- VendorResult,
@@ -207,8 +227,17 @@ func (p *ParallelExecutor) updateWorker(
 	defer wg.Done()
 
 	for vendor := range jobs {
+		// Short-circuit if context is cancelled
+		if ctx.Err() != nil {
+			results <- VendorResult{
+				Vendor: vendor,
+				Error:  ctx.Err(),
+			}
+			continue
+		}
+
 		// Update this vendor (force=true, no-cache=true for updates)
-		updatedRefs, err := updateFunc(vendor, SyncOptions{Force: true, NoCache: true})
+		updatedRefs, err := updateFunc(ctx, vendor, SyncOptions{Force: true, NoCache: true})
 
 		results <- VendorResult{
 			Vendor:      vendor,

@@ -63,7 +63,7 @@ func TestUpdateAll_HappyPath_SingleVendor(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 
 	// Verify
 	if err != nil {
@@ -118,7 +118,7 @@ func TestUpdateAll_HappyPath_MultipleVendors(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 
 	// Verify
 	if err != nil {
@@ -136,7 +136,7 @@ func TestUpdateAll_ConfigLoadFails(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 
 	// Verify
 	if err == nil {
@@ -196,7 +196,7 @@ func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 
 	// Verify: Overall success (UpdateAll continues on individual failures)
 	if err != nil {
@@ -232,7 +232,7 @@ func TestUpdateAll_LockSaveFails(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 
 	// Verify
 	if err == nil {
@@ -261,7 +261,7 @@ func TestUpdateAll_EmptyConfig(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 
 	// Verify
 	if err != nil {
@@ -307,7 +307,7 @@ func TestUpdateAll_TimestampFormat(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 
 	// Verify
 	if err != nil {
@@ -386,7 +386,7 @@ func TestUpdateAll_MultipleSpecsPerVendor(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 
 	// Verify
 	if err != nil {
@@ -428,7 +428,7 @@ func TestUpdateAll_LicensePathSet(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 
 	// Verify
 	if err != nil {
@@ -741,7 +741,7 @@ func TestUpdateAllWithParallel_SequentialFallback(t *testing.T) {
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
-	err := syncer.UpdateAllWithParallel(types.ParallelOptions{Enabled: false})
+	err := syncer.UpdateAllWithParallel(context.Background(), types.ParallelOptions{Enabled: false})
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
 	}
@@ -780,7 +780,7 @@ func TestUpdateAllWithParallel_ParallelMultipleVendors(t *testing.T) {
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
-	err := syncer.UpdateAllWithParallel(types.ParallelOptions{Enabled: true, MaxWorkers: 2})
+	err := syncer.UpdateAllWithParallel(context.Background(), types.ParallelOptions{Enabled: true, MaxWorkers: 2})
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
 	}
@@ -827,7 +827,7 @@ func TestUpdateAllWithParallel_ParallelPartialFailure(t *testing.T) {
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
-	err := syncer.UpdateAllWithParallel(types.ParallelOptions{Enabled: true, MaxWorkers: 2})
+	err := syncer.UpdateAllWithParallel(context.Background(), types.ParallelOptions{Enabled: true, MaxWorkers: 2})
 	if err != nil {
 		t.Fatalf("Expected success (partial results saved), got error: %v", err)
 	}

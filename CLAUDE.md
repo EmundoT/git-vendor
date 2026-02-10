@@ -521,7 +521,7 @@ Git operations use the `GitClient` interface (git_operations.go), delegating to 
 - Uses Go modules for dependency management
 - Comprehensive unit tests with mocks for all interfaces
 - Clear separation of concerns for maintainability
-- Uses context with timeouts for external operations
+- Uses context.Context for cancellation throughout all long-running operations (sync, update, verify, drift, check-updates, scan, audit)
 - Proper error propagation and handling
 - Consistent naming conventions and code style
 - Modular functions with single responsibility
@@ -632,9 +632,27 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 - `GIT_VENDOR_OSV_ENDPOINT` - Override OSV.dev base URL (e.g., `https://osv-proxy.internal.corp`). Enables air-gapped proxy deployments and test mocking. The `/v1/querybatch` path is appended automatically.
 - `GIT_VENDOR_CACHE_TTL` - Override default 24-hour scan cache TTL (Go duration format, e.g., `1h`, `30m`)
 
+### Context Propagation and Cancellation
+
+All long-running operations accept `context.Context` as their first parameter, enabling Ctrl+C cancellation from the CLI layer via `signal.NotifyContext`. Context flows through the entire call chain:
+
+```text
+main.go (signal.NotifyContext) → Manager → VendorSyncer → Service interfaces → git operations
+```
+
+**CLI commands with signal-aware context**: sync, update, verify, scan, audit, drift, check-updates.
+
+**Cancellation behavior**:
+- `ctx.Err()` checked at vendor loop boundaries for cooperative cancellation
+- Git operations (clone, fetch, checkout, ls-tree) respect parent context
+- Network requests (OSV.dev, GitHub API) derive timeouts from parent context
+- Parallel executor passes context to each worker goroutine
+
+**Exception**: Interactive wizard paths (`SaveVendor`, `RemoveVendor`) use `context.Background()` since they are user-driven and don't benefit from signal handling. Watch mode callback also uses `context.Background()` per invocation.
+
 ### Concurrency Considerations
 
-- Git operations use 30-second timeout contexts for directory listing
+- Git operations use 30-second timeout contexts for directory listing (derived from parent context)
 - Optional parallel vendor processing via --parallel flag
   - Worker pool pattern with configurable worker count
   - Default workers: runtime.NumCPU() (max 8)
