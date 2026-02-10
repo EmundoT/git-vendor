@@ -1,0 +1,29 @@
+schema_version: "1.1"
+vendors:
+    - name: git-plumbing
+      ref: main
+      commit_hash: f64b6ebce7e94f2da34e894e31511e5f98f0e73f
+      license_path: .git-vendor/licenses/git-plumbing.txt
+      updated: "2026-02-09T12:00:00Z"
+      file_hashes:
+        pkg/git-plumbing/branch.go: 8f03baa98c9e9ad938059e2f08dd3ac817d18f9b3b9c02a8a4defad7fc25000e
+        pkg/git-plumbing/commit.go: b5ce324c3d6281d5f1a5e6c95eb56a7af820f13c67258365b5ad48b105093732
+        pkg/git-plumbing/config.go: 92217cfe4f9a18261f395c8791f5b95c4a0bc7883d9fd9aad8fb0c83741fc720
+        pkg/git-plumbing/custom_refs.go: c40b382d6d7c49d15a6b02321380eb35dd37e64e30679da91a9e08f3315a9052
+        pkg/git-plumbing/diff.go: 4a08bfaab28a7cce34cc7e7ed040ccce61f652338ac575b34f8d5f5c787f2f2d
+        pkg/git-plumbing/errors.go: 434d0c1c82b741a17c2c42b5ba17f76931410f536c7d66ca0f9db20ec22b4ac6
+        pkg/git-plumbing/git.go: bae1fb1b597ffec56333252e412cd6d1014e7e7094e1f28ae43d51b9c63ac428
+        pkg/git-plumbing/go.mod: ba8b174b0f6e8980e72136a3a09666feb7f78e3a77e04f7439239c6cf9723621
+        pkg/git-plumbing/log.go: 0aae6bd96b93fef24157b8b57a09b4d0fbd80069deb7d4572e9c0e4a7389539f
+        pkg/git-plumbing/notes.go: cd4d0849e6f72ee5d23c95ec12005d78ec6f23e87a88cce4efaab9d2a7aaf349
+        pkg/git-plumbing/refs.go: 1839a70ce4e8e270c62374b56509e47da921d755dfb873350f4589094d189708
+        pkg/git-plumbing/remote.go: a43c291d3cd466a25de94e525b86f037b1a1a21c7a02a5e43365d0ba16a47388
+        pkg/git-plumbing/status.go: 48350a716088e9bbcaaf19986c280d5f7f92ffdcbb950d32ac3766d70e581fa4
+        pkg/git-plumbing/tag.go: 519344b4226fe479527d50a67bd8e228e4f4b7b4ee6c018a4e9496866db5238f
+        pkg/git-plumbing/testutil/fixtures.go: 333201a6322450ac2817ad496f85deea6df510f578a9676941ebd856ae32f3d4
+        pkg/git-plumbing/testutil/repo.go: ca92319eb5f6b61a1a1390ad421251c62f5aed4a314d160feca7f3f2ea8d9510
+        pkg/git-plumbing/tree.go: 970a2647353e1569943e8b91c510f82e2527969858c13d81459a0381cf91e489
+      license_spdx: MIT
+      vendored_at: "2026-02-09T12:00:00Z"
+      vendored_by: Claude <noreply@anthropic.com>
+      last_synced_at: "2026-02-09T12:00:00Z"

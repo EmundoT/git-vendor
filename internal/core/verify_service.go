@@ -109,6 +109,7 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 					Path:         path,
 					Vendor:       &vendorName,
 					Status:       "deleted",
+					Type:         "file",
 					ExpectedHash: &expectedHash,
 					ActualHash:   nil,
 				})
@@ -124,6 +125,7 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 				Path:         path,
 				Vendor:       &vendorName,
 				Status:       "verified",
+				Type:         "file",
 				ExpectedHash: &expectedHash,
 				ActualHash:   &actualHash,
 			})
@@ -134,6 +136,7 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 				Path:         path,
 				Vendor:       &vendorName,
 				Status:       "modified",
+				Type:         "file",
 				ExpectedHash: &expectedHash,
 				ActualHash:   &actualHash,
 			})
@@ -208,26 +211,35 @@ func (s *VerifyService) verifyPositions(lock types.VendorLock, result *types.Ver
 				}
 			}
 
+			posDetail := &types.PositionDetail{
+				From:       pos.From,
+				To:         pos.To,
+				SourceHash: pos.SourceHash,
+			}
+
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					result.Files = append(result.Files, types.FileStatus{
 						Path:         displayPath,
 						Vendor:       &vendorName,
 						Status:       "deleted",
+						Type:         "position",
 						ExpectedHash: &pos.SourceHash,
+						Position:     posDetail,
 					})
 					result.Summary.Deleted++
 					continue
 				}
 				// Extraction error (e.g., position out of range) — treat as modified
-				status := "modified"
 				errStr := err.Error()
 				result.Files = append(result.Files, types.FileStatus{
 					Path:         displayPath,
 					Vendor:       &vendorName,
-					Status:       status,
+					Status:       "modified",
+					Type:         "position",
 					ExpectedHash: &pos.SourceHash,
 					ActualHash:   &errStr,
+					Position:     posDetail,
 				})
 				result.Summary.Modified++
 				continue
@@ -238,8 +250,10 @@ func (s *VerifyService) verifyPositions(lock types.VendorLock, result *types.Ver
 					Path:         displayPath,
 					Vendor:       &vendorName,
 					Status:       "verified",
+					Type:         "position",
 					ExpectedHash: &pos.SourceHash,
 					ActualHash:   &actualHash,
+					Position:     posDetail,
 				})
 				result.Summary.Verified++
 			} else {
@@ -247,8 +261,10 @@ func (s *VerifyService) verifyPositions(lock types.VendorLock, result *types.Ver
 					Path:         displayPath,
 					Vendor:       &vendorName,
 					Status:       "modified",
+					Type:         "position",
 					ExpectedHash: &pos.SourceHash,
 					ActualHash:   &actualHash,
+					Position:     posDetail,
 				})
 				result.Summary.Modified++
 			}
@@ -328,8 +344,11 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 	// Walk each destination directory
 	for destDir := range destDirs {
 		err := filepath.WalkDir(destDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
+			if err != nil {
+				return fmt.Errorf("findAddedFiles: access %s: %w", path, err)
+			}
+			if d.IsDir() {
+				return nil
 			}
 
 			// Check if this file is in expected files
@@ -344,6 +363,7 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 					Path:       path,
 					Vendor:     nil, // Unknown vendor for added files
 					Status:     "added",
+					Type:       "file",
 					ActualHash: hashPtr,
 				})
 			}
@@ -352,7 +372,7 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 		})
 
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
+			return nil, fmt.Errorf("findAddedFiles: walk %s: %w", destDir, err)
 		}
 	}
 

@@ -234,7 +234,7 @@ func TestProperty_LockRoundTrip_Identity(t *testing.T) {
 					Name:        name,
 					Ref:         ref,
 					CommitHash:  hash,
-					LicensePath: "vendor/licenses/" + name + ".txt",
+					LicensePath: VendorDir + "/licenses/" + name + ".txt",
 					Updated:     "2024-01-01T00:00:00Z",
 				},
 			},
