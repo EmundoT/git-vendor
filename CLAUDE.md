@@ -127,6 +127,8 @@ The codebase follows clean architecture principles with proper separation of con
    - **license_policy_service.go**: `LicensePolicyServiceInterface` - Policy evaluation, report generation
    - **constants.go**: Path constants (`ConfigPath`, `LockPath`, `PolicyFile`), git refs, license lists
    - **errors.go**: Sentinel errors and structured error types (see Error Handling)
+   - **config_commands.go**: LLM-friendly config manipulation (Spec 072): create, rename, mapping CRUD, show, config get/set
+   - **cli_response.go**: CLIResponse JSON type, exit/error codes for Spec 072 commands
    - **mocks_test.go**: Mock implementations for testing
 
 3. **internal/tui/wizard.go** - Interactive user interface
@@ -699,6 +701,21 @@ git-vendor drift [options] [vendor]  # Detect drift from origin (local + upstrea
 git-vendor watch                     # Auto-sync on config changes
 git-vendor sbom [options]            # Generate SBOM (CycloneDX/SPDX)
 git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/powershell)
+
+# LLM-Friendly Commands (Spec 072) — non-interactive, JSON-capable
+git-vendor create <name> <url> [--ref <ref>] [--license <license>]   # Add vendor non-interactively
+git-vendor delete <name>             # Remove vendor (alias for remove)
+git-vendor rename <old> <new>        # Rename vendor across config/lock/license
+git-vendor add-mapping <vendor> <from> --to <to> [--ref <ref>]      # Add path mapping
+git-vendor remove-mapping <vendor> <from>                            # Remove path mapping
+git-vendor list-mappings <vendor>    # List mappings for a vendor
+git-vendor update-mapping <vendor> <from> --to <new-to>              # Update mapping destination
+git-vendor show <vendor>             # Show vendor details
+git-vendor check <vendor>            # Check per-vendor sync status
+git-vendor preview <vendor>          # Preview what would be synced
+git-vendor config list               # List all config key-value pairs
+git-vendor config get <key>          # Get config value (e.g., vendors.mylib.url)
+git-vendor config set <key> <value>  # Set config value
 ```
 
 ### Sync Command Flags
@@ -820,6 +837,40 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - Policy: `.git-vendor-policy.yml` (optional, project root)
 - Vendored files: User-specified paths (outside .git-vendor/)
 
+### LLM-Friendly CLI (Spec 072)
+
+Non-interactive CLI commands for programmatic vendor management. All support `--json` flag for structured output.
+
+**JSON Output Schema** (new commands only — existing commands retain their `JSONOutput` format):
+
+```json
+{
+  "success": true,
+  "data": { ... }
+}
+```
+
+Error response:
+
+```json
+{
+  "success": false,
+  "error": { "code": "VENDOR_NOT_FOUND", "message": "..." }
+}
+```
+
+**Exit Codes** (new commands): 0=Success, 1=General error, 2=Vendor not found, 3=Invalid arguments, 4=Config validation failed, 5=Network error.
+
+**Error Codes**: `VENDOR_NOT_FOUND`, `VENDOR_EXISTS`, `MAPPING_NOT_FOUND`, `MAPPING_EXISTS`, `INVALID_ARGUMENTS`, `NOT_INITIALIZED`, `CONFIG_ERROR`, `VALIDATION_FAILED`, `NETWORK_ERROR`, `INTERNAL_ERROR`, `REF_NOT_FOUND`, `INVALID_KEY`.
+
+**Config Key Format**: `vendors.<name>.<field>` where field is `url`, `license`, `ref`, `groups`, `name` (read-only).
+
+**Key Files:**
+- `internal/core/cli_response.go`: `CLIResponse` type, exit/error code constants, emit helpers
+- `internal/core/config_commands.go`: Config manipulation methods on VendorSyncer
+- `main.go`: CLI command cases (create, delete, rename, add-mapping, remove-mapping, list-mappings, update-mapping, show, check, preview, config)
+- `internal/core/config_commands_test.go`: 35 unit tests covering all new methods
+
 ### Important Functions by File
 
 **vendor_syncer.go:**
@@ -874,6 +925,24 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `CopyMappings()` - Orchestrate all file copy operations for a vendor ref
 - `copyWithPosition()` - Position-aware file copy (extract → place → track)
 - `checkLocalModifications()` - Detect local changes at target position before overwrite
+
+**config_commands.go:**
+
+- `CreateVendorEntry()` - Non-interactive vendor creation (config-only, no sync)
+- `RenameVendor()` - Rename vendor across config, lockfile, and license file
+- `AddMappingToVendor()` - Add path mapping to vendor's BranchSpec
+- `RemoveMappingFromVendor()` - Remove path mapping by source path
+- `UpdateMappingInVendor()` - Change mapping destination
+- `ShowVendor()` - Detailed vendor info combining config and lockfile
+- `GetConfigValue()` / `SetConfigValue()` - Dotted key-path config access
+- `CheckVendorStatus()` - Per-vendor sync status check
+
+**cli_response.go:**
+
+- `CLIResponse` / `CLIErrorDetail` - JSON output types for Spec 072 commands
+- `EmitCLISuccess()` / `EmitCLIError()` - JSON output helpers
+- `CLIExitCodeForError()` / `CLIErrorCodeForError()` - Error-to-code mappers
+- Exit code and error code constants
 
 **hook_service.go:**
 

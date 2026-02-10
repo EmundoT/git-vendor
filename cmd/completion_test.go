@@ -243,6 +243,17 @@ func TestGetCommandDescription(t *testing.T) {
 		{"watch", true, "Watch for config changes"},
 		{"completion", true, "Generate shell completion script"},
 		{"help", true, "Show help information"},
+		{"create", true, "Create vendor (non-interactive)"},
+		{"delete", true, "Delete vendor (alias for remove)"},
+		{"rename", true, "Rename a vendor"},
+		{"add-mapping", true, "Add path mapping to vendor"},
+		{"remove-mapping", true, "Remove path mapping from vendor"},
+		{"list-mappings", true, "List path mappings for vendor"},
+		{"update-mapping", true, "Update path mapping destination"},
+		{"show", true, "Show vendor details"},
+		{"check", true, "Check vendor sync status"},
+		{"preview", true, "Preview what would be synced"},
+		{"config", true, "Get or set configuration values"},
 		{"nonexistent", false, ""},
 	}
 
