@@ -8,7 +8,7 @@ type VendorConfig struct {
 	Vendors []VendorSpec `yaml:"vendors"`
 }
 
-// VendorSpec defines a single vendored dependency with its source repository and mappings.
+// VendorSpec defines a single vendored dependency with source repository URL and path mappings.
 type VendorSpec struct {
 	Name    string       `yaml:"name"`
 	URL     string       `yaml:"url"`
@@ -50,7 +50,7 @@ type LockDetails struct {
 	LicenseSPDX      string `yaml:"license_spdx,omitempty"`       // SPDX license identifier
 	SourceVersionTag string `yaml:"source_version_tag,omitempty"` // Git tag matching commit (if any)
 	VendoredAt       string `yaml:"vendored_at,omitempty"`        // ISO 8601 timestamp of initial vendoring
-	VendoredBy       string `yaml:"vendored_by,omitempty"`        // Git user identity who vendored it
+	VendoredBy       string `yaml:"vendored_by,omitempty"`        // Git user identity who performed the vendoring
 	LastSyncedAt     string `yaml:"last_synced_at,omitempty"`     // ISO 8601 timestamp of most recent sync
 
 	// Position extraction metadata (spec 071)
