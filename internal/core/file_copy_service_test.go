@@ -838,3 +838,69 @@ func TestCopyMappings_MixedWholeFileAndPosition_Stats(t *testing.T) {
 		t.Errorf("dir/sub.go not copied: %v", err)
 	}
 }
+
+// ============================================================================
+// cleanSourcePath Unit Tests
+// ============================================================================
+
+// TestCleanSourcePath_StripsBlobPrefix verifies that cleanSourcePath removes
+// "blob/<ref>/" prefixes that appear in GitHub deep-link URLs.
+func TestCleanSourcePath_StripsBlobPrefix(t *testing.T) {
+	svc := &FileCopyService{fs: NewOSFileSystem()}
+
+	tests := []struct {
+		path, ref, want string
+	}{
+		{"blob/main/src/file.go", "main", "src/file.go"},
+		{"tree/v1.0/src/lib/", "v1.0", "src/lib/"},
+		{"src/file.go", "main", "src/file.go"},                        // no prefix → unchanged
+		{"blob/main/blob/main/deep.go", "main", "blob/main/deep.go"}, // only first match stripped
+	}
+
+	for _, tt := range tests {
+		got := svc.cleanSourcePath(tt.path, tt.ref)
+		if got != tt.want {
+			t.Errorf("cleanSourcePath(%q, %q) = %q, want %q", tt.path, tt.ref, got, tt.want)
+		}
+	}
+}
+
+// ============================================================================
+// computeDestPath Unit Tests
+// ============================================================================
+
+// TestComputeDestPath_AutoPathStripsPosition verifies that computeDestPath strips
+// position specifiers from the source path before computing auto-path when the
+// destination is empty.
+func TestComputeDestPath_AutoPathStripsPosition(t *testing.T) {
+	svc := &FileCopyService{fs: NewOSFileSystem()}
+	vendor := &types.VendorSpec{Name: "test-vendor"}
+
+	// Source has position spec, dest is empty → auto-path from basename without position
+	mapping := types.PathMapping{From: "src/config.go:L1-L5", To: ""}
+	spec := types.BranchSpec{Ref: "main"}
+
+	got := svc.computeDestPath(mapping, spec, vendor)
+	// Auto-path should be based on "config.go" basename, not "config.go:L1-L5"
+	if strings.Contains(got, ":L") {
+		t.Errorf("computeDestPath should strip position from auto-path, got %q", got)
+	}
+	if !strings.Contains(got, "config.go") {
+		t.Errorf("computeDestPath should preserve base filename, got %q", got)
+	}
+}
+
+// TestComputeDestPath_ExplicitDestPreserved verifies that computeDestPath returns
+// the explicit destination path (including any position spec) when To is non-empty.
+func TestComputeDestPath_ExplicitDestPreserved(t *testing.T) {
+	svc := &FileCopyService{fs: NewOSFileSystem()}
+	vendor := &types.VendorSpec{Name: "test-vendor"}
+
+	mapping := types.PathMapping{From: "src/api.go:L5-L20", To: "lib/api.go:L10-L25"}
+	spec := types.BranchSpec{Ref: "main"}
+
+	got := svc.computeDestPath(mapping, spec, vendor)
+	if got != "lib/api.go:L10-L25" {
+		t.Errorf("computeDestPath should preserve explicit dest, got %q", got)
+	}
+}
