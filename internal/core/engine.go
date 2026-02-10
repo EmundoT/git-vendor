@@ -239,6 +239,53 @@ func (m *Manager) GenerateSBOM(format SBOMFormat, projectName string) ([]byte, e
 	return generator.Generate(format)
 }
 
+// === LLM-Friendly CLI Commands (Spec 072) ===
+
+// CreateVendorEntry adds a new vendor to config without triggering sync/update.
+func (m *Manager) CreateVendorEntry(name, url, ref, license string) error {
+	return m.syncer.CreateVendorEntry(name, url, ref, license)
+}
+
+// RenameVendor renames a vendor across config, lockfile, and license file.
+func (m *Manager) RenameVendor(oldName, newName string) error {
+	return m.syncer.RenameVendor(oldName, newName)
+}
+
+// AddMappingToVendor adds a path mapping to an existing vendor.
+func (m *Manager) AddMappingToVendor(vendorName, from, to, ref string) error {
+	return m.syncer.AddMappingToVendor(vendorName, from, to, ref)
+}
+
+// RemoveMappingFromVendor removes a path mapping from a vendor by source path.
+func (m *Manager) RemoveMappingFromVendor(vendorName, from string) error {
+	return m.syncer.RemoveMappingFromVendor(vendorName, from)
+}
+
+// UpdateMappingInVendor changes the destination of an existing mapping.
+func (m *Manager) UpdateMappingInVendor(vendorName, from, newTo string) error {
+	return m.syncer.UpdateMappingInVendor(vendorName, from, newTo)
+}
+
+// ShowVendor returns detailed vendor info combining config and lockfile data.
+func (m *Manager) ShowVendor(name string) (map[string]interface{}, error) {
+	return m.syncer.ShowVendor(name)
+}
+
+// GetConfigValue retrieves a config value by dotted key path.
+func (m *Manager) GetConfigValue(key string) (interface{}, error) {
+	return m.syncer.GetConfigValue(key)
+}
+
+// SetConfigValue sets a config value by dotted key path.
+func (m *Manager) SetConfigValue(key, value string) error {
+	return m.syncer.SetConfigValue(key, value)
+}
+
+// CheckVendorStatus checks the sync status of a single vendor.
+func (m *Manager) CheckVendorStatus(vendorName string) (map[string]interface{}, error) {
+	return m.syncer.CheckVendorStatus(vendorName)
+}
+
 // UpdateVerboseMode updates the verbose flag for git operations
 func (m *Manager) UpdateVerboseMode(verbose bool) {
 	// Update the global git client
