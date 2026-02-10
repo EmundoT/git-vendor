@@ -68,6 +68,12 @@ func extractFromContent(data string, pos *types.PositionSpec, filePath string) (
 }
 
 // extractColumns handles column-precise extraction.
+//
+// StartCol boundary asymmetry (intentional):
+// Single-line mode errors when StartCol > len(line) because there is nothing to extract.
+// Multi-line mode allows StartCol up to len(firstLine)+1 and clamps to the end,
+// because starting "past the end" of the first line means extracting only from
+// subsequent lines, which is semantically valid.
 func extractColumns(lines []string, pos *types.PositionSpec, filePath string) (string, error) {
 	// Single-line column extraction
 	if pos.StartLine == pos.EndLine {
