@@ -8,7 +8,7 @@ import (
 )
 
 // UpdateCheckerInterface defines the contract for checking vendor updates.
-// This interface enables mocking in tests and potential alternative update check strategies.
+// UpdateCheckerInterface enables mocking in tests and alternative update check strategies.
 type UpdateCheckerInterface interface {
 	CheckUpdates() ([]types.UpdateCheckResult, error)
 }

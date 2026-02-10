@@ -488,7 +488,7 @@ func TestIntegration_FullWorkflow_InitAddSyncUpdate(t *testing.T) {
 	}
 
 	// Verify vendor directory created
-	if _, err := os.Stat(filepath.Join(projectDir, "vendor")); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(projectDir, VendorDir)); errors.Is(err, os.ErrNotExist) {
 		t.Error("Vendor directory not created")
 	}
 

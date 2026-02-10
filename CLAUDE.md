@@ -172,6 +172,12 @@ VendorLock (vendor.lock)
       ├─ CommitHash: exact commit SHA
       ├─ LicensePath: path to cached license
       ├─ Updated: timestamp
+      ├─ FileHashes: map[string]string (path → SHA-256 hash)
+      ├─ LicenseSPDX: SPDX license identifier (schema v1.1)
+      ├─ SourceVersionTag: git tag matching commit (schema v1.1)
+      ├─ VendoredAt: ISO 8601 initial vendoring timestamp (schema v1.1)
+      ├─ VendoredBy: git user identity (schema v1.1)
+      ├─ LastSyncedAt: ISO 8601 most recent sync timestamp (schema v1.1)
       └─ Positions: []PositionLock (omitempty)
           └─ PositionLock
               ├─ From: source path with position (e.g., "api/constants.go:L4-L6")
@@ -217,7 +223,7 @@ Vendored files are copied to paths specified in the configuration (outside .git-
 
 ### Smart URL Parsing
 
-The `ParseSmartURL` function (git_operations.go:183) extracts repository, ref, and path from GitHub URLs:
+The `ParseSmartURL` function (git_operations.go:164) extracts repository, ref, and path from GitHub URLs:
 
 - `github.com/owner/repo` → base URL, no ref, no path
 - `github.com/owner/repo/blob/main/path/to/file.go` → base URL, "main", "path/to/file.go"
@@ -227,7 +233,7 @@ The `ParseSmartURL` function (git_operations.go:183) extracts repository, ref, a
 
 ### Remote Directory Browsing
 
-The `FetchRepoDir` function (vendor_syncer.go:632) browses remote repository contents without full checkout:
+The `FetchRepoDir` function (vendor_syncer.go:385, delegating to remote_explorer.go:40) browses remote repository contents without full checkout:
 
 1. Clone with `--filter=blob:none --no-checkout --depth 1`
 2. Fetch specific ref if needed
@@ -404,6 +410,7 @@ vendors:
 
 - **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
 - **`net/http.DetectContentType` for binary detection**: Rejected in favor of git's null-byte heuristic (scan first 8000 bytes for `\x00`). `DetectContentType` only inspects 512 bytes and can misclassify source code as `application/octet-stream`. The null-byte approach matches git's own `xdl_mmfile_istext` and has no false positives on valid text files including multi-byte UTF-8.
+- **Bare hex vs `sha256:` prefix in position verify**: `ComputeFileChecksum` returns bare hex, but `ExtractPosition` returns `"sha256:<hex>"`. When comparing hashes in `verifyPositions` for whole-file destinations (`destPos == nil`), MUST normalize `ComputeFileChecksum` output to `"sha256:"` prefix before comparing against `SourceHash`. Mixing formats causes false drift detection.
 
 ### Error Handling
 
@@ -597,12 +604,13 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 19. **errors.Is vs os.IsNotExist**: `os.IsNotExist()` does NOT unwrap `fmt.Errorf("%w")`-wrapped errors. MUST use `errors.Is(err, os.ErrNotExist)` when checking errors from functions that wrap (e.g., `ExtractPosition`)
 20. **Binary file detection**: `ExtractPosition` and `PlaceContent` (with position) reject binary files by scanning the first 8000 bytes for null bytes (git's heuristic). Null byte beyond 8000 bytes is NOT detected. Whole-file replacement (`PlaceContent` with nil pos) bypasses the check
 21. **Verify produces separate position-level and whole-file results**: A file with both types of lockfile entries gets two verification results; position-level can fail independently of whole-file
-22. **Position column semantics are byte-offset, not rune-offset**: Column numbers in `L1C5:L1C10` refer to byte positions in the Go string, not Unicode codepoints. For ASCII this is identical, but multi-byte characters (emoji=4 bytes, CJK=3 bytes, accented=2 bytes) require counting bytes. Extracting a partial multi-byte character produces invalid UTF-8.
-23. **CRLF normalized to LF in position extraction**: `extractFromContent` and `placeInContent` normalize `\r\n` → `\n` before processing. Extracted content always uses LF. Files with CRLF will have their line endings changed to LF after `PlaceContent`. Standalone `\r` (classic Mac) is NOT normalized.
-24. **Trailing newline creates phantom empty line**: A file ending with `\n` has one more "line" than visible content lines (e.g., `"a\nb\n"` = 3 lines: `"a"`, `"b"`, `""`). L5-EOF on a 5-line file with trailing newline captures the trailing newline; without trailing newline it does not.
-25. **Empty file has 1 line**: A 0-byte file splits to `[""]` (1 empty line). `L1` extracts empty string. `L2+` errors.
-26. **Sequential PlaceContent calls operate on modified content**: When two vendors write to different positions in the same file, the second call sees the file as modified by the first. If the first call changes line count, the second call's position targets shifted lines.
-27. **L1-EOF hash equals whole-file hash**: `L1-EOF` extraction produces content byte-identical to the raw file (after CRLF normalization), so the hash matches `sha256(file_content)`.
+22. **Hash format mismatch in verify**: `ComputeFileChecksum` returns bare hex, `ExtractPosition` returns `"sha256:<hex>"`. `verifyPositions` normalizes `ComputeFileChecksum` output with `"sha256:"` prefix for whole-file position destinations
+23. **Position column semantics are byte-offset, not rune-offset**: Column numbers in `L1C5:L1C10` refer to byte positions in the Go string, not Unicode codepoints. For ASCII this is identical, but multi-byte characters (emoji=4 bytes, CJK=3 bytes, accented=2 bytes) require counting bytes. Extracting a partial multi-byte character produces invalid UTF-8.
+24. **CRLF normalized to LF in position extraction**: `extractFromContent` and `placeInContent` normalize `\r\n` → `\n` before processing. Extracted content always uses LF. Files with CRLF will have their line endings changed to LF after `PlaceContent`. Standalone `\r` (classic Mac) is NOT normalized.
+25. **Trailing newline creates phantom empty line**: A file ending with `\n` has one more "line" than visible content lines (e.g., `"a\nb\n"` = 3 lines: `"a"`, `"b"`, `""`). L5-EOF on a 5-line file with trailing newline captures the trailing newline; without trailing newline it does not.
+26. **Empty file has 1 line**: A 0-byte file splits to `[""]` (1 empty line). `L1` extracts empty string. `L2+` errors.
+27. **Sequential PlaceContent calls operate on modified content**: When two vendors write to different positions in the same file, the second call sees the file as modified by the first. If the first call changes line count, the second call's position targets shifted lines.
+28. **L1-EOF hash equals whole-file hash**: `L1-EOF` extraction produces content byte-identical to the raw file (after CRLF normalization), so the hash matches `sha256(file_content)`.
 
 ## Quick Reference
 
@@ -679,7 +687,7 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - Results cached for 24 hours (configurable via `GIT_VENDOR_CACHE_TTL` env var)
 - Commit-level queries may miss vulnerabilities announced against version ranges
 
-**Cache:** Results cached in `.git-vendor-cache/osv/` with 24-hour TTL. Stale cache used as fallback when network unavailable.
+**Cache:** Results cached in `.git-vendor/.cache/osv/` with 24-hour TTL. Stale cache used as fallback when network unavailable.
 
 ### SBOM Command Flags
 

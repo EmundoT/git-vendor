@@ -4,6 +4,7 @@ package core
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -745,7 +746,7 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 		// Re-sync restores
 		manager.SyncWithOptions("del-recover", true, true)
 
-		if _, err := os.Stat(targetFile); os.IsNotExist(err) {
+		if _, err := os.Stat(targetFile); errors.Is(err, os.ErrNotExist) {
 			t.Error("File not restored after re-sync")
 		}
 
@@ -1239,7 +1240,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 
 		data, _ := os.ReadFile(logFile)
 		val := strings.TrimSpace(string(data))
-		// RootDir is set to VendorDir ("vendor") which is relative
+		// RootDir is set to VendorDir (".git-vendor") which is relative
 		if val == "" {
 			t.Error("GIT_VENDOR_ROOT is empty")
 		}
@@ -1269,7 +1270,7 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 		}
 
 		// File should NOT have been created
-		if _, statErr := os.Stat(filepath.Join(projectDir, "lib/v.txt")); !os.IsNotExist(statErr) {
+		if _, statErr := os.Stat(filepath.Join(projectDir, "lib/v.txt")); !errors.Is(statErr, os.ErrNotExist) {
 			t.Error("File created despite pre-sync hook failure")
 		}
 	})
@@ -1374,7 +1375,7 @@ func TestIntegration_UpdateAllLockfileSerializationFidelity(t *testing.T) {
 			}},
 		}
 		manager.SaveVendor(spec)
-		return manager, filepath.Join(projectDir, "vendor", "vendor.lock")
+		return manager, filepath.Join(projectDir, VendorDir, LockFile)
 	}
 
 	t.Run("RawYAMLHasPositionsKey", func(t *testing.T) {

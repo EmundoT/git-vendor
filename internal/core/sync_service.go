@@ -29,7 +29,7 @@ type RefMetadata struct {
 }
 
 // SyncServiceInterface defines the contract for vendor synchronization.
-// This interface enables mocking in tests and potential alternative sync strategies.
+// SyncServiceInterface enables mocking in tests and alternative sync strategies.
 type SyncServiceInterface interface {
 	// Sync synchronizes vendors based on the provided options, loading config and lock internally.
 	Sync(opts SyncOptions) error

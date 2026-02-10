@@ -12,8 +12,8 @@ import (
 // Verbose controls whether git commands are logged
 var Verbose = false
 
-// Manager provides the main API for git-vendor operations
-// It delegates to VendorSyncer for all business logic
+// Manager provides the main API for git-vendor operations.
+// Manager delegates to VendorSyncer for all business logic.
 type Manager struct {
 	RootDir string
 	syncer  *VendorSyncer

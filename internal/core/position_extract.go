@@ -127,9 +127,9 @@ func extractColumns(lines []string, pos *types.PositionSpec, filePath string) (s
 // If pos specifies a range, only that range in the target is replaced.
 //
 // Security: PlaceContent self-validates relative paths via ValidateDestPath to block
-// path traversal (e.g., "../../../etc/passwd"). Absolute paths are allowed through
-// because they originate from internal/test usage with temp directories. Production
-// callers also validate at the service layer — see file_copy_service.go:copyMapping.
+// path traversal (e.g., "../../../etc/passwd"). Absolute paths bypass validation
+// because absolute paths originate from internal/test usage with temp directories.
+// Production callers also validate at the service layer — see file_copy_service.go:copyMapping.
 func PlaceContent(filePath string, content string, pos *types.PositionSpec) error {
 	// Defense in depth: validate relative paths to block traversal.
 	// Absolute paths are skipped — they come from internal/test code using temp dirs.

@@ -18,7 +18,7 @@ type expectedFileInfo struct {
 }
 
 // VerifyServiceInterface defines the contract for file verification against lockfile.
-// This interface enables mocking in tests and potential alternative verification strategies.
+// VerifyServiceInterface enables mocking in tests and alternative verification strategies.
 type VerifyServiceInterface interface {
 	Verify() (*types.VerifyResult, error)
 }
@@ -202,7 +202,13 @@ func (s *VerifyService) verifyPositions(lock types.VendorLock, result *types.Ver
 				_, actualHash, err = ExtractPosition(destFile, destPos)
 			} else {
 				displayPath = destFile
-				actualHash, err = s.cache.ComputeFileChecksum(destFile)
+				// ComputeFileChecksum returns bare hex; normalize to "sha256:" prefix
+				// to match SourceHash format from ExtractPosition.
+				var hexHash string
+				hexHash, err = s.cache.ComputeFileChecksum(destFile)
+				if err == nil {
+					actualHash = fmt.Sprintf("sha256:%s", hexHash)
+				}
 			}
 
 			posDetail := &types.PositionDetail{
