@@ -22,6 +22,18 @@ var commands = []string{
 	"watch",
 	"completion",
 	"help",
+	// LLM-friendly commands (Spec 072)
+	"create",
+	"delete",
+	"rename",
+	"add-mapping",
+	"remove-mapping",
+	"list-mappings",
+	"update-mapping",
+	"show",
+	"check",
+	"preview",
+	"config",
 }
 
 // GenerateBashCompletion generates bash completion script
@@ -55,6 +67,30 @@ _git_vendor_completions() {
             ;;
         diff|watch)
             opts=""
+            ;;
+        create)
+            opts="--ref --license --json"
+            ;;
+        delete)
+            opts="--yes -y --quiet -q --json"
+            ;;
+        rename)
+            opts="--json"
+            ;;
+        add-mapping)
+            opts="--to --ref --json"
+            ;;
+        remove-mapping)
+            opts="--json"
+            ;;
+        list-mappings|show|check|preview)
+            opts="--json"
+            ;;
+        update-mapping)
+            opts="--to --json"
+            ;;
+        config)
+            opts="get set list --json"
             ;;
     esac
 
@@ -127,6 +163,43 @@ _git_vendor() {
                 completion)
                     _arguments '1:shell:(bash zsh fish powershell)'
                     ;;
+                create)
+                    _arguments \
+                        '--ref[Git ref to track]:ref:' \
+                        '--license[SPDX license identifier]:license:' \
+                        '--json[JSON output]'
+                    ;;
+                delete)
+                    _arguments \
+                        '--yes[Skip confirmation]' \
+                        '-y[Skip confirmation]' \
+                        '--quiet[Minimal output]' \
+                        '-q[Minimal output]' \
+                        '--json[JSON output]'
+                    ;;
+                rename)
+                    _arguments '--json[JSON output]'
+                    ;;
+                add-mapping)
+                    _arguments \
+                        '--to[Destination path]:path:' \
+                        '--ref[Target ref]:ref:' \
+                        '--json[JSON output]'
+                    ;;
+                remove-mapping)
+                    _arguments '--json[JSON output]'
+                    ;;
+                list-mappings|show|check|preview)
+                    _arguments '--json[JSON output]'
+                    ;;
+                update-mapping)
+                    _arguments \
+                        '--to[New destination path]:path:' \
+                        '--json[JSON output]'
+                    ;;
+                config)
+                    _arguments '1:subcommand:(get set list)'
+                    ;;
             esac
             ;;
     esac
@@ -172,6 +245,23 @@ func GenerateFishCompletion() string {
 
 	completions = append(completions, "# completion command shells")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from completion' -f -a 'bash zsh fish powershell'")
+
+	completions = append(completions, "# LLM-friendly command flags (Spec 072)")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from create' -l ref -d 'Git ref to track' -r")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from create' -l license -d 'SPDX license identifier' -r")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from create' -l json -d 'JSON output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from delete' -l yes -s y -d 'Skip confirmation'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from delete' -l quiet -s q -d 'Minimal output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from delete' -l json -d 'JSON output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from rename' -l json -d 'JSON output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from add-mapping' -l to -d 'Destination path' -r")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from add-mapping' -l ref -d 'Target ref' -r")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from add-mapping' -l json -d 'JSON output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from remove-mapping' -l json -d 'JSON output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from list-mappings show check preview' -l json -d 'JSON output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from update-mapping' -l to -d 'New destination path' -r")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from update-mapping' -l json -d 'JSON output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from config' -f -a 'get set list'")
 
 	return strings.Join(completions, "\n")
 }
@@ -232,6 +322,42 @@ Register-ArgumentCompleter -Native -CommandName git-vendor -ScriptBlock {
                         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
                     }
             }
+            'create' {
+                @('--ref', '--license', '--json') |
+                    Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                    }
+            }
+            'delete' {
+                @('--yes', '-y', '--quiet', '-q', '--json') |
+                    Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                    }
+            }
+            { $_ -in 'rename','remove-mapping','list-mappings','show','check','preview' } {
+                @('--json') |
+                    Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                    }
+            }
+            'add-mapping' {
+                @('--to', '--ref', '--json') |
+                    Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                    }
+            }
+            'update-mapping' {
+                @('--to', '--json') |
+                    Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                    }
+            }
+            'config' {
+                @('get', 'set', 'list', '--json') |
+                    Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                    }
+            }
         }
     }
 }
@@ -241,20 +367,31 @@ Register-ArgumentCompleter -Native -CommandName git-vendor -ScriptBlock {
 // getCommandDescription returns a short description for a command
 func getCommandDescription(cmd string) string {
 	descriptions := map[string]string{
-		"init":          "Initialize vendor directory",
-		"add":           "Add vendor dependency",
-		"edit":          "Edit vendor configuration",
-		"remove":        "Remove vendor dependency",
-		"list":          "List all vendors",
-		"sync":          "Sync dependencies at locked versions",
-		"update":        "Update lockfile with latest commits",
-		"validate":      "Validate config and check conflicts",
-		"status":        "Check sync status",
-		"check-updates": "Check for available updates",
-		"diff":          "Show commit differences",
-		"watch":         "Watch for config changes",
-		"completion":    "Generate shell completion script",
-		"help":          "Show help information",
+		"init":           "Initialize vendor directory",
+		"add":            "Add vendor dependency",
+		"edit":           "Edit vendor configuration",
+		"remove":         "Remove vendor dependency",
+		"list":           "List all vendors",
+		"sync":           "Sync dependencies at locked versions",
+		"update":         "Update lockfile with latest commits",
+		"validate":       "Validate config and check conflicts",
+		"status":         "Check sync status",
+		"check-updates":  "Check for available updates",
+		"diff":           "Show commit differences",
+		"watch":          "Watch for config changes",
+		"completion":     "Generate shell completion script",
+		"help":           "Show help information",
+		"create":         "Create vendor (non-interactive)",
+		"delete":         "Delete vendor (alias for remove)",
+		"rename":         "Rename a vendor",
+		"add-mapping":    "Add path mapping to vendor",
+		"remove-mapping": "Remove path mapping from vendor",
+		"list-mappings":  "List path mappings for vendor",
+		"update-mapping": "Update path mapping destination",
+		"show":           "Show vendor details",
+		"check":          "Check vendor sync status",
+		"preview":        "Preview what would be synced",
+		"config":         "Get or set configuration values",
 	}
 
 	if desc, ok := descriptions[cmd]; ok {
