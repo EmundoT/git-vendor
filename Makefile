@@ -82,6 +82,13 @@ build-dev:
 	go build -o git-vendor
 	@echo "Done! Binary: git-vendor"
 
+.PHONY: install-man
+install-man:
+	@echo "Installing man page..."
+	sudo mkdir -p /usr/local/share/man/man1
+	sudo cp docs/man/git-vendor.1 /usr/local/share/man/man1/
+	@echo "Done! Try: man git-vendor"
+
 .PHONY: clean
 clean:
 	@echo "Cleaning..."
