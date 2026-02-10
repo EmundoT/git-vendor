@@ -95,10 +95,20 @@ func (s *FileCopyService) copyMapping(tempDir string, vendor *types.VendorSpec, 
 	if err := s.fs.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
 		return CopyStats{}, err
 	}
+
+	// SEC-023: Check for binary content in whole-file copies and emit advisory warning.
+	// Binary files are allowed (user chose to vendor them) but get a warning to surface
+	// the fact. Uses the same null-byte heuristic as position extraction (first 8000 bytes).
+	var warnings []string
+	if srcData, readErr := os.ReadFile(srcPath); readErr == nil && IsBinaryContent(srcData) {
+		warnings = append(warnings, fmt.Sprintf("%s appears to be a binary file", srcFile))
+	}
+
 	stats, err := s.fs.CopyFile(srcPath, destFile)
 	if err != nil {
 		return CopyStats{}, fmt.Errorf("failed to copy file %s to %s: %w", srcPath, destFile, err)
 	}
+	stats.Warnings = warnings
 	return stats, nil
 }
 

@@ -9,6 +9,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// maxYAMLFileSize is the maximum size of a vendor.yml or vendor.lock file (1 MB).
+// SEC-020: Prevents memory exhaustion from maliciously crafted or accidentally
+// oversized files. A config with 500 vendors and detailed mappings is well under
+// 100 KB, so 1 MB is generous.
+const maxYAMLFileSize = 1 << 20 // 1 MB
+
 // YAMLStore provides generic YAML file I/O operations.
 // YAMLStore consolidates duplicate code between ConfigStore and LockStore.
 // It's a perfect use case for Go 1.18+ generics.
@@ -37,9 +43,23 @@ func (s *YAMLStore[T]) Path() string {
 	return filepath.Join(s.rootDir, s.filename)
 }
 
-// Load reads and unmarshals the YAML file into type T
+// Load reads and unmarshals the YAML file into type T.
+// SEC-020: Rejects files larger than maxYAMLFileSize (1 MB) to prevent
+// memory exhaustion from oversized config files.
 func (s *YAMLStore[T]) Load() (T, error) {
 	var result T
+
+	// SEC-020: Check file size before reading to prevent memory exhaustion
+	info, err := os.Stat(s.Path())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) && s.allowMissing {
+			return result, nil
+		}
+		return result, err
+	}
+	if info.Size() > maxYAMLFileSize {
+		return result, fmt.Errorf("%s exceeds maximum size (%d bytes > %d byte limit)", s.filename, info.Size(), maxYAMLFileSize)
+	}
 
 	data, err := os.ReadFile(s.Path())
 	if err != nil {
