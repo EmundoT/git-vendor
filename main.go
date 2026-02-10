@@ -1584,6 +1584,112 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "audit":
+		// Parse command-specific flags
+		format := "table"
+		skipVerify := false
+		skipScan := false
+		skipLicense := false
+		skipDrift := false
+		scanFailOn := ""
+		licenseFailOn := "deny"
+		policyPath := ""
+		verbose := false
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			case arg == "--skip-verify":
+				skipVerify = true
+			case arg == "--skip-scan":
+				skipScan = true
+			case arg == "--skip-license":
+				skipLicense = true
+			case arg == "--skip-drift":
+				skipDrift = true
+			case strings.HasPrefix(arg, "--fail-on="):
+				scanFailOn = strings.TrimPrefix(arg, "--fail-on=")
+			case arg == "--fail-on":
+				if i+1 < len(os.Args) {
+					scanFailOn = os.Args[i+1]
+					i++
+				}
+			case strings.HasPrefix(arg, "--license-fail-on="):
+				licenseFailOn = strings.TrimPrefix(arg, "--license-fail-on=")
+			case arg == "--license-fail-on":
+				if i+1 < len(os.Args) {
+					licenseFailOn = os.Args[i+1]
+					i++
+				}
+			case strings.HasPrefix(arg, "--policy="):
+				policyPath = strings.TrimPrefix(arg, "--policy=")
+			case arg == "--policy":
+				if i+1 < len(os.Args) {
+					policyPath = os.Args[i+1]
+					i++
+				}
+			case arg == "--verbose" || arg == "-v":
+				verbose = true
+			}
+		}
+
+		if verbose {
+			core.Verbose = true
+			manager.UpdateVerboseMode(true)
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		// Run unified audit with signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		auditResult, err := manager.RunAudit(ctx, core.AuditOptions{
+			SkipVerify:        skipVerify,
+			SkipScan:          skipScan,
+			SkipLicense:       skipLicense,
+			SkipDrift:         skipDrift,
+			ScanFailOn:        scanFailOn,
+			LicenseFailOn:     licenseFailOn,
+			LicensePolicyPath: policyPath,
+		})
+		if err != nil {
+			tui.PrintError("Audit Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(auditResult); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			fmt.Print(core.FormatAuditTable(auditResult))
+		}
+
+		// Exit codes: 0=PASS, 1=FAIL, 2=WARN
+		switch auditResult.Summary.Result {
+		case "PASS":
+			os.Exit(0)
+		case "WARN":
+			os.Exit(2)
+		default: // FAIL
+			os.Exit(1)
+		}
+
 	// =====================================================================
 	// LLM-Friendly CLI Commands (Spec 072)
 	// =====================================================================

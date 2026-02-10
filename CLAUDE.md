@@ -696,6 +696,7 @@ git-vendor validate                  # Validate config and detect conflicts
 git-vendor verify [options]          # Verify files against lockfile hashes
 git-vendor scan [options]            # Scan for CVE vulnerabilities (via OSV.dev)
 git-vendor license [options]         # Check license compliance against policy
+git-vendor audit [options]           # Unified audit: verify + scan + license + drift
 git-vendor status                    # Check if local files match lockfile
 git-vendor check-updates             # Preview available updates
 git-vendor diff <vendor>             # Show commit history between locked and latest
@@ -812,6 +813,23 @@ git-vendor config set <key> <value>  # Set config value
 ```
 
 **Behavior:** The license command evaluates all vendored dependencies against the license policy. Without a policy file, uses the default `AllowedLicenses` list. With a policy file, uses deny/warn/allow semantics with configurable unknown-license handling.
+
+### Audit Command Flags
+
+```bash
+--format=<fmt>         # Output format: table (default) or json
+--skip-verify          # Skip file integrity check
+--skip-scan            # Skip vulnerability scan
+--skip-license         # Skip license compliance check
+--skip-drift           # Skip drift detection
+--fail-on <severity>   # Severity threshold for scan (critical|high|medium|low)
+--license-fail-on <l>  # License fail level: deny (default) or warn
+--policy <path>        # License policy file path
+--verbose, -v          # Show git commands
+# Exit codes: 0=PASS, 1=FAIL, 2=WARN
+```
+
+**Behavior:** The audit command runs verify + scan + license + drift as sub-checks and produces a combined pass/fail report. Each sub-check is independently error-handled — a failure in one does not prevent the others from running. Combined result: FAIL if any sub-check fails, WARN if any warns (but none fail), PASS otherwise. Non-fatal errors (e.g., network failures) are collected in `summary.errors`.
 
 ### SBOM Command Flags
 
@@ -945,6 +963,13 @@ Error response:
 - `EmitCLISuccess()` / `EmitCLIError()` - JSON output helpers
 - `CLIExitCodeForError()` / `CLIErrorCodeForError()` - Error-to-code mappers
 - Exit code and error code constants
+
+**audit_service.go:**
+
+- `AuditServiceInterface` - Contract for the unified audit command
+- `AuditService` - Orchestrates verify, scan, license, drift sub-checks into combined report
+- `Audit(ctx, opts)` - Run all enabled sub-checks; failed sub-check does NOT abort others
+- `FormatAuditTable()` - Human-readable dotted-line table formatter for AuditResult
 
 **hook_service.go:**
 
