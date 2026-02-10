@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ import (
 func TestLoadConfig(t *testing.T) {
 	t.Run("Load valid config", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -39,12 +40,12 @@ func TestLoadConfig(t *testing.T) {
 			},
 		}
 
-		// Save it first
+		// Save config first
 		if err := m.saveConfig(expectedConfig); err != nil {
 			t.Fatalf("Failed to save config: %v", err)
 		}
 
-		// Now load it
+		// Load saved config
 		loadedConfig, err := m.loadConfig()
 		if err != nil {
 			t.Fatalf("loadConfig() error = %v", err)
@@ -67,7 +68,7 @@ func TestLoadConfig(t *testing.T) {
 
 	t.Run("Return empty config when file doesn't exist", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -80,11 +81,11 @@ func TestLoadConfig(t *testing.T) {
 		}
 	})
 
-	// Skipping this test as yaml.v3 is very lenient and accepts most formats
+	// Skipping malformed-YAML test as yaml.v3 is very lenient and accepts most formats
 	// The important validation is done in other tests
 	// t.Run("Error when config file is malformed", func(t *testing.T) {
 	// 	tempDir := t.TempDir()
-	// 	vendorDir := filepath.Join(tempDir, "vendor")
+	// 	vendorDir := filepath.Join(tempDir, VendorDir)
 	// 	m := newTestManager(vendorDir)
 	//
 	// 	// Write invalid YAML
@@ -102,7 +103,7 @@ func TestLoadConfig(t *testing.T) {
 
 	t.Run("Load config with multiple vendors", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -150,11 +151,10 @@ func TestLoadConfig(t *testing.T) {
 	})
 }
 
-// TestSaveConfig tests config file saving
 func TestSaveConfig(t *testing.T) {
 	t.Run("Save config to new file", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		// Create directory first (saveConfig doesn't create directories)
 		_ = os.MkdirAll(m.RootDir, 0755)
@@ -182,14 +182,14 @@ func TestSaveConfig(t *testing.T) {
 
 		// Verify file exists
 		configPath := filepath.Join(m.RootDir, "vendor.yml")
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
 			t.Error("saveConfig() did not create vendor.yml file")
 		}
 	})
 
 	t.Run("Save config preserves all fields", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -217,7 +217,7 @@ func TestSaveConfig(t *testing.T) {
 			t.Fatalf("saveConfig() error = %v", err)
 		}
 
-		// Load it back
+		// Load config back
 		loadedConfig, err := m.loadConfig()
 		if err != nil {
 			t.Fatalf("loadConfig() error = %v", err)
@@ -244,11 +244,10 @@ func TestSaveConfig(t *testing.T) {
 // Lock Store Tests
 // ============================================================================
 
-// TestLoadLock tests lock file loading
 func TestLoadLock(t *testing.T) {
 	t.Run("Load valid lock file", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -264,12 +263,12 @@ func TestLoadLock(t *testing.T) {
 			},
 		}
 
-		// Save it first
+		// Save lock first
 		if err := m.saveLock(expectedLock); err != nil {
 			t.Fatalf("Failed to save lock: %v", err)
 		}
 
-		// Load it back
+		// Load lock back
 		loadedLock, err := m.loadLock()
 		if err != nil {
 			t.Fatalf("loadLock() error = %v", err)
@@ -290,7 +289,7 @@ func TestLoadLock(t *testing.T) {
 
 	t.Run("Error when lock file doesn't exist", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -302,7 +301,7 @@ func TestLoadLock(t *testing.T) {
 
 	t.Run("Error when lock file is malformed", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -321,7 +320,7 @@ func TestLoadLock(t *testing.T) {
 
 	t.Run("Load lock with multiple vendors", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -357,11 +356,10 @@ func TestLoadLock(t *testing.T) {
 	})
 }
 
-// TestSaveLock tests lock file saving
 func TestSaveLock(t *testing.T) {
 	t.Run("Save lock to new file", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		// Create directory first (saveLock doesn't create directories)
 		_ = os.MkdirAll(m.RootDir, 0755)
@@ -383,14 +381,14 @@ func TestSaveLock(t *testing.T) {
 
 		// Verify file exists
 		lockPath := filepath.Join(m.RootDir, "vendor.lock")
-		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 			t.Error("saveLock() did not create vendor.lock file")
 		}
 	})
 
 	t.Run("Save lock preserves all fields", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -410,7 +408,7 @@ func TestSaveLock(t *testing.T) {
 			t.Fatalf("saveLock() error = %v", err)
 		}
 
-		// Load it back
+		// Load lock back
 		loadedLock, err := m.loadLock()
 		if err != nil {
 			t.Fatalf("loadLock() error = %v", err)
@@ -438,7 +436,7 @@ func TestSaveLock(t *testing.T) {
 
 	t.Run("Save empty lock file", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 
@@ -571,7 +569,7 @@ extra_data: true`,
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tempDir := t.TempDir()
-			vendorDir := filepath.Join(tempDir, "vendor")
+			vendorDir := filepath.Join(tempDir, VendorDir)
 			_ = os.MkdirAll(vendorDir, 0755)
 
 			// Write test YAML
@@ -633,7 +631,7 @@ func TestLoadLock_EdgeCases(t *testing.T) {
   - name: "complete"
     ref: "v1.0.0"
     commit_hash: "abc123def456"
-    license_path: "vendor/licenses/complete.txt"
+    license_path: ".git-vendor/licenses/complete.txt"
     updated: "2025-01-15T12:30:45Z"`,
 			wantErr:   false,
 			wantCount: 1,
@@ -663,7 +661,7 @@ func TestLoadLock_EdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tempDir := t.TempDir()
-			vendorDir := filepath.Join(tempDir, "vendor")
+			vendorDir := filepath.Join(tempDir, VendorDir)
 			_ = os.MkdirAll(vendorDir, 0755)
 
 			// Write test YAML
@@ -696,7 +694,7 @@ func TestLoadLock_EdgeCases(t *testing.T) {
 func TestConfig_LargeFile(t *testing.T) {
 	t.Run("Config with 100 vendors", func(t *testing.T) {
 		tempDir := t.TempDir()
-		vendorDir := filepath.Join(tempDir, "vendor")
+		vendorDir := filepath.Join(tempDir, VendorDir)
 		m := newTestManager(vendorDir)
 		_ = os.MkdirAll(m.RootDir, 0755)
 

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,7 +30,9 @@ func NewFileCopyService(fs FileSystem) *FileCopyService {
 	}
 }
 
-// CopyMappings copies all files according to path mappings for a vendor spec
+// CopyMappings copies all files according to path mappings for a vendor spec.
+// Security: CopyMappings validates all destination paths via ValidateDestPath
+// in copyMapping before any file I/O occurs.
 func (s *FileCopyService) CopyMappings(tempDir string, vendor *types.VendorSpec, spec types.BranchSpec) (CopyStats, error) {
 	var totalStats CopyStats
 
@@ -104,7 +107,7 @@ func (s *FileCopyService) copyWithPosition(srcPath, destFile string, srcPos, des
 	// Extract content from source at the specified position
 	content, hash, err := ExtractPosition(srcPath, srcPos)
 	if err != nil {
-		if strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "does not exist") {
+		if errors.Is(err, os.ErrNotExist) {
 			return CopyStats{}, NewPathNotFoundError(srcClean, vendorName, ref)
 		}
 		return CopyStats{}, fmt.Errorf("extract position from %s: %w", srcClean, err)
@@ -153,11 +156,12 @@ func (s *FileCopyService) checkLocalModifications(destFile string, destPos *type
 		}
 	} else {
 		// Destination is whole-file — compare entire content
+		// Normalize CRLF to match incoming content (which was CRLF-normalized during extraction)
 		data, err := os.ReadFile(destFile)
 		if err != nil {
 			return "" // File doesn't exist yet — no warning needed
 		}
-		if string(data) != incomingContent {
+		if normalizeCRLF(string(data)) != incomingContent {
 			return fmt.Sprintf("%s has local modifications that will be overwritten", destFile)
 		}
 	}

@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -41,15 +42,19 @@ func createTestRepository(t *testing.T, name string) string {
 	}
 
 	// Initialize git repo
-	runGit(t, repoDir, "init")
-	runGit(t, repoDir, "config", "user.email", "test@example.com")
-	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGitOutput(t, repoDir, "init")
+	runGitOutput(t, repoDir, "config", "user.email", "test@example.com")
+	runGitOutput(t, repoDir, "config", "user.name", "Test User")
+	runGitOutput(t, repoDir, "config", "commit.gpgsign", "false")
 
 	return repoDir
 }
 
-// runGit executes a git command in the specified directory
-func runGit(t *testing.T, dir string, args ...string) string {
+// runGitOutput executes a git command and returns trimmed stdout. Used in
+// integration tests where per-repo config (gpgsign=false) is set in
+// createTestRepository. Contrast with runGitSilent (git_operations_test.go)
+// which discards output and injects gpgsign=false per invocation.
+func runGitOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -75,7 +80,7 @@ func writeFile(t *testing.T, path, content string) {
 // getCommitHash returns the current HEAD commit hash
 func getCommitHash(t *testing.T, dir string) string {
 	t.Helper()
-	return runGit(t, dir, "rev-parse", "HEAD")
+	return runGitOutput(t, dir, "rev-parse", "HEAD")
 }
 
 // ============================================================================
@@ -90,8 +95,8 @@ func TestIntegration_GitOperations_Clone(t *testing.T) {
 	srcRepo := createTestRepository(t, "source")
 	writeFile(t, filepath.Join(srcRepo, "README.md"), "# Test Repository")
 	writeFile(t, filepath.Join(srcRepo, "src/main.go"), "package main\n\nfunc main() {}\n")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Initial commit")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Initial commit")
 
 	// Create destination for clone
 	destDir := filepath.Join(t.TempDir(), "clone")
@@ -116,15 +121,15 @@ func TestIntegration_GitOperations_Clone(t *testing.T) {
 	}
 
 	// Verify files exist
-	if _, err := os.Stat(filepath.Join(destDir, "README.md")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destDir, "README.md")); errors.Is(err, os.ErrNotExist) {
 		t.Error("README.md not found after clone")
 	}
-	if _, err := os.Stat(filepath.Join(destDir, "src/main.go")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(destDir, "src/main.go")); errors.Is(err, os.ErrNotExist) {
 		t.Error("src/main.go not found after clone")
 	}
 
 	// Verify shallow clone (only 1 commit)
-	commitCount := runGit(t, destDir, "rev-list", "--count", "HEAD")
+	commitCount := runGitOutput(t, destDir, "rev-list", "--count", "HEAD")
 	if commitCount != "1" {
 		t.Errorf("Expected 1 commit in shallow clone, got %s", commitCount)
 	}
@@ -140,8 +145,8 @@ func TestIntegration_GitOperations_ListTree(t *testing.T) {
 	writeFile(t, filepath.Join(repo, "src/lib.go"), "library code")
 	writeFile(t, filepath.Join(repo, "src/util/helper.go"), "helper code")
 	writeFile(t, filepath.Join(repo, "docs/guide.md"), "documentation")
-	runGit(t, repo, "add", ".")
-	runGit(t, repo, "commit", "-m", "Add files")
+	runGitOutput(t, repo, "add", ".")
+	runGitOutput(t, repo, "commit", "-m", "Add files")
 
 	// Test: ListTree at root
 	gitClient := NewSystemGitClient(false)
@@ -192,8 +197,8 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software.`
 	writeFile(t, filepath.Join(repo, "LICENSE"), mitLicense)
 	writeFile(t, filepath.Join(repo, "README.md"), "# Licensed Project")
-	runGit(t, repo, "add", ".")
-	runGit(t, repo, "commit", "-m", "Add license")
+	runGitOutput(t, repo, "add", ".")
+	runGitOutput(t, repo, "commit", "-m", "Add license")
 
 	// Test: FallbackLicenseChecker detects MIT
 	fs := NewOSFileSystem()
@@ -224,8 +229,8 @@ http://www.apache.org/licenses/
 
 TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION`
 	writeFile(t, filepath.Join(repo, "LICENSE"), apacheLicense)
-	runGit(t, repo, "add", ".")
-	runGit(t, repo, "commit", "-m", "Add Apache license")
+	runGitOutput(t, repo, "add", ".")
+	runGitOutput(t, repo, "commit", "-m", "Add Apache license")
 
 	// Test: FallbackLicenseChecker detects Apache-2.0
 	fs := NewOSFileSystem()
@@ -251,14 +256,14 @@ func TestIntegration_GitOperations_Fetch(t *testing.T) {
 	// Create source repository with multiple commits
 	srcRepo := createTestRepository(t, "fetch-source")
 	writeFile(t, filepath.Join(srcRepo, "v1.txt"), "version 1")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Version 1")
-	runGit(t, srcRepo, "tag", "v1.0")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Version 1")
+	runGitOutput(t, srcRepo, "tag", "v1.0")
 
 	writeFile(t, filepath.Join(srcRepo, "v2.txt"), "version 2")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Version 2")
-	runGit(t, srcRepo, "tag", "v2.0")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Version 2")
+	runGitOutput(t, srcRepo, "tag", "v2.0")
 
 	// Create bare repo to fetch into
 	destRepo := createTestRepository(t, "fetch-dest")
@@ -298,13 +303,13 @@ func TestIntegration_GitOperations_Checkout(t *testing.T) {
 	// Create repository with two commits
 	repo := createTestRepository(t, "checkout-test")
 	writeFile(t, filepath.Join(repo, "file.txt"), "first")
-	runGit(t, repo, "add", ".")
-	runGit(t, repo, "commit", "-m", "First")
+	runGitOutput(t, repo, "add", ".")
+	runGitOutput(t, repo, "commit", "-m", "First")
 	firstHash := getCommitHash(t, repo)
 
 	writeFile(t, filepath.Join(repo, "file.txt"), "second")
-	runGit(t, repo, "add", ".")
-	runGit(t, repo, "commit", "-m", "Second")
+	runGitOutput(t, repo, "add", ".")
+	runGitOutput(t, repo, "commit", "-m", "Second")
 
 	gitClient := NewSystemGitClient(false)
 
@@ -337,8 +342,8 @@ func TestIntegration_GitOperations_GetHeadHash(t *testing.T) {
 	// Create repository with commit
 	repo := createTestRepository(t, "hash-test")
 	writeFile(t, filepath.Join(repo, "README.md"), "test")
-	runGit(t, repo, "add", ".")
-	runGit(t, repo, "commit", "-m", "Test commit")
+	runGitOutput(t, repo, "add", ".")
+	runGitOutput(t, repo, "commit", "-m", "Test commit")
 
 	expectedHash := getCommitHash(t, repo)
 
@@ -395,7 +400,7 @@ func TestIntegration_PathMapping_CopyNestedDirectories(t *testing.T) {
 		filepath.Join(destDir, "dest/lib/custom/helper.go"),
 	}
 	for _, file := range expectedFiles {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
+		if _, err := os.Stat(file); errors.Is(err, os.ErrNotExist) {
 			t.Errorf("Expected file %s not found", file)
 		}
 	}
@@ -460,13 +465,13 @@ func TestIntegration_FullWorkflow_InitAddSyncUpdate(t *testing.T) {
 	writeFile(t, filepath.Join(srcRepo, "README.md"), "# Source Repo")
 	writeFile(t, filepath.Join(srcRepo, "src/lib.go"), "package lib\n\nfunc Hello() string { return \"world\" }\n")
 	writeFile(t, filepath.Join(srcRepo, "LICENSE"), "MIT License\n\nPermission is hereby granted...")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Initial commit")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Initial commit")
 
 	// Create second commit for update testing
 	writeFile(t, filepath.Join(srcRepo, "src/util.go"), "package lib\n\nfunc Util() {}\n")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Add util")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Add util")
 	secondHash := getCommitHash(t, srcRepo)
 
 	// Setup project directory
@@ -486,7 +491,7 @@ func TestIntegration_FullWorkflow_InitAddSyncUpdate(t *testing.T) {
 	}
 
 	// Verify vendor directory created
-	if _, err := os.Stat(filepath.Join(projectDir, "vendor")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(projectDir, VendorDir)); errors.Is(err, os.ErrNotExist) {
 		t.Error("Vendor directory not created")
 	}
 
@@ -538,7 +543,7 @@ func TestIntegration_FullWorkflow_InitAddSyncUpdate(t *testing.T) {
 
 	// Verify files copied
 	importedFile := filepath.Join(projectDir, "lib/imported.go")
-	if _, err := os.Stat(importedFile); os.IsNotExist(err) {
+	if _, err := os.Stat(importedFile); errors.Is(err, os.ErrNotExist) {
 		t.Error("Synced file not found")
 	}
 
@@ -574,8 +579,8 @@ func TestIntegration_SyncWithOptions(t *testing.T) {
 	srcRepo := createTestRepository(t, "sync-options-source")
 	writeFile(t, filepath.Join(srcRepo, "file.txt"), "content")
 	writeFile(t, filepath.Join(srcRepo, "LICENSE"), "MIT License")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Initial")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Initial")
 
 	// Setup project
 	projectDir := t.TempDir()
@@ -612,7 +617,7 @@ func TestIntegration_SyncWithOptions(t *testing.T) {
 
 	// Verify file copied
 	destFile := filepath.Join(projectDir, "dest/file.txt")
-	if _, err := os.Stat(destFile); os.IsNotExist(err) {
+	if _, err := os.Stat(destFile); errors.Is(err, os.ErrNotExist) {
 		t.Error("File not synced")
 	}
 
@@ -641,14 +646,14 @@ func TestIntegration_ParallelSync(t *testing.T) {
 	repo1 := createTestRepository(t, "parallel-1")
 	writeFile(t, filepath.Join(repo1, "file1.txt"), "repo1")
 	writeFile(t, filepath.Join(repo1, "LICENSE"), "MIT")
-	runGit(t, repo1, "add", ".")
-	runGit(t, repo1, "commit", "-m", "Repo1")
+	runGitOutput(t, repo1, "add", ".")
+	runGitOutput(t, repo1, "commit", "-m", "Repo1")
 
 	repo2 := createTestRepository(t, "parallel-2")
 	writeFile(t, filepath.Join(repo2, "file2.txt"), "repo2")
 	writeFile(t, filepath.Join(repo2, "LICENSE"), "MIT")
-	runGit(t, repo2, "add", ".")
-	runGit(t, repo2, "commit", "-m", "Repo2")
+	runGitOutput(t, repo2, "add", ".")
+	runGitOutput(t, repo2, "commit", "-m", "Repo2")
 
 	// Setup project with two vendors
 	projectDir := t.TempDir()
@@ -706,10 +711,10 @@ func TestIntegration_ParallelSync(t *testing.T) {
 	file1 := filepath.Join(projectDir, "v1/file1.txt")
 	file2 := filepath.Join(projectDir, "v2/file2.txt")
 
-	if _, err := os.Stat(file1); os.IsNotExist(err) {
+	if _, err := os.Stat(file1); errors.Is(err, os.ErrNotExist) {
 		t.Error("Vendor-1 file not synced")
 	}
-	if _, err := os.Stat(file2); os.IsNotExist(err) {
+	if _, err := os.Stat(file2); errors.Is(err, os.ErrNotExist) {
 		t.Error("Vendor-2 file not synced")
 	}
 }
@@ -722,20 +727,20 @@ func TestIntegration_GroupOperations(t *testing.T) {
 	repo1 := createTestRepository(t, "group-frontend")
 	writeFile(t, filepath.Join(repo1, "ui.js"), "frontend")
 	writeFile(t, filepath.Join(repo1, "LICENSE"), "MIT")
-	runGit(t, repo1, "add", ".")
-	runGit(t, repo1, "commit", "-m", "Frontend")
+	runGitOutput(t, repo1, "add", ".")
+	runGitOutput(t, repo1, "commit", "-m", "Frontend")
 
 	repo2 := createTestRepository(t, "group-backend")
 	writeFile(t, filepath.Join(repo2, "api.go"), "backend")
 	writeFile(t, filepath.Join(repo2, "LICENSE"), "MIT")
-	runGit(t, repo2, "add", ".")
-	runGit(t, repo2, "commit", "-m", "Backend")
+	runGitOutput(t, repo2, "add", ".")
+	runGitOutput(t, repo2, "commit", "-m", "Backend")
 
 	repo3 := createTestRepository(t, "group-tools")
 	writeFile(t, filepath.Join(repo3, "script.sh"), "tools")
 	writeFile(t, filepath.Join(repo3, "LICENSE"), "MIT")
-	runGit(t, repo3, "add", ".")
-	runGit(t, repo3, "commit", "-m", "Tools")
+	runGitOutput(t, repo3, "add", ".")
+	runGitOutput(t, repo3, "commit", "-m", "Tools")
 
 	// Setup project with grouped vendors
 	projectDir := t.TempDir()
@@ -807,7 +812,7 @@ func TestIntegration_GroupOperations(t *testing.T) {
 	}
 
 	// Verify only frontend file synced (after first group sync)
-	if _, err := os.Stat(frontendFile); os.IsNotExist(err) {
+	if _, err := os.Stat(frontendFile); errors.Is(err, os.ErrNotExist) {
 		t.Error("Frontend file not synced")
 	}
 
@@ -821,7 +826,7 @@ func TestIntegration_GroupOperations(t *testing.T) {
 	}
 
 	// Verify backend file now synced
-	if _, err := os.Stat(backendFile); os.IsNotExist(err) {
+	if _, err := os.Stat(backendFile); errors.Is(err, os.ErrNotExist) {
 		t.Error("Backend file not synced")
 	}
 }
