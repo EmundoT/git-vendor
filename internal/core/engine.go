@@ -218,6 +218,11 @@ func (m *Manager) Scan(failOn string) (*types.ScanResult, error) {
 	return m.syncer.Scan(failOn)
 }
 
+// Drift detects drift between vendored files and their origin
+func (m *Manager) Drift(opts DriftOptions) (*types.DriftResult, error) {
+	return m.syncer.Drift(opts)
+}
+
 // MigrateLockfile updates an existing lockfile to add missing metadata fields
 func (m *Manager) MigrateLockfile() (int, error) {
 	return m.syncer.MigrateLockfile()
