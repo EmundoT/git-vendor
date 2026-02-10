@@ -396,7 +396,7 @@ func TestVerifyResult_JSON_RoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name: "failing verification with files",
+			name: "failing verification with file and position entries",
 			result: VerifyResult{
 				SchemaVersion: "1.0",
 				Timestamp:     "2024-01-15T10:30:00Z",
@@ -404,10 +404,15 @@ func TestVerifyResult_JSON_RoundTrip(t *testing.T) {
 					TotalFiles: 100, Verified: 95, Modified: 3, Added: 1, Deleted: 1, Result: "FAIL",
 				},
 				Files: []FileStatus{
-					{Path: "lib/ok.go", Vendor: testutil.StrPtr("vendor"), Status: "verified", ExpectedHash: testutil.StrPtr("sha256:abc"), ActualHash: testutil.StrPtr("sha256:abc")},
-					{Path: "lib/changed.go", Vendor: testutil.StrPtr("vendor"), Status: "modified", ExpectedHash: testutil.StrPtr("sha256:old"), ActualHash: testutil.StrPtr("sha256:new")},
-					{Path: "lib/new.go", Vendor: nil, Status: "added"},
-					{Path: "lib/gone.go", Vendor: testutil.StrPtr("vendor"), Status: "deleted", ExpectedHash: testutil.StrPtr("sha256:was")},
+					{Path: "lib/ok.go", Vendor: testutil.StrPtr("vendor"), Status: "verified", Type: "file", ExpectedHash: testutil.StrPtr("sha256:abc"), ActualHash: testutil.StrPtr("sha256:abc")},
+					{Path: "lib/changed.go", Vendor: testutil.StrPtr("vendor"), Status: "modified", Type: "file", ExpectedHash: testutil.StrPtr("sha256:old"), ActualHash: testutil.StrPtr("sha256:new")},
+					{Path: "lib/new.go", Vendor: nil, Status: "added", Type: "file"},
+					{Path: "lib/gone.go", Vendor: testutil.StrPtr("vendor"), Status: "deleted", Type: "file", ExpectedHash: testutil.StrPtr("sha256:was")},
+					{
+						Path: "lib/api.go", Vendor: testutil.StrPtr("vendor"), Status: "verified", Type: "position",
+						ExpectedHash: testutil.StrPtr("sha256:pos"), ActualHash: testutil.StrPtr("sha256:pos"),
+						Position: &PositionDetail{From: "src/api.go:L5-L20", To: "lib/api.go:L10-L25", SourceHash: "sha256:pos"},
+					},
 				},
 			},
 		},
@@ -447,6 +452,7 @@ func TestFileStatus_JSON_AllStatuses(t *testing.T) {
 				Path:   "test/file.go",
 				Vendor: testutil.StrPtr("test-vendor"),
 				Status: status,
+				Type:   "file",
 			}
 			if status == "verified" || status == "modified" || status == "deleted" {
 				fs.ExpectedHash = testutil.StrPtr("sha256:expected")
@@ -460,16 +466,74 @@ func TestFileStatus_JSON_AllStatuses(t *testing.T) {
 	}
 }
 
+func TestFileStatus_JSON_PositionType(t *testing.T) {
+	fs := FileStatus{
+		Path:         "lib/api.go",
+		Vendor:       testutil.StrPtr("api-vendor"),
+		Status:       "verified",
+		Type:         "position",
+		ExpectedHash: testutil.StrPtr("sha256:abc123"),
+		ActualHash:   testutil.StrPtr("sha256:abc123"),
+		Position: &PositionDetail{
+			From:       "src/api.go:L5-L20",
+			To:         "lib/api.go:L10-L25",
+			SourceHash: "sha256:abc123",
+		},
+	}
+
+	testutil.AssertJSONRoundTrip(t, fs)
+}
+
 func TestFileStatus_JSON_OmitEmpty(t *testing.T) {
 	fs := FileStatus{
 		Path:   "new/file.go",
 		Vendor: nil,
 		Status: "added",
-		// ExpectedHash and ActualHash are nil - should be omitted
+		Type:   "file",
+		// ExpectedHash, ActualHash, and Position are nil/zero — should be omitted
 	}
 
 	testutil.AssertJSONOmitsField(t, fs, "expected_hash")
 	testutil.AssertJSONOmitsField(t, fs, "actual_hash")
+	testutil.AssertJSONOmitsField(t, fs, "position")
+}
+
+func TestPositionDetail_JSON_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name   string
+		detail PositionDetail
+	}{
+		{
+			name: "line range extraction",
+			detail: PositionDetail{
+				From:       "src/constants.go:L4-L6",
+				To:         "lib/constants.go",
+				SourceHash: "sha256:deadbeef0123456789abcdef",
+			},
+		},
+		{
+			name: "column-precise extraction",
+			detail: PositionDetail{
+				From:       "src/types.go:L1C5:L1C30",
+				To:         "lib/types.go:L10-L10",
+				SourceHash: "sha256:cafebabe0123456789abcdef",
+			},
+		},
+		{
+			name: "EOF extraction",
+			detail: PositionDetail{
+				From:       "src/footer.go:L100-EOF",
+				To:         "lib/footer.go",
+				SourceHash: "sha256:feedface0123456789abcdef",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testutil.AssertJSONRoundTrip(t, tt.detail)
+		})
+	}
 }
 
 func TestVerifySummary_JSON_AllResults(t *testing.T) {
@@ -688,32 +752,50 @@ func TestCloneOptions_ShallowCloneConfiguration(t *testing.T) {
 
 func TestVendorStatus_SyncStateConsistency(t *testing.T) {
 	tests := []struct {
-		name         string
-		status       VendorStatus
-		wantSynced   bool
-		wantMissing  int
-		isConsistent bool
+		name          string
+		status        VendorStatus
+		wantSynced    bool
+		wantMissing   int
+		wantFiles     int
+		wantPositions int
 	}{
 		{
-			name:         "synced with no missing paths",
-			status:       VendorStatus{Name: "a", Ref: "main", IsSynced: true, MissingPaths: nil},
-			wantSynced:   true,
-			wantMissing:  0,
-			isConsistent: true,
+			name:          "synced with no missing paths",
+			status:        VendorStatus{Name: "a", Ref: "main", IsSynced: true, MissingPaths: nil},
+			wantSynced:    true,
+			wantMissing:   0,
+			wantFiles:     0,
+			wantPositions: 0,
 		},
 		{
-			name:         "not synced with missing paths",
-			status:       VendorStatus{Name: "b", Ref: "main", IsSynced: false, MissingPaths: []string{"path/"}},
-			wantSynced:   false,
-			wantMissing:  1,
-			isConsistent: true,
+			name:          "not synced with missing paths",
+			status:        VendorStatus{Name: "b", Ref: "main", IsSynced: false, MissingPaths: []string{"path/"}},
+			wantSynced:    false,
+			wantMissing:   1,
+			wantFiles:     0,
+			wantPositions: 0,
 		},
 		{
-			name:         "inconsistent: synced but has missing paths",
-			status:       VendorStatus{Name: "c", Ref: "main", IsSynced: true, MissingPaths: []string{"path/"}},
-			wantSynced:   true,
-			wantMissing:  1,
-			isConsistent: false, // This would be a bug in the calling code
+			name: "synced with file and position counts",
+			status: VendorStatus{
+				Name: "d", Ref: "main", IsSynced: true,
+				FileCount: 10, PositionCount: 3,
+			},
+			wantSynced:    true,
+			wantMissing:   0,
+			wantFiles:     10,
+			wantPositions: 3,
+		},
+		{
+			name: "position-only vendor",
+			status: VendorStatus{
+				Name: "e", Ref: "v1.0", IsSynced: true,
+				FileCount: 0, PositionCount: 5,
+			},
+			wantSynced:    true,
+			wantMissing:   0,
+			wantFiles:     0,
+			wantPositions: 5,
 		},
 	}
 
@@ -724,6 +806,12 @@ func TestVendorStatus_SyncStateConsistency(t *testing.T) {
 			}
 			if len(tt.status.MissingPaths) != tt.wantMissing {
 				t.Errorf("len(MissingPaths) = %d, want %d", len(tt.status.MissingPaths), tt.wantMissing)
+			}
+			if tt.status.FileCount != tt.wantFiles {
+				t.Errorf("FileCount = %d, want %d", tt.status.FileCount, tt.wantFiles)
+			}
+			if tt.status.PositionCount != tt.wantPositions {
+				t.Errorf("PositionCount = %d, want %d", tt.status.PositionCount, tt.wantPositions)
 			}
 		})
 	}
