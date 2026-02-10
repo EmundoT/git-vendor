@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -239,6 +240,100 @@ func TestFormatDiffOutput_Diverged(t *testing.T) {
 
 	if !contains(output, "diverged") || !contains(output, "ahead") {
 		t.Error("Output should indicate diverged or ahead status")
+	}
+}
+
+func TestDiffVendor_FetchAllFails_FallsBackToFetch(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+	mockFS := NewMockFileSystem(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "test-vendor",
+				URL:  "https://github.com/owner/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src", To: "lib"}}},
+				},
+			},
+		},
+	}, nil)
+
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "test-vendor", Ref: "main", CommitHash: "abc123", Updated: "2024-01-01 10:00:00 +0000"},
+		},
+	}, nil)
+
+	mockFS.EXPECT().CreateTemp("", "diff-check-*").Return("/tmp/test", nil)
+	mockGit.EXPECT().Init(gomock.Any(), "/tmp/test").Return(nil)
+	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/test", "origin", "https://github.com/owner/repo").Return(nil)
+
+	// FetchAll fails, triggering fallback to Fetch
+	mockGit.EXPECT().FetchAll(gomock.Any(), "/tmp/test").Return(errors.New("network timeout"))
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/test", 0, "main").Return(nil)
+
+	mockGit.EXPECT().Checkout(gomock.Any(), "/tmp/test", "FETCH_HEAD").Return(nil)
+	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test").Return("def456", nil)
+	mockGit.EXPECT().GetCommitLog(gomock.Any(), "/tmp/test", "abc123", "def456", 10).Return([]types.CommitInfo{
+		{ShortHash: "def456", Subject: "Fix", Date: "2024-01-02 15:30:00 +0000"},
+	}, nil)
+	mockFS.EXPECT().RemoveAll("/tmp/test").Return(nil)
+
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, nil, "", &SilentUICallback{}, nil)
+
+	diffs, err := syncer.DiffVendor("test-vendor")
+	if err != nil {
+		t.Fatalf("DiffVendor() error = %v", err)
+	}
+
+	if len(diffs) != 1 {
+		t.Fatalf("Expected 1 diff, got %d", len(diffs))
+	}
+	if diffs[0].CommitCount != 1 {
+		t.Errorf("Expected 1 commit, got %d", diffs[0].CommitCount)
+	}
+}
+
+func TestDiffVendor_MultipleSpecs_SkipsUnlocked(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "multi-ref-vendor",
+				URL:  "https://github.com/owner/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main"},
+					{Ref: "v2"},
+				},
+			},
+		},
+	}, nil)
+
+	// No lock entries → lockedHash="" for both refs → skip both
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{},
+	}, nil)
+
+	syncer := NewVendorSyncer(mockConfig, mockLock, nil, nil, nil, "", &SilentUICallback{}, nil)
+
+	diffs, err := syncer.DiffVendor("multi-ref-vendor")
+	if err != nil {
+		t.Fatalf("DiffVendor() error = %v", err)
+	}
+
+	if len(diffs) != 0 {
+		t.Errorf("Expected 0 diffs (all unlocked), got %d", len(diffs))
 	}
 }
 
