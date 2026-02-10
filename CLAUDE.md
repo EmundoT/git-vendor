@@ -629,6 +629,8 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 
 - `GITHUB_TOKEN` - GitHub personal access token (significantly increases API rate limit and enables private repo access)
 - `GITLAB_TOKEN` - GitLab personal access token (enables private repos and increases API rate limits)
+- `GIT_VENDOR_OSV_ENDPOINT` - Override OSV.dev base URL (e.g., `https://osv-proxy.internal.corp`). Enables air-gapped proxy deployments and test mocking. The `/v1/querybatch` path is appended automatically.
+- `GIT_VENDOR_CACHE_TTL` - Override default 24-hour scan cache TTL (Go duration format, e.g., `1h`, `30m`)
 
 ### Concurrency Considerations
 
@@ -900,8 +902,8 @@ Error response:
 
 **vuln_scanner.go:**
 
-- `Scan()` - Core vulnerability scanning against OSV.dev
-- `batchQuery()` - Batch queries to OSV.dev (up to 1000 per request, auto-paginated)
+- `Scan(ctx, failOn)` - Core vulnerability scanning against OSV.dev. Accepts `context.Context` for cancellation (Ctrl+C aborts in-flight HTTP requests and returns `ctx.Err()`). Network/API errors are handled per-vendor; only context cancellation causes early abort.
+- `batchQuery(ctx, deps, vendorURLs)` - Batch queries to OSV.dev (up to 1000 per request, auto-paginated). Derives per-request timeouts from parent context.
 - `CVSSToSeverity()` - Convert CVSS score to severity level
 - `isRateLimitError()` - Detect rate-limit errors via OSVAPIError or string matching
 - `isNetworkError()` - Detect transient network errors for stale-cache fallback

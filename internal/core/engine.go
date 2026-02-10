@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"os"
 
 	git "github.com/EmundoT/git-plumbing"
@@ -213,9 +214,10 @@ func (m *Manager) Verify() (*types.VerifyResult, error) {
 	return m.syncer.Verify()
 }
 
-// Scan performs vulnerability scanning against OSV.dev
-func (m *Manager) Scan(failOn string) (*types.ScanResult, error) {
-	return m.syncer.Scan(failOn)
+// Scan performs vulnerability scanning against OSV.dev.
+// ctx controls cancellation of in-flight HTTP requests to OSV.dev.
+func (m *Manager) Scan(ctx context.Context, failOn string) (*types.ScanResult, error) {
+	return m.syncer.Scan(ctx, failOn)
 }
 
 // LicenseReport generates a license compliance report.

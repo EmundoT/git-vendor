@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -115,7 +116,7 @@ type stubVulnScanner struct {
 	err    error
 }
 
-func (s *stubVulnScanner) Scan(_ string) (*types.ScanResult, error) {
+func (s *stubVulnScanner) Scan(_ context.Context, _ string) (*types.ScanResult, error) {
 	return s.result, s.err
 }
 
@@ -920,7 +921,7 @@ func TestVendorSyncer_Scan(t *testing.T) {
 		VulnScanner: &stubVulnScanner{result: expected},
 	})
 
-	_, err := syncer.Scan("high")
+	_, err := syncer.Scan(context.Background(), "high")
 	if err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}

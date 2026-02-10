@@ -2,9 +2,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/EmundoT/git-vendor/cmd"
@@ -803,8 +805,10 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Run vulnerability scan
-		result, err := manager.Scan(failOn)
+		// Run vulnerability scan with signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		result, err := manager.Scan(ctx, failOn)
 		if err != nil {
 			tui.PrintError("Scan Failed", err.Error())
 			os.Exit(1)
