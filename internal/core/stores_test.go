@@ -40,12 +40,12 @@ func TestLoadConfig(t *testing.T) {
 			},
 		}
 
-		// Save it first
+		// Save config first
 		if err := m.saveConfig(expectedConfig); err != nil {
 			t.Fatalf("Failed to save config: %v", err)
 		}
 
-		// Now load it
+		// Load saved config
 		loadedConfig, err := m.loadConfig()
 		if err != nil {
 			t.Fatalf("loadConfig() error = %v", err)
@@ -81,7 +81,7 @@ func TestLoadConfig(t *testing.T) {
 		}
 	})
 
-	// Skipping this test as yaml.v3 is very lenient and accepts most formats
+	// Skipping malformed-YAML test as yaml.v3 is very lenient and accepts most formats
 	// The important validation is done in other tests
 	// t.Run("Error when config file is malformed", func(t *testing.T) {
 	// 	tempDir := t.TempDir()
@@ -151,7 +151,6 @@ func TestLoadConfig(t *testing.T) {
 	})
 }
 
-// TestSaveConfig tests config file saving
 func TestSaveConfig(t *testing.T) {
 	t.Run("Save config to new file", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -218,7 +217,7 @@ func TestSaveConfig(t *testing.T) {
 			t.Fatalf("saveConfig() error = %v", err)
 		}
 
-		// Load it back
+		// Load config back
 		loadedConfig, err := m.loadConfig()
 		if err != nil {
 			t.Fatalf("loadConfig() error = %v", err)
@@ -245,7 +244,6 @@ func TestSaveConfig(t *testing.T) {
 // Lock Store Tests
 // ============================================================================
 
-// TestLoadLock tests lock file loading
 func TestLoadLock(t *testing.T) {
 	t.Run("Load valid lock file", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -265,12 +263,12 @@ func TestLoadLock(t *testing.T) {
 			},
 		}
 
-		// Save it first
+		// Save lock first
 		if err := m.saveLock(expectedLock); err != nil {
 			t.Fatalf("Failed to save lock: %v", err)
 		}
 
-		// Load it back
+		// Load lock back
 		loadedLock, err := m.loadLock()
 		if err != nil {
 			t.Fatalf("loadLock() error = %v", err)
@@ -358,7 +356,6 @@ func TestLoadLock(t *testing.T) {
 	})
 }
 
-// TestSaveLock tests lock file saving
 func TestSaveLock(t *testing.T) {
 	t.Run("Save lock to new file", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -411,7 +408,7 @@ func TestSaveLock(t *testing.T) {
 			t.Fatalf("saveLock() error = %v", err)
 		}
 
-		// Load it back
+		// Load lock back
 		loadedLock, err := m.loadLock()
 		if err != nil {
 			t.Fatalf("loadLock() error = %v", err)

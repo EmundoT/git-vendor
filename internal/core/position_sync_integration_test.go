@@ -73,8 +73,8 @@ func TestIntegration_CacheSkipWithPositions(t *testing.T) {
 	writeFile(t, filepath.Join(srcRepo, "data.txt"),
 		"line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n")
 	writeFile(t, filepath.Join(srcRepo, "LICENSE"), "MIT License\n\nPermission is hereby granted...")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Initial data")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Initial data")
 
 	t.Run("BasicCacheHitPreservesPositions", func(t *testing.T) {
 		projectDir, manager, cleanup := positionTestProject(t)
@@ -371,8 +371,8 @@ func TestIntegration_MixedWholeFileAndPositionMappings(t *testing.T) {
 	writeFile(t, filepath.Join(srcRepo, "partial.txt"),
 		"alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\n")
 	writeFile(t, filepath.Join(srcRepo, "LICENSE"), "MIT License\n\nPermission is hereby granted...")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Add mixed files")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Add mixed files")
 
 	// Helper to set up a mixed project with position-on-destination
 	setupMixed := func(t *testing.T, name string) (string, *Manager, func()) {
@@ -592,8 +592,8 @@ func TestIntegration_PositionVerifyAfterDeletion(t *testing.T) {
 	writeFile(t, filepath.Join(srcRepo, "source.txt"), "AAA\nBBB\nCCC\nDDD\nEEE\n")
 	writeFile(t, filepath.Join(srcRepo, "extra.txt"), "X1\nX2\nX3\nX4\nX5\n")
 	writeFile(t, filepath.Join(srcRepo, "LICENSE"), "MIT License\n\nPermission is hereby granted...")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Add source")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Add source")
 
 	t.Run("DeletedStatusReported", func(t *testing.T) {
 		_, manager, cleanup := positionTestProject(t)
@@ -857,8 +857,8 @@ func TestIntegration_ReSyncAfterPositionRangeShift(t *testing.T) {
 	writeFile(t, filepath.Join(srcRepo, "code.go"),
 		"package main\n\nfunc A() {}\nfunc B() {}\nfunc C() {}\n")
 	writeFile(t, filepath.Join(srcRepo, "LICENSE"), "MIT License\n\nPermission is hereby granted...")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Add code")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Add code")
 
 	// Helper to set up the shift test scenario
 	setupShift := func(t *testing.T, name string) (string, *Manager, string, func()) {
@@ -1021,8 +1021,8 @@ func TestIntegration_HooksWithPositionSync(t *testing.T) {
 	writeFile(t, filepath.Join(srcRepo, "api.go"),
 		"package api\n\nconst Version = \"1.0\"\nconst Name = \"test\"\nconst Debug = false\n")
 	writeFile(t, filepath.Join(srcRepo, "LICENSE"), "MIT License\n\nPermission is hereby granted...")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Add API")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Add API")
 	commitHash := getCommitHash(t, srcRepo)
 
 	t.Run("PreSyncHookFires", func(t *testing.T) {
@@ -1359,8 +1359,8 @@ func TestIntegration_UpdateAllLockfileSerializationFidelity(t *testing.T) {
 		"key1: value1\nkey2: value2\nkey3: value3\nkey4: value4\nkey5: value5\n")
 	writeFile(t, filepath.Join(srcRepo, "full.txt"), "complete file content\n")
 	writeFile(t, filepath.Join(srcRepo, "LICENSE"), "MIT License\n\nPermission is hereby granted...")
-	runGit(t, srcRepo, "add", ".")
-	runGit(t, srcRepo, "commit", "-m", "Add config files")
+	runGitOutput(t, srcRepo, "add", ".")
+	runGitOutput(t, srcRepo, "commit", "-m", "Add config files")
 
 	setupSerial := func(t *testing.T, name string, mappings []types.PathMapping) (*Manager, string) {
 		t.Helper()

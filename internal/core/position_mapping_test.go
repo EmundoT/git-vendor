@@ -275,7 +275,7 @@ func TestEOFPosition_FileGrowth_HashChanges(t *testing.T) {
 		t.Errorf("hash should change after appending lines, both = %q", hash1)
 	}
 
-	// Step 6: Place new content to destination, verify it includes grown content
+	// Step 6: Place new content to destination, verify destination includes grown content
 	if err := PlaceContent(destPath, extracted2, nil); err != nil {
 		t.Fatalf("place after growth: %v", err)
 	}

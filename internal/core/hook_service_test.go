@@ -11,7 +11,6 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
-// TestHookService_PreSyncExecution tests basic pre-sync hook execution
 func TestHookService_PreSyncExecution(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -42,7 +41,6 @@ func TestHookService_PreSyncExecution(t *testing.T) {
 	}
 }
 
-// TestHookService_PostSyncExecution tests basic post-sync hook execution
 func TestHookService_PostSyncExecution(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -73,7 +71,6 @@ func TestHookService_PostSyncExecution(t *testing.T) {
 	}
 }
 
-// TestHookService_EnvironmentVariables tests that environment variables are properly injected
 func TestHookService_EnvironmentVariables(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -143,7 +140,6 @@ func TestHookService_EnvironmentVariables(t *testing.T) {
 	}
 }
 
-// TestHookService_MultilineCommand tests that multiline commands are supported
 func TestHookService_MultilineCommand(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -202,7 +198,6 @@ func TestHookService_MultilineCommand(t *testing.T) {
 	}
 }
 
-// TestHookService_CommandFailure tests that hook failures return HookError with context
 func TestHookService_CommandFailure(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -233,7 +228,6 @@ func TestHookService_CommandFailure(t *testing.T) {
 	}
 }
 
-// TestHookService_NoHookConfigured tests that no hook configured is a no-op
 func TestHookService_NoHookConfigured(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -262,7 +256,6 @@ func TestHookService_NoHookConfigured(t *testing.T) {
 	}
 }
 
-// TestHookService_EmptyHookCommand tests that empty hook commands are no-ops
 func TestHookService_EmptyHookCommand(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -294,7 +287,6 @@ func TestHookService_EmptyHookCommand(t *testing.T) {
 	}
 }
 
-// TestHookService_WorkingDirectory tests that hooks run in the correct working directory
 func TestHookService_WorkingDirectory(t *testing.T) {
 	ui := &SilentUICallback{}
 	hookService := NewHookService(ui)
@@ -333,7 +325,7 @@ func TestHookService_WorkingDirectory(t *testing.T) {
 		t.Fatalf("Expected success, got error: %v", err)
 	}
 
-	// Read the output and verify it matches the expected directory
+	// Read the output and verify the directory matches the expected working directory
 	content, err := os.ReadFile(outputFile)
 	if err != nil {
 		t.Fatalf("Failed to read output file: %v", err)
