@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
@@ -507,9 +508,10 @@ func (s *VendorSyncer) Verify() (*types.VerifyResult, error) {
 	return s.verifyService.Verify()
 }
 
-// Scan performs vulnerability scanning against OSV.dev
-func (s *VendorSyncer) Scan(failOn string) (*types.ScanResult, error) {
-	return s.vulnScanner.Scan(failOn)
+// Scan performs vulnerability scanning against OSV.dev.
+// ctx controls cancellation of in-flight HTTP requests.
+func (s *VendorSyncer) Scan(ctx context.Context, failOn string) (*types.ScanResult, error) {
+	return s.vulnScanner.Scan(ctx, failOn)
 }
 
 // MigrateLockfile updates an existing lockfile to add missing metadata fields.

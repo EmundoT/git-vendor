@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -213,7 +214,7 @@ func TestScan_EmptyLockfile(t *testing.T) {
 	scanner := NewVulnScanner(lockStore, configStore)
 	scanner.cacheDir = t.TempDir()
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -275,7 +276,7 @@ func TestScan_NoVulnerabilities(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -356,7 +357,7 @@ func TestScan_WithVulnerabilities(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -429,7 +430,7 @@ func TestScan_MultipleVendors(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -506,7 +507,7 @@ func TestScan_FailOnThreshold(t *testing.T) {
 	}
 
 	// Test with --fail-on critical (should NOT exceed threshold since only HIGH)
-	result, err := scanner.Scan("CRITICAL")
+	result, err := scanner.Scan(context.Background(), "CRITICAL")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -518,7 +519,7 @@ func TestScan_FailOnThreshold(t *testing.T) {
 	scanner.ClearCache()
 
 	// Test with --fail-on high (should exceed threshold)
-	result, err = scanner.Scan("HIGH")
+	result, err = scanner.Scan(context.Background(), "HIGH")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -590,7 +591,7 @@ func TestScan_JSONOutput(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -984,7 +985,7 @@ func TestScan_InvalidFailOnValue(t *testing.T) {
 	scanner.cacheDir = t.TempDir()
 
 	// Test invalid failOn value - should return error before loading lockfile
-	_, err := scanner.Scan("invalid")
+	_, err := scanner.Scan(context.Background(), "invalid")
 	if err == nil {
 		t.Fatal("Expected error for invalid failOn value, got nil")
 	}
@@ -1012,7 +1013,7 @@ func TestScan_ValidFailOnValues(t *testing.T) {
 			scanner := NewVulnScanner(lockStore, configStore)
 			scanner.cacheDir = t.TempDir()
 
-			result, err := scanner.Scan(failOn)
+			result, err := scanner.Scan(context.Background(), failOn)
 			if err != nil {
 				t.Errorf("Unexpected error for failOn=%q: %v", failOn, err)
 			}
@@ -1054,7 +1055,7 @@ func TestScan_EmptyCommitHash(t *testing.T) {
 	scanner := NewVulnScanner(lockStore, configStore)
 	scanner.cacheDir = t.TempDir()
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1201,7 +1202,7 @@ func TestBatchQuery_Pagination(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1297,7 +1298,7 @@ func TestScan_BatchPartialFailure(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1367,7 +1368,7 @@ func TestScan_HTTP500_ReturnsOSVAPIError(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1418,7 +1419,7 @@ func TestScan_HTTP429_RateLimited(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1473,7 +1474,7 @@ func TestScan_MalformedJSON_Response(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner.Scan("")
+	result, err := scanner.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1612,7 +1613,7 @@ func TestScan_FailOnThreshold_AllLevels(t *testing.T) {
 				configStore: configStore,
 			}
 
-			result, err := scanner.Scan(tt.failOn)
+			result, err := scanner.Scan(context.Background(), tt.failOn)
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
@@ -1670,7 +1671,7 @@ func TestScan_NetworkError_WithStaleCache_FallsBack(t *testing.T) {
 		configStore: configStore,
 	}
 
-	result, err := scanner2.Scan("")
+	result, err := scanner2.Scan(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1693,4 +1694,112 @@ type errorTransport struct {
 
 func (t *errorTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return nil, t.err
+}
+
+// ============================================================================
+// Configurable Endpoint Tests (CQ-006)
+// ============================================================================
+
+func TestNewVulnScanner_CustomEndpoint(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	// Set custom endpoint via env var
+	t.Setenv("GIT_VENDOR_OSV_ENDPOINT", "https://osv-proxy.internal.corp")
+
+	scanner := NewVulnScanner(lockStore, configStore)
+
+	expected := "https://osv-proxy.internal.corp/v1/querybatch"
+	if scanner.batchEndpoint != expected {
+		t.Errorf("batchEndpoint = %q, want %q", scanner.batchEndpoint, expected)
+	}
+}
+
+func TestNewVulnScanner_CustomEndpoint_TrailingSlash(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	// Trailing slash should be stripped before appending path
+	t.Setenv("GIT_VENDOR_OSV_ENDPOINT", "https://osv-proxy.internal.corp/")
+
+	scanner := NewVulnScanner(lockStore, configStore)
+
+	expected := "https://osv-proxy.internal.corp/v1/querybatch"
+	if scanner.batchEndpoint != expected {
+		t.Errorf("batchEndpoint = %q, want %q", scanner.batchEndpoint, expected)
+	}
+}
+
+func TestNewVulnScanner_DefaultEndpoint(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	// No env var set — should use default
+	scanner := NewVulnScanner(lockStore, configStore)
+
+	if scanner.batchEndpoint != osvBatchAPIEndpoint {
+		t.Errorf("batchEndpoint = %q, want default %q", scanner.batchEndpoint, osvBatchAPIEndpoint)
+	}
+}
+
+// ============================================================================
+// Context Cancellation Tests
+// ============================================================================
+
+func TestScan_ContextCancellation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lockStore := NewMockLockStore(ctrl)
+	configStore := NewMockConfigStore(ctrl)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "cancel-test", Ref: "main", CommitHash: "abc123"},
+		},
+	}, nil)
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "cancel-test", URL: "https://github.com/owner/repo"},
+		},
+	}, nil)
+
+	// Create a server that blocks until context is cancelled
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		// Context cancelled — don't write response
+	}))
+	defer server.Close()
+
+	scanner := &VulnScanner{
+		client: &http.Client{
+			Transport: &mockTransport{serverURL: server.URL},
+		},
+		batchEndpoint: osvBatchAPIEndpoint,
+		cacheDir:      t.TempDir(),
+		cacheTTL:      24 * time.Hour,
+		lockStore:     lockStore,
+		configStore:   configStore,
+	}
+
+	// Cancel context immediately
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := scanner.Scan(ctx, "")
+	if err == nil {
+		t.Fatal("Expected error from cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "context canceled") {
+		t.Errorf("Expected context.Canceled error, got: %v", err)
+	}
 }
