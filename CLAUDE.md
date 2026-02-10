@@ -411,6 +411,9 @@ vendors:
 - **`os.IsNotExist()` for wrapped errors**: MUST NOT use `os.IsNotExist(err)` when the error may have been wrapped with `fmt.Errorf("%w")`. MUST use `errors.Is(err, os.ErrNotExist)` instead. Go's `os.IsNotExist` does not unwrap.
 - **`net/http.DetectContentType` for binary detection**: Rejected in favor of git's null-byte heuristic (scan first 8000 bytes for `\x00`). `DetectContentType` only inspects 512 bytes and can misclassify source code as `application/octet-stream`. The null-byte approach matches git's own `xdl_mmfile_istext` and has no false positives on valid text files including multi-byte UTF-8.
 - **Bare hex vs `sha256:` prefix in position verify**: `ComputeFileChecksum` returns bare hex, but `ExtractPosition` returns `"sha256:<hex>"`. When comparing hashes in `verifyPositions` for whole-file destinations (`destPos == nil`), MUST normalize `ComputeFileChecksum` output to `"sha256:"` prefix before comparing against `SourceHash`. Mixing formats causes false drift detection.
+- **`file://` URLs in vendor.yml**: MUST NOT allow `file://` scheme in vendor URLs. `ValidateVendorURL()` rejects `file://`, `ftp://`, `javascript:`, and `data:` schemes. Only `https://`, `http://`, `ssh://`, `git://`, `git+ssh://`, and SCP-style (`git@host:path`) are accepted (SEC-011).
+- **Logging URLs with credentials**: MUST NOT include raw URLs in error messages when the URL may contain embedded credentials (`https://user:token@host/repo`). Use `SanitizeURL()` to strip userinfo before logging (SEC-013).
+- **Unbounded YAML file reads**: MUST NOT read vendor.yml/vendor.lock without checking file size. `YAMLStore.Load()` enforces a 1 MB size limit (`maxYAMLFileSize`) to prevent memory exhaustion (SEC-020).
 
 ### Error Handling
 
@@ -611,6 +614,11 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 26. **Empty file has 1 line**: A 0-byte file splits to `[""]` (1 empty line). `L1` extracts empty string. `L2+` errors.
 27. **Sequential PlaceContent calls operate on modified content**: When two vendors write to different positions in the same file, the second call sees the file as modified by the first. If the first call changes line count, the second call's position targets shifted lines.
 28. **L1-EOF hash equals whole-file hash**: `L1-EOF` extraction produces content byte-identical to the raw file (after CRLF normalization), so the hash matches `sha256(file_content)`.
+29. **URL scheme validation**: `ValidateVendorURL()` rejects `file://`, `ftp://`, `javascript:`, `data:` schemes. Allowed: `https://`, `http://`, `ssh://`, `git://`, `git+ssh://`, SCP-style, and bare hostnames. Called during config validation (SEC-011)
+30. **IsBinaryContent is exported**: The binary detection function (null-byte scan, first 8000 bytes) is exported as `IsBinaryContent()` for use in both position extraction and whole-file copy warnings (SEC-023)
+31. **CopyDir does not follow directory symlinks**: `filepath.Walk` uses `os.Lstat` which does not follow symlinks. Symlinks to directories cause CopyDir to error ("is a directory"). Symlinks to files are followed and content is dereferenced. This is safe behavior for vendored content (SEC-022)
+32. **YAML file size limit**: `YAMLStore.Load()` rejects files > 1 MB (`maxYAMLFileSize`). Normal configs are well under 100 KB (SEC-020)
+33. **Hook threat model**: See `docs/HOOK_THREAT_MODEL.md`. Hooks execute arbitrary shell commands by design — same trust model as npm scripts. Key mitigations: 5-min timeout, env var sanitization, project root working dir (SEC-012)
 
 ## Quick Reference
 
@@ -761,6 +769,7 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `ExtractPosition()` - Read file, extract content at PositionSpec, return content + SHA-256 hash
 - `PlaceContent()` - Write extracted content into target file at specified position
 - `extractColumns()` / `placeColumns()` - Column-precise extraction and placement
+- `IsBinaryContent()` - SEC-023: Exported null-byte binary detection (first 8000 bytes)
 
 **file_copy_service.go:**
 
@@ -785,6 +794,8 @@ git-vendor completion <shell>        # Generate shell completion (bash/zsh/fish/
 - `GetTagForCommit()` - Get tag for commit with semver preference (wraps `TagsAt()`)
 - `GetGitUserIdentity()` - Get git user identity string (delegates to `git.Git{}.UserIdentity()`)
 - `ParseSmartURL()` - Extract repo/ref/path from GitHub URLs
+- `ValidateVendorURL()` - SEC-011: Reject dangerous URL schemes (file://, ftp://, etc.)
+- `SanitizeURL()` - SEC-013: Strip credentials from URLs for safe logging
 - `GitClient.ListTree()` - Browse remote directories via git ls-tree
 
 **github_client.go:**

@@ -425,7 +425,8 @@ func (s *SyncService) SyncVendor(v *types.VendorSpec, lockedRefs map[string]stri
 		return nil, CopyStats{}, fmt.Errorf("failed to initialize git repository for %s: %w", v.Name, err)
 	}
 	if err := s.gitClient.AddRemote(ctx, tempDir, "origin", v.URL); err != nil {
-		return nil, CopyStats{}, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, v.URL, err)
+		// SEC-013: Sanitize URL in error output to prevent credential leakage
+		return nil, CopyStats{}, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, SanitizeURL(v.URL), err)
 	}
 
 	results := make(map[string]RefMetadata)
