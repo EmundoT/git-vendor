@@ -19,7 +19,7 @@
 | 010 | completed | SBOM Generation | `git vendor sbom` - Generate CycloneDX and SPDX format SBOMs from lockfile | [spec](specs/complete/010-sbom-generation.md) |
 | 011 | completed | CVE/Vulnerability Scanning | `git vendor scan` - Query OSV.dev API for known vulnerabilities | [spec](specs/complete/011-cve-vulnerability-scanning.md) |
 | 012 | completed | Drift Detection | `git vendor drift` - Compare vendored files against origin, detect local and upstream changes | - |
-| 013 | pending | License Policy Enforcement | `git vendor license` - Configurable policy file with allow/deny/warn lists | - |
+| 013 | completed | License Policy Enforcement | `git vendor license` - Configurable policy file with allow/deny/warn lists | - |
 
 ## Phase 3: Ecosystem Integration (P1)
 

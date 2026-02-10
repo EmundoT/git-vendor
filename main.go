@@ -1467,6 +1467,119 @@ func main() {
 			fmt.Print(string(output))
 		}
 
+	case "license":
+		// Parse command-specific flags
+		format := "table" // default format
+		failOn := "deny"  // default: only denied licenses cause FAIL
+		policyPath := ""  // empty = default PolicyFile location
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			case strings.HasPrefix(arg, "--fail-on="):
+				failOn = strings.TrimPrefix(arg, "--fail-on=")
+			case arg == "--fail-on":
+				if i+1 < len(os.Args) {
+					failOn = os.Args[i+1]
+					i++
+				}
+			case strings.HasPrefix(arg, "--policy="):
+				policyPath = strings.TrimPrefix(arg, "--policy=")
+			case arg == "--policy":
+				if i+1 < len(os.Args) {
+					policyPath = os.Args[i+1]
+					i++
+				}
+			}
+		}
+
+		// Validate --fail-on value
+		switch failOn {
+		case "deny", "warn":
+			// valid
+		default:
+			tui.PrintError("Invalid Flag", fmt.Sprintf("--fail-on must be 'deny' or 'warn', got '%s'", failOn))
+			os.Exit(1)
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		// Run license compliance report
+		result, err := manager.LicenseReport(policyPath, failOn)
+		if err != nil {
+			tui.PrintError("License Report Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Output results based on format
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			// Table format
+			fmt.Println("License compliance report")
+			fmt.Printf("Policy: %s\n", result.PolicyFile)
+			fmt.Println()
+
+			for _, vendor := range result.Vendors {
+				symbol := "✓"
+				switch vendor.Decision {
+				case "deny":
+					symbol = "✗"
+				case "warn":
+					symbol = "⚠"
+				}
+				fmt.Printf("  %s %s  %s  [%s]\n", symbol, vendor.Name, vendor.License, vendor.Decision)
+				if vendor.Decision != "allow" {
+					fmt.Printf("    %s\n", vendor.Reason)
+				}
+			}
+
+			fmt.Println()
+			fmt.Printf("Summary: %d vendors checked\n", result.Summary.TotalVendors)
+			if result.Summary.Allowed > 0 {
+				fmt.Printf("  ✓ %d allowed\n", result.Summary.Allowed)
+			}
+			if result.Summary.Warned > 0 {
+				fmt.Printf("  ⚠ %d warned\n", result.Summary.Warned)
+			}
+			if result.Summary.Denied > 0 {
+				fmt.Printf("  ✗ %d denied\n", result.Summary.Denied)
+			}
+			if result.Summary.Unknown > 0 {
+				fmt.Printf("  ? %d unknown license\n", result.Summary.Unknown)
+			}
+			fmt.Println()
+			fmt.Printf("Result: %s\n", result.Summary.Result)
+		}
+
+		// Exit code logic:
+		// - Exit 1 if result is FAIL (denied licenses, or warned when --fail-on=warn)
+		// - Exit 2 if result is WARN (warned licenses)
+		// - Exit 0 if PASS
+		switch result.Summary.Result {
+		case "PASS":
+			os.Exit(0)
+		case "WARN":
+			os.Exit(2)
+		default: // FAIL
+			os.Exit(1)
+		}
+
 	// =====================================================================
 	// LLM-Friendly CLI Commands (Spec 072)
 	// =====================================================================
