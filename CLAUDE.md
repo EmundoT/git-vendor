@@ -521,7 +521,7 @@ Git operations use the `GitClient` interface (git_operations.go), delegating to 
 - Uses Go modules for dependency management
 - Comprehensive unit tests with mocks for all interfaces
 - Clear separation of concerns for maintainability
-- Uses context with timeouts for external operations
+- Uses context.Context for cancellation throughout all long-running operations (sync, update, verify, drift, check-updates, scan, audit)
 - Proper error propagation and handling
 - Consistent naming conventions and code style
 - Modular functions with single responsibility
@@ -632,9 +632,27 @@ git-plumbing integration tests cover all git CLI primitives with real repos:
 - `GIT_VENDOR_OSV_ENDPOINT` - Override OSV.dev base URL (e.g., `https://osv-proxy.internal.corp`). Enables air-gapped proxy deployments and test mocking. The `/v1/querybatch` path is appended automatically.
 - `GIT_VENDOR_CACHE_TTL` - Override default 24-hour scan cache TTL (Go duration format, e.g., `1h`, `30m`)
 
+### Context Propagation and Cancellation
+
+All long-running operations accept `context.Context` as their first parameter, enabling Ctrl+C cancellation from the CLI layer via `signal.NotifyContext`. Context flows through the entire call chain:
+
+```text
+main.go (signal.NotifyContext) → Manager → VendorSyncer → Service interfaces → git operations
+```
+
+**CLI commands with signal-aware context**: sync, update, verify, scan, audit, drift, check-updates.
+
+**Cancellation behavior**:
+- `ctx.Err()` checked at vendor loop boundaries for cooperative cancellation
+- Git operations (clone, fetch, checkout, ls-tree) respect parent context
+- Network requests (OSV.dev, GitHub API) derive timeouts from parent context
+- Parallel executor passes context to each worker goroutine
+
+**Exception**: Interactive wizard paths (`SaveVendor`, `RemoveVendor`) use `context.Background()` since they are user-driven and don't benefit from signal handling. Watch mode callback also uses `context.Background()` per invocation.
+
 ### Concurrency Considerations
 
-- Git operations use 30-second timeout contexts for directory listing
+- Git operations use 30-second timeout contexts for directory listing (derived from parent context)
 - Optional parallel vendor processing via --parallel flag
   - Worker pool pattern with configurable worker count
   - Default workers: runtime.NumCPU() (max 8)
@@ -700,6 +718,7 @@ git-vendor validate                  # Validate config and detect conflicts
 git-vendor verify [options]          # Verify files against lockfile hashes
 git-vendor scan [options]            # Scan for CVE vulnerabilities (via OSV.dev)
 git-vendor license [options]         # Check license compliance against policy
+git-vendor audit [options]           # Unified audit: verify + scan + license + drift
 git-vendor status                    # Check if local files match lockfile
 git-vendor check-updates             # Preview available updates
 git-vendor diff <vendor>             # Show commit history between locked and latest
@@ -819,6 +838,23 @@ git-vendor config set <key> <value>  # Set config value
 ```
 
 **Behavior:** The license command evaluates all vendored dependencies against the license policy. Without a policy file, uses the default `AllowedLicenses` list. With a policy file, uses deny/warn/allow semantics with configurable unknown-license handling.
+
+### Audit Command Flags
+
+```bash
+--format=<fmt>         # Output format: table (default) or json
+--skip-verify          # Skip file integrity check
+--skip-scan            # Skip vulnerability scan
+--skip-license         # Skip license compliance check
+--skip-drift           # Skip drift detection
+--fail-on <severity>   # Severity threshold for scan (critical|high|medium|low)
+--license-fail-on <l>  # License fail level: deny (default) or warn
+--policy <path>        # License policy file path
+--verbose, -v          # Show git commands
+# Exit codes: 0=PASS, 1=FAIL, 2=WARN
+```
+
+**Behavior:** The audit command runs verify + scan + license + drift as sub-checks and produces a combined pass/fail report. Each sub-check is independently error-handled — a failure in one does not prevent the others from running. Combined result: FAIL if any sub-check fails, WARN if any warns (but none fail), PASS otherwise. Non-fatal errors (e.g., network failures) are collected in `summary.errors`.
 
 ### SBOM Command Flags
 
@@ -962,6 +998,13 @@ Error response:
 - `EmitCLISuccess()` / `EmitCLIError()` - JSON output helpers
 - `CLIExitCodeForError()` / `CLIErrorCodeForError()` - Error-to-code mappers
 - Exit code and error code constants
+
+**audit_service.go:**
+
+- `AuditServiceInterface` - Contract for the unified audit command
+- `AuditService` - Orchestrates verify, scan, license, drift sub-checks into combined report
+- `Audit(ctx, opts)` - Run all enabled sub-checks; failed sub-check does NOT abort others
+- `FormatAuditTable()` - Human-readable dotted-line table formatter for AuditResult
 
 **hook_service.go:**
 

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -10,9 +11,10 @@ import (
 
 // UpdateServiceInterface defines the contract for update operations and lockfile regeneration.
 // UpdateServiceInterface enables mocking in tests and alternative update strategies.
+// All methods accept a context.Context for cancellation support (e.g., Ctrl+C).
 type UpdateServiceInterface interface {
-	UpdateAll() error
-	UpdateAllWithOptions(parallelOpts types.ParallelOptions) error
+	UpdateAll(ctx context.Context) error
+	UpdateAllWithOptions(ctx context.Context, parallelOpts types.ParallelOptions) error
 }
 
 // Compile-time interface satisfaction check.
@@ -47,27 +49,30 @@ func NewUpdateService(
 	}
 }
 
-// UpdateAll updates all vendors and regenerates the lockfile
-func (s *UpdateService) UpdateAll() error {
-	return s.UpdateAllWithOptions(types.ParallelOptions{Enabled: false})
+// UpdateAll updates all vendors and regenerates the lockfile.
+// ctx controls cancellation of git operations during update.
+func (s *UpdateService) UpdateAll(ctx context.Context) error {
+	return s.UpdateAllWithOptions(ctx, types.ParallelOptions{Enabled: false})
 }
 
-// UpdateAllWithOptions updates all vendors with optional parallel processing
-func (s *UpdateService) UpdateAllWithOptions(parallelOpts types.ParallelOptions) error {
+// UpdateAllWithOptions updates all vendors with optional parallel processing.
+// ctx controls cancellation of git operations during update.
+func (s *UpdateService) UpdateAllWithOptions(ctx context.Context, parallelOpts types.ParallelOptions) error {
 	config, err := s.configStore.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
 	if parallelOpts.Enabled {
-		return s.updateAllParallel(config, parallelOpts)
+		return s.updateAllParallel(ctx, config, parallelOpts)
 	}
 
-	return s.updateAllSequential(config)
+	return s.updateAllSequential(ctx, config)
 }
 
-// updateAllSequential performs sequential update (original implementation)
-func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
+// updateAllSequential performs sequential update (original implementation).
+// ctx controls cancellation — checked at each vendor boundary.
+func (s *UpdateService) updateAllSequential(ctx context.Context, config types.VendorConfig) error {
 	// Load existing lock to preserve VendoredAt and VendoredBy
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
@@ -88,9 +93,12 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 
 	// Update each vendor
 	for _, v := range config.Vendors {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		// Sync vendor without lock (force latest)
 		// During update, we always force and skip cache (we want fresh data)
-		updatedRefs, _, err := s.syncService.SyncVendor(&v, nil, SyncOptions{Force: true, NoCache: true})
+		updatedRefs, _, err := s.syncService.SyncVendor(ctx, &v, nil, SyncOptions{Force: true, NoCache: true})
 		if err != nil {
 			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 			// Continue on error - don't fail the whole update
@@ -143,8 +151,9 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 	return s.lockStore.Save(lock)
 }
 
-// updateAllParallel performs parallel update using worker pool
-func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpts types.ParallelOptions) error {
+// updateAllParallel performs parallel update using worker pool.
+// ctx controls cancellation — passed to the parallel executor and each worker.
+func (s *UpdateService) updateAllParallel(ctx context.Context, config types.VendorConfig, parallelOpts types.ParallelOptions) error {
 	// Load existing lock to preserve VendoredAt and VendoredBy
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
@@ -166,8 +175,8 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 	executor := NewParallelExecutor(parallelOpts, s.ui)
 
 	// Define update function for a single vendor
-	updateFunc := func(v types.VendorSpec, opts SyncOptions) (map[string]RefMetadata, error) {
-		updatedRefs, _, err := s.syncService.SyncVendor(&v, nil, opts)
+	updateFunc := func(workerCtx context.Context, v types.VendorSpec, opts SyncOptions) (map[string]RefMetadata, error) {
+		updatedRefs, _, err := s.syncService.SyncVendor(workerCtx, &v, nil, opts)
 		if err != nil {
 			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 			progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
@@ -184,7 +193,7 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 	}
 
 	// Execute parallel updates
-	results, err := executor.ExecuteParallelUpdate(config.Vendors, updateFunc)
+	results, err := executor.ExecuteParallelUpdate(ctx, config.Vendors, updateFunc)
 	if err != nil {
 		// Continue even if some vendors failed - we still want to save successful updates
 		s.ui.ShowWarning("Some Updates Failed", err.Error())

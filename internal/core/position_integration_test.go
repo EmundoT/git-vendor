@@ -207,7 +207,7 @@ func TestPositionIntegration_FullLifecycle(t *testing.T) {
 	}
 
 	// === Phase 1: Sync via SyncVendor (update mode — nil lockedRefs) ===
-	refMeta, stats, err := env.syncSvc.SyncVendor(&vendor, nil, SyncOptions{Force: true, NoCache: true})
+	refMeta, stats, err := env.syncSvc.SyncVendor(context.Background(), &vendor, nil, SyncOptions{Force: true, NoCache: true})
 	if err != nil {
 		t.Fatalf("SyncVendor failed: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestPositionIntegration_FullLifecycle(t *testing.T) {
 	}
 
 	// === Phase 3: Verify passes ===
-	result, err := env.verifySvc.Verify()
+	result, err := env.verifySvc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify failed: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestPositionIntegration_FullLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err = env.verifySvc.Verify()
+	result, err = env.verifySvc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify after tamper failed: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestPositionIntegration_FullLifecycle(t *testing.T) {
 	}
 
 	// === Phase 5: Re-sync to restore ===
-	_, _, err = env.syncSvc.SyncVendor(&vendor, nil, SyncOptions{Force: true, NoCache: true})
+	_, _, err = env.syncSvc.SyncVendor(context.Background(), &vendor, nil, SyncOptions{Force: true, NoCache: true})
 	if err != nil {
 		t.Fatalf("Re-sync failed: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestPositionIntegration_FullLifecycle(t *testing.T) {
 	}
 
 	// === Phase 6: Verify passes again ===
-	result, err = env.verifySvc.Verify()
+	result, err = env.verifySvc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify after re-sync failed: %v", err)
 	}
@@ -487,16 +487,17 @@ func TestPositionIntegration_ParallelSync(t *testing.T) {
 		"vendor-a": syncA,
 		"vendor-b": syncB,
 	}
-	syncFunc := func(v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+	syncFunc := func(ctx context.Context, v types.VendorSpec, lockedRefs map[string]string, opts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 		svc, ok := syncMap[v.Name]
 		if !ok {
 			return nil, CopyStats{}, fmt.Errorf("unknown vendor: %s", v.Name)
 		}
-		return svc.SyncVendor(&v, lockedRefs, opts)
+		return svc.SyncVendor(ctx, &v, lockedRefs, opts)
 	}
 
 	executor := NewParallelExecutor(types.ParallelOptions{Enabled: true, MaxWorkers: 2}, ui)
 	results, err := executor.ExecuteParallelSync(
+		context.Background(),
 		[]types.VendorSpec{vendorA, vendorB},
 		nil,
 		SyncOptions{Force: true, NoCache: true},
@@ -557,7 +558,7 @@ func TestPositionIntegration_ParallelSync(t *testing.T) {
 	}
 
 	verifySvc := NewVerifyService(configStore, lockStore, cacheStore, osFS, rootDir)
-	result, err := verifySvc.Verify()
+	result, err := verifySvc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify failed: %v", err)
 	}
@@ -745,7 +746,7 @@ func TestPositionIntegration_EndToEndWithUpdateService(t *testing.T) {
 	}
 
 	// Run UpdateAll — triggers SyncVendor → builds lockfile with positions
-	if err := env.updateSvc.UpdateAll(); err != nil {
+	if err := env.updateSvc.UpdateAll(context.Background()); err != nil {
 		t.Fatalf("UpdateAll failed: %v", err)
 	}
 
@@ -806,7 +807,7 @@ func TestPositionIntegration_EndToEndWithUpdateService(t *testing.T) {
 	}
 
 	// Run verify — should pass
-	result, err := env.verifySvc.Verify()
+	result, err := env.verifySvc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify failed: %v", err)
 	}
@@ -821,7 +822,7 @@ func TestPositionIntegration_EndToEndWithUpdateService(t *testing.T) {
 	if err := os.WriteFile("extracted/subset.txt", []byte("tampered content"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	result, err = env.verifySvc.Verify()
+	result, err = env.verifySvc.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify after tamper failed: %v", err)
 	}
