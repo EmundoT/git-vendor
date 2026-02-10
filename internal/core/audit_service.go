@@ -76,7 +76,7 @@ func (s *AuditService) Audit(ctx context.Context, opts AuditOptions) (*types.Aud
 			return nil, fmt.Errorf("audit cancelled: %w", err)
 		}
 		checks++
-		verifyResult, err := s.verifyService.Verify()
+		verifyResult, err := s.verifyService.Verify(ctx)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("verify: %s", err.Error()))
 		} else {
@@ -142,7 +142,7 @@ func (s *AuditService) Audit(ctx context.Context, opts AuditOptions) (*types.Aud
 			return nil, fmt.Errorf("audit cancelled: %w", err)
 		}
 		checks++
-		driftResult, err := s.driftService.Drift(DriftOptions{})
+		driftResult, err := s.driftService.Drift(ctx, DriftOptions{})
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("drift: %s", err.Error()))
 		} else {

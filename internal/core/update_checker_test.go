@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -95,7 +96,7 @@ func TestUpdateChecker_CheckUpdates(t *testing.T) {
 	mockFS.EXPECT().RemoveAll("/tmp/check2").Return(nil)
 
 	// Test: CheckUpdates
-	results, err := checker.CheckUpdates()
+	results, err := checker.CheckUpdates(context.Background())
 	if err != nil {
 		t.Fatalf("CheckUpdates() error = %v", err)
 	}
@@ -156,7 +157,7 @@ func TestUpdateChecker_CheckUpdates_ConfigLoadError(t *testing.T) {
 	mockConfig.EXPECT().Load().Return(types.VendorConfig{}, fmt.Errorf("config not found"))
 
 	// Test: CheckUpdates should fail
-	_, err := checker.CheckUpdates()
+	_, err := checker.CheckUpdates(context.Background())
 	if err == nil {
 		t.Error("Expected error when config load fails, got nil")
 	}
@@ -188,7 +189,7 @@ func TestUpdateChecker_CheckUpdates_LockLoadError(t *testing.T) {
 	mockLock.EXPECT().Load().Return(types.VendorLock{}, fmt.Errorf("lock not found"))
 
 	// Test: CheckUpdates should fail
-	_, err := checker.CheckUpdates()
+	_, err := checker.CheckUpdates(context.Background())
 	if err == nil {
 		t.Error("Expected error when lock load fails, got nil")
 	}
@@ -224,7 +225,7 @@ func TestUpdateChecker_CheckUpdates_SkipUnsynced(t *testing.T) {
 	mockLock.EXPECT().Load().Return(lock, nil)
 
 	// Test: CheckUpdates should skip unsynced vendor
-	results, err := checker.CheckUpdates()
+	results, err := checker.CheckUpdates(context.Background())
 	if err != nil {
 		t.Fatalf("CheckUpdates() error = %v", err)
 	}
@@ -270,7 +271,7 @@ func TestUpdateChecker_CheckUpdates_FetchError(t *testing.T) {
 	mockFS.EXPECT().RemoveAll("/tmp/check1").Return(nil)
 
 	// Test: CheckUpdates should skip vendor with fetch error and return empty results
-	results, err := checker.CheckUpdates()
+	results, err := checker.CheckUpdates(context.Background())
 	if err != nil {
 		t.Fatalf("CheckUpdates() should not error on fetch failure, got: %v", err)
 	}
@@ -339,7 +340,7 @@ func TestUpdateChecker_CheckUpdates_MultipleSpecs(t *testing.T) {
 	mockFS.EXPECT().RemoveAll("/tmp/check2").Return(nil)
 
 	// Test: CheckUpdates should check both specs
-	results, err := checker.CheckUpdates()
+	results, err := checker.CheckUpdates(context.Background())
 	if err != nil {
 		t.Fatalf("CheckUpdates() error = %v", err)
 	}
