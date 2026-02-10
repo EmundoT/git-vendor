@@ -144,7 +144,7 @@ func TestFileLockStore_GetHash_MissingLockfile(t *testing.T) {
 
 	store := NewFileLockStore(vendorDir)
 
-	// Don't create lockfile - it doesn't exist
+	// Don't create lockfile - lockfile doesn't exist on disk
 
 	// Test: GetHash on missing lockfile should return empty string (no error)
 	hash := store.GetHash("vendor1", "main")

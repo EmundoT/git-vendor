@@ -29,8 +29,8 @@ func TestSystemGitClient_GetCommitLog(t *testing.T) {
 	// Create first commit
 	file1 := filepath.Join(tempDir, "file1.txt")
 	os.WriteFile(file1, []byte("content1"), 0644)
-	runGitCommand(t, tempDir, "add", "file1.txt")
-	runGitCommand(t, tempDir, "commit", "-m", "First commit")
+	runGitSilent(t, tempDir, "add", "file1.txt")
+	runGitSilent(t, tempDir, "commit", "-m", "First commit")
 
 	// Get first commit hash
 	hash1, err := git.GetHeadHash(context.Background(), tempDir)
@@ -44,8 +44,8 @@ func TestSystemGitClient_GetCommitLog(t *testing.T) {
 	// Create second commit
 	file2 := filepath.Join(tempDir, "file2.txt")
 	os.WriteFile(file2, []byte("content2"), 0644)
-	runGitCommand(t, tempDir, "add", "file2.txt")
-	runGitCommand(t, tempDir, "commit", "-m", "Second commit")
+	runGitSilent(t, tempDir, "add", "file2.txt")
+	runGitSilent(t, tempDir, "commit", "-m", "Second commit")
 
 	// Small delay to ensure different timestamps
 	time.Sleep(10 * time.Millisecond)
@@ -53,8 +53,8 @@ func TestSystemGitClient_GetCommitLog(t *testing.T) {
 	// Create third commit
 	file3 := filepath.Join(tempDir, "file3.txt")
 	os.WriteFile(file3, []byte("content3"), 0644)
-	runGitCommand(t, tempDir, "add", "file3.txt")
-	runGitCommand(t, tempDir, "commit", "-m", "Third commit")
+	runGitSilent(t, tempDir, "add", "file3.txt")
+	runGitSilent(t, tempDir, "commit", "-m", "Third commit")
 
 	// Get final commit hash
 	hash3, err := git.GetHeadHash(context.Background(), tempDir)
@@ -119,8 +119,8 @@ func TestSystemGitClient_GetCommitLog_MaxCount(t *testing.T) {
 	// Create first commit
 	file1 := filepath.Join(tempDir, "file1.txt")
 	os.WriteFile(file1, []byte("content1"), 0644)
-	runGitCommand(t, tempDir, "add", "file1.txt")
-	runGitCommand(t, tempDir, "commit", "-m", "First commit")
+	runGitSilent(t, tempDir, "add", "file1.txt")
+	runGitSilent(t, tempDir, "commit", "-m", "First commit")
 
 	hash1, err := git.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
@@ -132,8 +132,8 @@ func TestSystemGitClient_GetCommitLog_MaxCount(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		fileName := filepath.Join(tempDir, "file"+string(rune('0'+i))+".txt")
 		os.WriteFile(fileName, []byte("content"), 0644)
-		runGitCommand(t, tempDir, "add", ".")
-		runGitCommand(t, tempDir, "commit", "-m", "Commit "+string(rune('0'+i)))
+		runGitSilent(t, tempDir, "add", ".")
+		runGitSilent(t, tempDir, "commit", "-m", "Commit "+string(rune('0'+i)))
 	}
 
 	hash6, err := git.GetHeadHash(context.Background(), tempDir)
@@ -167,8 +167,8 @@ func TestSystemGitClient_GetCommitLog_EmptyRange(t *testing.T) {
 	// Create single commit
 	file1 := filepath.Join(tempDir, "file1.txt")
 	os.WriteFile(file1, []byte("content1"), 0644)
-	runGitCommand(t, tempDir, "add", "file1.txt")
-	runGitCommand(t, tempDir, "commit", "-m", "First commit")
+	runGitSilent(t, tempDir, "add", "file1.txt")
+	runGitSilent(t, tempDir, "commit", "-m", "First commit")
 
 	hash1, err := git.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
@@ -201,8 +201,8 @@ func TestSystemGitClient_GetCommitLog_InvalidRange(t *testing.T) {
 	// Create commit
 	file1 := filepath.Join(tempDir, "file1.txt")
 	os.WriteFile(file1, []byte("content1"), 0644)
-	runGitCommand(t, tempDir, "add", "file1.txt")
-	runGitCommand(t, tempDir, "commit", "-m", "First commit")
+	runGitSilent(t, tempDir, "add", "file1.txt")
+	runGitSilent(t, tempDir, "commit", "-m", "First commit")
 
 	// Test: Invalid hash should error
 	_, err := git.GetCommitLog(context.Background(), tempDir, "invalid-hash", "another-invalid-hash", 0)
@@ -226,8 +226,8 @@ func TestSystemGitClient_GetTagForCommit_SemverPreference(t *testing.T) {
 	// Create a commit with both semver and non-semver tags
 	file := filepath.Join(tempDir, "file.txt")
 	os.WriteFile(file, []byte("content"), 0644)
-	runGitCommand(t, tempDir, "add", ".")
-	runGitCommand(t, tempDir, "commit", "-m", "Tagged commit")
+	runGitSilent(t, tempDir, "add", ".")
+	runGitSilent(t, tempDir, "commit", "-m", "Tagged commit")
 
 	hash, err := gitClient.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
@@ -235,8 +235,8 @@ func TestSystemGitClient_GetTagForCommit_SemverPreference(t *testing.T) {
 	}
 
 	// Tag with non-semver first, then semver — GetTagForCommit should prefer semver
-	runGitCommand(t, tempDir, "tag", "release-2025")
-	runGitCommand(t, tempDir, "tag", "v1.2.3")
+	runGitSilent(t, tempDir, "tag", "release-2025")
+	runGitSilent(t, tempDir, "tag", "v1.2.3")
 
 	tag, err := gitClient.GetTagForCommit(context.Background(), tempDir, hash)
 	if err != nil {
@@ -258,8 +258,8 @@ func TestSystemGitClient_GetTagForCommit_NonSemverFallback(t *testing.T) {
 
 	file := filepath.Join(tempDir, "file.txt")
 	os.WriteFile(file, []byte("content"), 0644)
-	runGitCommand(t, tempDir, "add", ".")
-	runGitCommand(t, tempDir, "commit", "-m", "Non-semver commit")
+	runGitSilent(t, tempDir, "add", ".")
+	runGitSilent(t, tempDir, "commit", "-m", "Non-semver commit")
 
 	hash, err := gitClient.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
@@ -267,7 +267,7 @@ func TestSystemGitClient_GetTagForCommit_NonSemverFallback(t *testing.T) {
 	}
 
 	// Only non-semver tags — should fall back to first tag
-	runGitCommand(t, tempDir, "tag", "release-2025")
+	runGitSilent(t, tempDir, "tag", "release-2025")
 
 	tag, err := gitClient.GetTagForCommit(context.Background(), tempDir, hash)
 	if err != nil {
@@ -289,8 +289,8 @@ func TestSystemGitClient_GetTagForCommit_NoTags(t *testing.T) {
 
 	file := filepath.Join(tempDir, "file.txt")
 	os.WriteFile(file, []byte("content"), 0644)
-	runGitCommand(t, tempDir, "add", ".")
-	runGitCommand(t, tempDir, "commit", "-m", "Untagged commit")
+	runGitSilent(t, tempDir, "add", ".")
+	runGitSilent(t, tempDir, "commit", "-m", "Untagged commit")
 
 	hash, err := gitClient.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
@@ -318,8 +318,8 @@ func TestSystemGitClient_GetTagForCommit_SemverWithoutPrefix(t *testing.T) {
 
 	file := filepath.Join(tempDir, "file.txt")
 	os.WriteFile(file, []byte("content"), 0644)
-	runGitCommand(t, tempDir, "add", ".")
-	runGitCommand(t, tempDir, "commit", "-m", "Semver no prefix")
+	runGitSilent(t, tempDir, "add", ".")
+	runGitSilent(t, tempDir, "commit", "-m", "Semver no prefix")
 
 	hash, err := gitClient.GetHeadHash(context.Background(), tempDir)
 	if err != nil {
@@ -327,8 +327,8 @@ func TestSystemGitClient_GetTagForCommit_SemverWithoutPrefix(t *testing.T) {
 	}
 
 	// Semver without 'v' prefix should still be preferred
-	runGitCommand(t, tempDir, "tag", "build-42")
-	runGitCommand(t, tempDir, "tag", "2.0.0")
+	runGitSilent(t, tempDir, "tag", "build-42")
+	runGitSilent(t, tempDir, "tag", "2.0.0")
 
 	tag, err := gitClient.GetTagForCommit(context.Background(), tempDir, hash)
 	if err != nil {
@@ -451,7 +451,7 @@ func TestParseSmartURL_SSHURLWithDotGit(t *testing.T) {
 }
 
 func TestParseSmartURL_HTTPvsHTTPS(t *testing.T) {
-	// HTTP URL should not match deep-link regex (it targets github.com specifically)
+	// HTTP URL should not match deep-link regex (the regex targets github.com specifically)
 	base, ref, path := ParseSmartURL("http://github.com/owner/repo")
 	if ref != "" {
 		t.Errorf("Expected empty ref for HTTP URL, got '%s'", ref)
@@ -630,16 +630,16 @@ func TestSystemGitClient_GetCommitLog_DateFormat(t *testing.T) {
 
 	file1 := filepath.Join(tempDir, "file1.txt")
 	os.WriteFile(file1, []byte("content1"), 0644)
-	runGitCommand(t, tempDir, "add", ".")
-	runGitCommand(t, tempDir, "commit", "-m", "First commit")
+	runGitSilent(t, tempDir, "add", ".")
+	runGitSilent(t, tempDir, "commit", "-m", "First commit")
 	hash1, _ := gitClient.GetHeadHash(context.Background(), tempDir)
 
 	time.Sleep(10 * time.Millisecond)
 
 	file2 := filepath.Join(tempDir, "file2.txt")
 	os.WriteFile(file2, []byte("content2"), 0644)
-	runGitCommand(t, tempDir, "add", ".")
-	runGitCommand(t, tempDir, "commit", "-m", "Second commit")
+	runGitSilent(t, tempDir, "add", ".")
+	runGitSilent(t, tempDir, "commit", "-m", "Second commit")
 	hash2, _ := gitClient.GetHeadHash(context.Background(), tempDir)
 
 	commits, err := gitClient.GetCommitLog(context.Background(), tempDir, hash1, hash2, 0)
@@ -720,11 +720,15 @@ func TestIsSemverTag(t *testing.T) {
 
 func configureGitUser(t *testing.T, dir string) {
 	t.Helper()
-	runGitCommand(t, dir, "config", "user.name", "Test User")
-	runGitCommand(t, dir, "config", "user.email", "test@example.com")
+	runGitSilent(t, dir, "config", "user.name", "Test User")
+	runGitSilent(t, dir, "config", "user.email", "test@example.com")
 }
 
-func runGitCommand(t *testing.T, dir string, args ...string) {
+// runGitSilent executes a git command discarding stdout. Automatically injects
+// -c commit.gpgsign=false per invocation for non-integration tests that lack
+// per-repo config. Contrast with runGitOutput (integration_test.go) which
+// returns output and relies on per-repo gpgsign config.
+func runGitSilent(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	// Disable commit signing for tests to avoid environment-specific failures
 	fullArgs := append([]string{"-c", "commit.gpgsign=false"}, args...)

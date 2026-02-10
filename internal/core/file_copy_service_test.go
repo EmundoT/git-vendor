@@ -15,7 +15,6 @@ import (
 // File Copy Tests
 // ============================================================================
 
-// TestCopyFile tests file copying functionality
 func TestCopyFile(t *testing.T) {
 	fs := NewOSFileSystem()
 
@@ -77,7 +76,6 @@ func TestCopyFile(t *testing.T) {
 // Directory Copy Tests
 // ============================================================================
 
-// TestCopyDir tests directory copying functionality
 func TestCopyDir(t *testing.T) {
 	fs := NewOSFileSystem()
 
@@ -383,7 +381,7 @@ func TestCopyMappings_MultiplePositionsToSameFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Pre-create the target file so position placement can read it
+	// Pre-create the target file so position placement can read the existing content
 	destPath := filepath.Join(workDir, "target.go")
 	if err := os.WriteFile(destPath, []byte("placeholder1\nplaceholder2\nplaceholder3\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -592,7 +590,7 @@ func TestCheckLocalModifications_Position_MissingDest(t *testing.T) {
 // ============================================================================
 
 // TestCopyWithPosition_DestDoesNotExist verifies that copyWithPosition creates
-// a new destination file when it doesn't exist.
+// a new destination file when the destination doesn't exist.
 func TestCopyWithPosition_DestDoesNotExist(t *testing.T) {
 	repoDir := t.TempDir()
 	workDir := t.TempDir()
@@ -636,7 +634,7 @@ func TestCopyWithPosition_DestDoesNotExist(t *testing.T) {
 
 // TestCopyWithPosition_DestHasFewerLines verifies that copyWithPosition returns
 // an error when the destination file has fewer lines than the target position.
-// PlaceContent does not pad — it requires the target line to exist.
+// PlaceContent does not pad — PlaceContent requires the target line to exist.
 func TestCopyWithPosition_DestHasFewerLines(t *testing.T) {
 	repoDir := t.TempDir()
 	workDir := t.TempDir()

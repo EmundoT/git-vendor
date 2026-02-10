@@ -108,14 +108,14 @@ func TestManager_SetUICallback(t *testing.T) {
 	newUI := &SilentUICallback{}
 	manager.SetUICallback(newUI)
 
-	// Verify it changed
+	// Verify UI callback changed
 	if manager.syncer.ui != newUI {
 		t.Error("Expected UI callback to be updated")
 	}
 }
 
 func TestIsGitInstalled(t *testing.T) {
-	// Git should be installed in the test environment (CI requires it)
+	// Git should be installed in the test environment (CI requires git)
 	installed := IsGitInstalled()
 	if !installed {
 		t.Error("Expected git to be installed in test environment")
@@ -209,7 +209,7 @@ func TestManager_UpdateVerboseMode(t *testing.T) {
 	// UpdateVerboseMode should create a new git client
 	manager.UpdateVerboseMode(true)
 
-	// Verify git client was updated (by checking it's not nil)
+	// Verify git client was updated (by checking gitClient is not nil)
 	if manager.syncer.gitClient == nil {
 		t.Error("Expected git client to be updated")
 	}

@@ -337,7 +337,7 @@ func TestSyncVendor_PathTraversalBlocked(t *testing.T) {
 	// Mock: File exists in temp repo
 	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "payload.txt", isDir: false}, nil).AnyTimes()
 	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	// Even though path validation should catch it, license copy happens before mapping validation
+	// Even though path validation should catch traversal, license copy happens before mapping validation
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
@@ -1454,7 +1454,7 @@ func TestSync_GroupFilter_MultipleGroups(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	opts := SyncOptions{
-		GroupName: "mobile", // Vendor has this group among others
+		GroupName: "mobile", // Vendor has "mobile" group among others
 	}
 
 	err := syncer.sync.Sync(opts)
@@ -1617,7 +1617,7 @@ func TestSyncVendor_CacheHit_DestFileDeleted(t *testing.T) {
 	lockedRefs := map[string]string{"main": "abc123def456"}
 
 	// canSkipSync: cache loads OK, commit matches, but os.Stat on dest file fails
-	// The os.Stat call uses the real os package in canSkipSync, so we need to handle it.
+	// The os.Stat call uses the real os package in canSkipSync, so the stat failure must be handled.
 	// canSkipSync joins rootDir + destFile: /project/lib/file.go → os.Stat will fail (not exist)
 	// This triggers canSkipSync to return false → clone path
 

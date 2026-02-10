@@ -14,7 +14,6 @@ import (
 // Cache Error Tests
 // ============================================================================
 
-// TestCacheStore_Load_CorruptedJSON tests loading a corrupted cache file
 func TestCacheStore_Load_CorruptedJSON(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -47,7 +46,6 @@ func TestCacheStore_Load_CorruptedJSON(t *testing.T) {
 	}
 }
 
-// TestCacheStore_Load_NonExistent tests loading a cache that doesn't exist (cache miss)
 func TestCacheStore_Load_NonExistent(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -70,7 +68,6 @@ func TestCacheStore_Load_NonExistent(t *testing.T) {
 	}
 }
 
-// TestCacheStore_Delete_NonExistent tests deleting a cache that doesn't exist
 func TestCacheStore_Delete_NonExistent(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -84,7 +81,6 @@ func TestCacheStore_Delete_NonExistent(t *testing.T) {
 	}
 }
 
-// TestCacheStore_ComputeFileChecksum_NonExistent tests checksum of missing file
 func TestCacheStore_ComputeFileChecksum_NonExistent(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -100,7 +96,6 @@ func TestCacheStore_ComputeFileChecksum_NonExistent(t *testing.T) {
 	}
 }
 
-// TestCacheStore_BuildCache_WithFiles tests building cache with multiple files
 func TestCacheStore_BuildCache_WithFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -144,7 +139,6 @@ func TestCacheStore_BuildCache_WithFiles(t *testing.T) {
 	}
 }
 
-// TestCacheStore_SaveAndLoad tests basic cache save and load functionality
 func TestCacheStore_SaveAndLoad(t *testing.T) {
 	// Create temp directory for cache
 	tempDir := t.TempDir()
@@ -198,7 +192,6 @@ func TestCacheStore_SaveAndLoad(t *testing.T) {
 	}
 }
 
-// TestCacheStore_Load_CacheHit tests loading an existing cache (cache hit)
 func TestCacheStore_Load_CacheHit(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -233,7 +226,6 @@ func TestCacheStore_Load_CacheHit(t *testing.T) {
 	}
 }
 
-// TestCacheStore_Load_CommitMismatch tests detecting commit hash changes
 func TestCacheStore_Load_CommitMismatch(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -271,7 +263,6 @@ func TestCacheStore_Load_CommitMismatch(t *testing.T) {
 	}
 }
 
-// TestCacheStore_Load_FileNotFound tests graceful handling of missing cache file
 func TestCacheStore_Load_FileNotFound(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -293,7 +284,6 @@ func TestCacheStore_Load_FileNotFound(t *testing.T) {
 	}
 }
 
-// TestCacheStore_BuildCache tests building a cache with file checksums
 func TestCacheStore_BuildCache(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -345,7 +335,6 @@ func TestCacheStore_BuildCache(t *testing.T) {
 	}
 }
 
-// TestCacheStore_ComputeFileChecksum tests checksum computation
 func TestCacheStore_ComputeFileChecksum(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -398,7 +387,6 @@ func TestCacheStore_ComputeFileChecksum(t *testing.T) {
 	}
 }
 
-// TestCacheStore_Delete tests cache deletion
 func TestCacheStore_Delete(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()
@@ -449,7 +437,6 @@ func TestCacheStore_Delete(t *testing.T) {
 	}
 }
 
-// TestCacheStore_LargeCacheLimit tests that cache size is limited
 func TestCacheStore_LargeCacheLimit(t *testing.T) {
 	tempDir := t.TempDir()
 	fs := NewOSFileSystem()

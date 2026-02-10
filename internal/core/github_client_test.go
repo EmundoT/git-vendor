@@ -14,10 +14,9 @@ import (
 func TestGitHubLicenseChecker_CheckLicense(t *testing.T) {
 	t.Skip("Requires refactoring github_client.go to accept configurable API base URL")
 
-	// This test creates a mock server but CheckLicense() hardcodes api.github.com,
-	// so it hits the real GitHub API and can fail with rate limits.
-	// To properly test this, we'd need to refactor CheckLicense to accept
-	// a configurable API base URL parameter.
+	// CheckLicense() hardcodes api.github.com, so the mock server cannot intercept calls.
+	// The test hits the real GitHub API and can fail with rate limits.
+	// Proper testing requires refactoring CheckLicense to accept a configurable API base URL.
 }
 
 func TestGitHubLicenseChecker_CheckLicense_WithMockServer(t *testing.T) {

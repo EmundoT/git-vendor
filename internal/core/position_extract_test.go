@@ -1069,7 +1069,7 @@ func TestPlaceContent_SequentialLineCountChange(t *testing.T) {
 	}
 
 	// After first placement: "line1\nreplaced-2-3\nline4\nline5\nline6\n" (5 lines + empty)
-	// Second vendor writes to L5 — but this is now "line6" not "line5"
+	// Second vendor writes to L5 — but L5 is now "line6" not "line5"
 	// because the first placement shifted lines down.
 	if err := PlaceContent(filePath, "vendor-B-at-L5", &types.PositionSpec{StartLine: 5}); err != nil {
 		t.Fatalf("second placement error: %v", err)
@@ -1645,7 +1645,7 @@ func TestExtractPosition_StartColExceedsLine_SingleLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Line "abc" has length 3. StartCol=5 exceeds it.
+	// Line "abc" has length 3. StartCol=5 exceeds the line length.
 	_, _, err := ExtractPosition(filePath, &types.PositionSpec{
 		StartLine: 1, EndLine: 1, StartCol: 5, EndCol: 5,
 	})

@@ -449,7 +449,7 @@ func TestRemoveVendor_ConfigSaveFails(t *testing.T) {
 	vendor1 := createTestVendorSpec("vendor-1", "https://github.com/owner/repo1", "main")
 	config.EXPECT().Load().Return(createTestConfig(vendor1), nil).AnyTimes()
 
-	// Mock: Config save fails - this causes early return, so fs.Remove is never called
+	// Mock: Config save fails - the failure causes early return, so fs.Remove is never called
 	config.EXPECT().Save(gomock.Any()).Return(fmt.Errorf("disk full"))
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
