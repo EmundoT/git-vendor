@@ -87,6 +87,7 @@ type VendorSyncer struct {
 	updateChecker UpdateCheckerInterface
 	verifyService VerifyServiceInterface
 	vulnScanner   VulnScannerInterface
+	driftService  DriftServiceInterface
 
 	// Infrastructure dependencies
 	configStore    ConfigStore
@@ -111,6 +112,7 @@ type ServiceOverrides struct {
 	UpdateChecker UpdateCheckerInterface
 	VerifyService VerifyServiceInterface
 	VulnScanner   VulnScannerInterface
+	DriftService  DriftServiceInterface
 }
 
 // NewVendorSyncer creates a new VendorSyncer with injected dependencies.
@@ -146,6 +148,7 @@ func NewVendorSyncer(
 	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
 	verifyService := NewVerifyService(configStore, lockStore, cache, fs, rootDir)
 	vulnScanner := VulnScannerInterface(NewVulnScanner(lockStore, configStore))
+	driftSvc := DriftServiceInterface(NewDriftService(configStore, lockStore, gitClient, fs, rootDir))
 
 	// Apply overrides where provided
 	syncer := &VendorSyncer{
@@ -158,6 +161,7 @@ func NewVendorSyncer(
 		updateChecker:  updateChecker,
 		verifyService:  verifyService,
 		vulnScanner:    vulnScanner,
+		driftService:   driftSvc,
 		configStore:    configStore,
 		lockStore:      lockStore,
 		gitClient:      gitClient,
@@ -193,6 +197,9 @@ func NewVendorSyncer(
 	}
 	if overrides.VulnScanner != nil {
 		syncer.vulnScanner = overrides.VulnScanner
+	}
+	if overrides.DriftService != nil {
+		syncer.driftService = overrides.DriftService
 	}
 
 	return syncer
@@ -510,6 +517,11 @@ func (s *VendorSyncer) Verify() (*types.VerifyResult, error) {
 // Scan performs vulnerability scanning against OSV.dev
 func (s *VendorSyncer) Scan(failOn string) (*types.ScanResult, error) {
 	return s.vulnScanner.Scan(failOn)
+}
+
+// Drift detects drift between vendored files and their origin
+func (s *VendorSyncer) Drift(opts DriftOptions) (*types.DriftResult, error) {
+	return s.driftService.Drift(opts)
 }
 
 // MigrateLockfile updates an existing lockfile to add missing metadata fields.
