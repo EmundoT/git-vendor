@@ -171,6 +171,66 @@ func TestComplianceCheck_SourceCanonical_BothDrifted(t *testing.T) {
 	}
 }
 
+func TestComplianceCheck_Bidirectional_SourceDrifted(t *testing.T) {
+	m := setupComplianceMocks(t)
+	defer m.ctrl.Finish()
+
+	m.config.EXPECT().Load().Return(
+		makeInternalConfig("api-types", ComplianceBidirectional, "pkg/types.go", "internal/types.go"), nil)
+	m.lock.EXPECT().Load().Return(
+		makeInternalLock("api-types", "pkg/types.go", "locked_src_hash", "internal/types.go", "locked_dest_hash"), nil)
+
+	// Source changed, dest unchanged
+	m.cache.files["pkg/types.go"] = "new_src_hash"
+	m.cache.files["internal/types.go"] = "locked_dest_hash"
+
+	svc := newComplianceService(m)
+	result, err := svc.Check(ComplianceOptions{})
+	if err != nil {
+		t.Fatalf("Check() error: %v", err)
+	}
+
+	entry := result.Entries[0]
+	if entry.Direction != types.DriftSourceDrift {
+		t.Errorf("expected direction source_drifted, got %s", entry.Direction)
+	}
+	// Bidirectional source drift should propagate source → dest (same as source-canonical)
+	if entry.Action != "propagate source → dest" {
+		t.Errorf("expected 'propagate source → dest', got %q", entry.Action)
+	}
+}
+
+func TestComplianceCheck_Bidirectional_BothDrifted(t *testing.T) {
+	m := setupComplianceMocks(t)
+	defer m.ctrl.Finish()
+
+	m.config.EXPECT().Load().Return(
+		makeInternalConfig("api-types", ComplianceBidirectional, "pkg/types.go", "internal/types.go"), nil)
+	m.lock.EXPECT().Load().Return(
+		makeInternalLock("api-types", "pkg/types.go", "locked_src_hash", "internal/types.go", "locked_dest_hash"), nil)
+
+	// Both changed
+	m.cache.files["pkg/types.go"] = "new_src_hash"
+	m.cache.files["internal/types.go"] = "new_dest_hash"
+
+	svc := newComplianceService(m)
+	result, err := svc.Check(ComplianceOptions{})
+	if err != nil {
+		t.Fatalf("Check() error: %v", err)
+	}
+
+	entry := result.Entries[0]
+	if entry.Direction != types.DriftBothDrift {
+		t.Errorf("expected direction both_drifted, got %s", entry.Direction)
+	}
+	if entry.Action != "conflict: manual resolution required" {
+		t.Errorf("expected conflict action, got %q", entry.Action)
+	}
+	if result.Summary.Result != "CONFLICT" {
+		t.Errorf("expected summary result CONFLICT, got %s", result.Summary.Result)
+	}
+}
+
 func TestComplianceCheck_Bidirectional_DestDrifted(t *testing.T) {
 	m := setupComplianceMocks(t)
 	defer m.ctrl.Finish()
@@ -1065,6 +1125,179 @@ func TestVerifyInternalEntries_DetectsDrift(t *testing.T) {
 	}
 	if entry.VendorName != "internal-lib" {
 		t.Errorf("expected vendor name 'internal-lib', got %q", entry.VendorName)
+	}
+}
+
+func TestCompliancePropagate_SourceCanonical_DestDrifted_ReverseCopiesToSource(t *testing.T) {
+	// Source-canonical mode with --reverse: dest changed → propagate dest to source.
+	tmpDir := t.TempDir()
+
+	srcFile := filepath.Join(tmpDir, "src.go")
+	destFile := filepath.Join(tmpDir, "dest.go")
+	if err := os.WriteFile(srcFile, []byte("old source content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destFile, []byte("new dest content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Check call
+	configStore.EXPECT().Load().Return(
+		makeInternalConfig("test-vendor", ComplianceSourceCanonical, srcFile, destFile), nil)
+	lockStore.EXPECT().Load().Return(
+		makeInternalLock("test-vendor", srcFile, "locked_src_hash", destFile, "old_dest_hash"), nil)
+
+	// Source unchanged, dest drifted
+	cache.files[srcFile] = "locked_src_hash"
+	cache.files[destFile] = "new_dest_hash"
+
+	// Propagation: with Reverse=true, should copy dest → source. Will write to srcFile
+	fs.EXPECT().MkdirAll(filepath.Dir(srcFile), os.FileMode(0755)).Return(nil)
+
+	// updateLockfileHashes: load + save
+	lockStore.EXPECT().Load().Return(
+		makeInternalLock("test-vendor", srcFile, "locked_src_hash", destFile, "old_dest_hash"), nil)
+	lockStore.EXPECT().Save(gomock.Any()).Return(nil)
+
+	svc := NewComplianceService(configStore, lockStore, cache, fs, tmpDir)
+	result, err := svc.Propagate(ComplianceOptions{Reverse: true})
+	if err != nil {
+		t.Fatalf("Propagate(Reverse) error: %v", err)
+	}
+
+	if result.Entries[0].Direction != types.DriftDestDrift {
+		t.Errorf("expected dest_drifted, got %s", result.Entries[0].Direction)
+	}
+
+	// Verify source file was overwritten with dest content
+	srcContent, readErr := os.ReadFile(srcFile)
+	if readErr != nil {
+		t.Fatalf("read src file: %v", readErr)
+	}
+	if string(srcContent) != "new dest content\n" {
+		t.Errorf("expected source to contain dest content, got %q", string(srcContent))
+	}
+}
+
+func TestCompliancePropagate_SourceCanonical_DestDrifted_NoReverse_WarnsOnly(t *testing.T) {
+	// Source-canonical without --reverse: dest changed → warn only, no copy.
+	m := setupComplianceMocks(t)
+	defer m.ctrl.Finish()
+
+	m.config.EXPECT().Load().Return(
+		makeInternalConfig("test-vendor", ComplianceSourceCanonical, "pkg/src.go", "internal/dest.go"), nil)
+	m.lock.EXPECT().Load().Return(
+		makeInternalLock("test-vendor", "pkg/src.go", "locked_src_hash", "internal/dest.go", "old_dest_hash"), nil)
+
+	// Source unchanged, dest drifted
+	m.cache.files["pkg/src.go"] = "locked_src_hash"
+	m.cache.files["internal/dest.go"] = "new_dest_hash"
+
+	// No fs.MkdirAll expectations → propagation should NOT write any files
+	// updateLockfileHashes: still called since no errors
+	m.lock.EXPECT().Load().Return(
+		makeInternalLock("test-vendor", "pkg/src.go", "locked_src_hash", "internal/dest.go", "old_dest_hash"), nil)
+	m.lock.EXPECT().Save(gomock.Any()).Return(nil)
+
+	svc := newComplianceService(m)
+	result, err := svc.Propagate(ComplianceOptions{Reverse: false})
+	if err != nil {
+		t.Fatalf("Propagate() error: %v", err)
+	}
+
+	// Entry should still show dest_drifted with warning action
+	entry := result.Entries[0]
+	if entry.Direction != types.DriftDestDrift {
+		t.Errorf("expected dest_drifted, got %s", entry.Direction)
+	}
+}
+
+func TestVerifyInternalEntries_MixedInternalExternal(t *testing.T) {
+	// Verify with both internal and external vendors produces separate result streams.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	config := types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:       "internal-lib",
+				Source:     SourceInternal,
+				Compliance: ComplianceBidirectional,
+				Specs: []types.BranchSpec{
+					{Ref: RefLocal, Mapping: []types.PathMapping{{From: "src.go", To: "dest.go"}}},
+				},
+			},
+			{
+				Name: "external-lib",
+				URL:  "https://github.com/org/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "lib.go", To: "vendor/lib.go"}}},
+				},
+			},
+		},
+	}
+
+	lock := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:             "internal-lib",
+				Ref:              RefLocal,
+				Source:           SourceInternal,
+				SourceFileHashes: map[string]string{"src.go": "src_locked"},
+				FileHashes:       map[string]string{"dest.go": "dest_locked"},
+			},
+			{
+				Name:       "external-lib",
+				Ref:        "main",
+				CommitHash: "abc123",
+				FileHashes: map[string]string{"vendor/lib.go": "ext_hash"},
+			},
+		},
+	}
+
+	// Both synced — no drift
+	cache.files["src.go"] = "src_locked"
+	cache.files["dest.go"] = "dest_locked"
+	cache.files["vendor/lib.go"] = "ext_hash"
+
+	configStore.EXPECT().Load().Return(config, nil)
+	lockStore.EXPECT().Load().Return(lock, nil)
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{isDir: false}, nil).AnyTimes()
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(nil)
+	if err != nil {
+		t.Fatalf("Verify() error: %v", err)
+	}
+
+	// External vendor file should be verified
+	if result.Summary.Verified < 1 {
+		t.Errorf("expected at least 1 verified file (external vendor), got %d", result.Summary.Verified)
+	}
+
+	// Internal status should have a synced entry
+	if len(result.InternalStatus) != 1 {
+		t.Fatalf("expected 1 internal status entry, got %d", len(result.InternalStatus))
+	}
+	entry := result.InternalStatus[0]
+	if entry.Direction != types.DriftSynced {
+		t.Errorf("expected synced, got %s", entry.Direction)
+	}
+	if entry.Compliance != ComplianceBidirectional {
+		t.Errorf("expected bidirectional compliance, got %q", entry.Compliance)
 	}
 }
 
