@@ -27,3 +27,8 @@ vendors:
       vendored_at: "2026-02-09T12:00:00Z"
       vendored_by: Claude <noreply@anthropic.com>
       last_synced_at: "2026-02-09T12:00:00Z"
+    - name: git-ecosystem
+      ref: main
+      commit_hash: fa4a9989d3dbc69822e821358cea054f31b2c141
+      updated: "2026-02-11T00:00:00Z"
+      last_synced_at: "2026-02-11T00:00:00Z"
