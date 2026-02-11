@@ -26,8 +26,8 @@
 | ID | Status | Title | Brief | Spec |
 |----|--------|-------|-------|------|
 | 020 | completed | Unified Audit Command | `git vendor audit` - Run verify + scan + license + drift with JSON output | - |
-| 021 | pending | Dependency Graph Visualization | `git vendor graph` - Generate Mermaid, DOT, HTML, JSON dependency graphs | - |
-| 022 | pending | GitHub Action | git-vendor-action for CI/CD with PR comments, check status, SBOM artifacts | - |
+| 021 | pending | Dependency Graph Visualization | `git vendor graph` - Generate Mermaid, DOT, JSON dependency graphs | [spec](specs/in-progress/021-dependency-graph-visualization.md) |
+| 022 | pending | GitHub Action | git-vendor-action for CI/CD with PR comments, check status, SBOM artifacts | [spec](specs/in-progress/022-github-action.md) |
 | 023 | pending | Compliance Evidence Reports | `git vendor compliance` - Generate EO 14028, NIST, DORA, CRA, SOC 2 evidence docs | - |
 | 024 | pending | Migration Metrics | `git vendor metrics` - Track extraction progress for monolith decomposition | - |
 | 070 | completed | Internal Project Compliance | `source: internal` vendors for intra-repo file sync with drift detection + propagation | [spec](specs/complete/070-internal-compliance.md) |
