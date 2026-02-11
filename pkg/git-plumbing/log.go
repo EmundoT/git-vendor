@@ -14,9 +14,48 @@ type Commit struct {
 	Subject  string
 	Author   string
 	Date     time.Time
-	Trailers map[string]string // key-value pairs parsed from commit body trailers
-	Body     string            // full commit body (after subject); populated when IncludeBody is set
-	Notes    string            // content from git notes; populated when NotesRef is set
+	Trailers []Trailer // ordered key-value pairs parsed from commit body trailers
+	Body     string    // full commit body (after subject); populated when IncludeBody is set
+	Notes    string    // content from git notes; populated when NotesRef is set
+}
+
+// TrailerValue returns the value of the first trailer matching key, or "".
+func (c Commit) TrailerValue(key string) string {
+	for _, t := range c.Trailers {
+		if t.Key == key {
+			return t.Value
+		}
+	}
+	return ""
+}
+
+// TrailerValues returns all values for trailers matching key, preserving order.
+func (c Commit) TrailerValues(key string) []string {
+	var vals []string
+	for _, t := range c.Trailers {
+		if t.Key == key {
+			vals = append(vals, t.Value)
+		}
+	}
+	return vals
+}
+
+// HasTrailer reports whether any trailer with the given key exists.
+func (c Commit) HasTrailer(key string) bool {
+	for _, t := range c.Trailers {
+		if t.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// TagQuery represents a tag-based filter on a comma-separated trailer value.
+// TagQuery uses MatchTagPrefix for segment-wise prefix matching against each
+// tag in the trailer value.
+type TagQuery struct {
+	Key string // trailer key (e.g., "Tags", "Touch")
+	Tag string // tag to search for using prefix matching
 }
 
 // LogOpts configures a log query.
@@ -30,6 +69,7 @@ type LogOpts struct {
 	IncludeBody   bool              // include body and notes in output (incompatible with OneLine)
 	NotesRef      string            // e.g. "refs/notes/agent" — adds --notes=<ref> to git args
 	TrailerFilter map[string]string // post-parse filter: only include commits matching all trailer key=value pairs
+	TagFilter     []TagQuery        // post-parse filter: prefix-match tags in comma-separated trailer values
 }
 
 // Log returns commits matching the given options.
@@ -112,6 +152,9 @@ func (g *Git) Log(ctx context.Context, opts LogOpts) ([]Commit, error) {
 	if len(opts.TrailerFilter) > 0 {
 		commits = filterByTrailers(commits, opts.TrailerFilter)
 	}
+	if len(opts.TagFilter) > 0 {
+		commits = filterByTagQueries(commits, opts.TagFilter)
+	}
 
 	return commits, nil
 }
@@ -153,15 +196,16 @@ func parseBodyRecords(out string) []Commit {
 // parseTrailers extracts key-value trailer pairs from the end of a commit body.
 // Trailers are consecutive "Key: Value" lines at the very end of the body,
 // preceded by a blank line. A trailer key consists of letters, digits, and
-// hyphens, followed by ": " and the value.
-func parseTrailers(body string) map[string]string {
+// hyphens, followed by ": " and the value. Returns trailers in top-to-bottom
+// order, preserving duplicate keys.
+func parseTrailers(body string) []Trailer {
 	if body == "" {
 		return nil
 	}
 	lines := strings.Split(body, "\n")
 
 	// Walk backwards from the end to find consecutive trailer lines.
-	trailers := make(map[string]string)
+	var reversed []Trailer
 	i := len(lines) - 1
 	for i >= 0 {
 		line := strings.TrimSpace(lines[i])
@@ -172,11 +216,16 @@ func parseTrailers(body string) map[string]string {
 		if !ok {
 			break
 		}
-		trailers[key] = value
+		reversed = append(reversed, Trailer{Key: key, Value: value})
 		i--
 	}
-	if len(trailers) == 0 {
+	if len(reversed) == 0 {
 		return nil
+	}
+	// Reverse to restore top-to-bottom order.
+	trailers := make([]Trailer, len(reversed))
+	for j, t := range reversed {
+		trailers[len(reversed)-1-j] = t
 	}
 	return trailers
 }
@@ -207,19 +256,42 @@ func isLetter(r rune) bool { return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 
 func isDigit(r rune) bool  { return r >= '0' && r <= '9' }
 
 // filterByTrailers returns only commits whose Trailers match every entry in filter.
+// Uses Commit.TrailerValue (first value wins) for comparison.
 func filterByTrailers(commits []Commit, filter map[string]string) []Commit {
 	var result []Commit
 	for _, c := range commits {
-		if matchesTrailers(c.Trailers, filter) {
+		if matchesTrailers(c, filter) {
 			result = append(result, c)
 		}
 	}
 	return result
 }
 
-func matchesTrailers(trailers, filter map[string]string) bool {
+func matchesTrailers(c Commit, filter map[string]string) bool {
 	for k, v := range filter {
-		if trailers[k] != v {
+		if c.TrailerValue(k) != v {
+			return false
+		}
+	}
+	return true
+}
+
+// filterByTagQueries returns only commits where every TagQuery matches.
+// Each TagQuery checks whether the trailer value (comma-separated list of tags)
+// contains any tag matching the query via MatchTagInList (segment-wise prefix).
+func filterByTagQueries(commits []Commit, queries []TagQuery) []Commit {
+	var result []Commit
+	for _, c := range commits {
+		if matchesTagQueries(c, queries) {
+			result = append(result, c)
+		}
+	}
+	return result
+}
+
+func matchesTagQueries(c Commit, queries []TagQuery) bool {
+	for _, q := range queries {
+		if !MatchTagInList(q.Tag, c.TrailerValue(q.Key)) {
 			return false
 		}
 	}

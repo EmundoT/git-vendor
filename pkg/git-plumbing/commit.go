@@ -2,11 +2,9 @@ package git
 
 import "context"
 
-// Trailer represents a single key-value trailer for git commits.
-// Multiple Trailers with the same Key are valid — git's --trailer flag
-// supports duplicate keys (e.g., multiple Vendor-Name entries).
-// Order is preserved: the Nth occurrence of a key corresponds to the Nth
-// logical group when keys repeat.
+// Trailer represents a single key-value git trailer.
+// Trailers are ordered and support duplicate keys, enabling multi-valued
+// semantics (e.g., multiple Vendor-Name entries with positional association).
 type Trailer struct {
 	Key   string
 	Value string
@@ -15,13 +13,10 @@ type Trailer struct {
 // CommitOpts configures a commit operation.
 type CommitOpts struct {
 	Message  string
-	Trailers []Trailer // ordered key=value pairs added via --trailer
+	Trailers []Trailer // ordered key-value pairs added via --trailer
 }
 
 // Commit creates a new commit with the given options.
-// Commit passes each trailer to git via --trailer key=value.
-// Duplicate keys are passed as separate --trailer arguments,
-// resulting in multi-valued trailers in the commit message.
 func (g *Git) Commit(ctx context.Context, opts CommitOpts) error {
 	args := []string{"commit", "-m", opts.Message}
 	for _, t := range opts.Trailers {
