@@ -55,6 +55,8 @@ internal/
     commit_service.go            # COMMIT-SCHEMA v1 trailers + git notes
     config_commands.go           # LLM-friendly CLI (Spec 072)
     cli_response.go              # JSON output types for Spec 072
+    internal_sync_service.go     # Internal vendor sync (same-repo file copy, Spec 070)
+    compliance_service.go        # Drift detection + propagation for internal vendors (Spec 070)
     errors.go                    # Sentinel errors + structured types
     constants.go                 # Path constants, git refs, license lists
   tui/wizard.go                  # Interactive TUI (charmbracelet/huh + lipgloss)
@@ -79,6 +81,8 @@ All in `internal/core/`. Mock with gomock for tests.
 | `LockStore` | `YAMLLockStore` | lock_store.go |
 | `HookExecutor` | `ShellHookExecutor` | hook_service.go |
 | `CacheStore` | `FileCacheStore` | cache_store.go |
+| `InternalSyncServiceInterface` | `InternalSyncService` | internal_sync_service.go |
+| `ComplianceServiceInterface` | `ComplianceService` | compliance_service.go |
 
 ## File System Structure
 
@@ -91,9 +95,25 @@ All in `internal/core/`. Mock with gomock for tests.
 .git-vendor-policy.yml  # Optional license policy (project root)
 ```
 
+## Internal Vendors (Spec 070)
+
+Internal vendors track files **within the same repository** for consistency enforcement. Configured via `source: internal` on `VendorSpec`.
+
+| VendorSpec Field | Purpose |
+|-----------------|---------|
+| `Source` | `""` (external, default) or `"internal"` |
+| `Compliance` | `""` (source-canonical, default) or `"bidirectional"` |
+
+| LockDetails Field | Purpose |
+|------------------|---------|
+| `Source` | `"internal"` for internal vendors |
+| `SourceFileHashes` | `map[string]string` — source path to SHA-256 |
+
+Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal` flag on `sync` runs only internal vendors. `--reverse` propagates dest changes back to source (requires `--internal`).
+
 ## sync vs update
 
-- **sync**: Fetch dependencies at locked commit hashes (deterministic). Uses `--depth 1` for shallow clones. Falls back to full fetch for stale commits.
+- **sync**: Fetch dependencies at locked commit hashes (deterministic). Uses `--depth 1` for shallow clones. Falls back to full fetch for stale commits. With `--internal`: syncs only internal vendors (no network).
 - **update**: Fetch latest commits and regenerate entire lockfile.
 
 ## Design Principles
@@ -127,6 +147,9 @@ All in `internal/core/`. Mock with gomock for tests.
 4. **tui.PrintError takes string**: Sentinel errors like `ErrNotInitialized` are `error` types. Call `.Error()` when passing to `tui.PrintError(title, err.Error())`.
 5. **Git operations via git-plumbing**: No direct `exec.Command` calls. All git ops delegate through `gitFor(dir)` which creates `*git.Git` instances.
 6. **Context propagation**: All long-running operations accept `context.Context`. CLI creates `signal.NotifyContext` for Ctrl+C.
+7. **RefLocal is a sentinel, not a git ref**: `RefLocal` ("local") is used for internal vendors. MUST NOT pass to git operations (checkout, fetch). All internal vendor ops use `os.Stat`/`os.ReadFile`, not git commands.
+8. **SourceFileHashes population**: Only populated during internal sync. Keyed by source file path (file-level granularity, position specs stripped before keying).
+9. **Position auto-update scope**: `updatePositionSpecs` only adjusts line-range specs (`L5-L20`). ToEOF specs auto-expand (no update). Column specs NOT auto-updated (documented limitation).
 
 ## Contextual Rules
 

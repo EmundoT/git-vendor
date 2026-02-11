@@ -253,3 +253,158 @@ func TestInternalSync_DryRunDoesNotCopy(t *testing.T) {
 		t.Error("expected non-empty content hash even in dry-run")
 	}
 }
+
+func TestInternalSync_PositionExtraction(t *testing.T) {
+	// Position extraction: From has L2-L4 position spec.
+	// InternalSyncService should extract lines 2-4 from source and write to dest.
+	tmpDir := t.TempDir()
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldDir) //nolint:errcheck
+
+	// Create source file with 5 lines
+	srcFile := "src.go"
+	srcContent := "line1\nline2\nline3\nline4\nline5\n"
+	if err := os.WriteFile(srcFile, []byte(srcContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Destination file (will be created by PlaceContent)
+	destFile := filepath.Join("out", "extracted.go")
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	mockFS := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+	cache.files[filepath.Join(".", srcFile)] = "src_hash_123"
+
+	// MkdirAll for dest parent dir (position extraction path)
+	mockFS.EXPECT().MkdirAll("out", os.FileMode(0755)).Return(nil)
+
+	svc := NewInternalSyncService(configStore, lockStore, &stubFileCopyService{}, cache, mockFS, tmpDir)
+
+	vendor := &types.VendorSpec{
+		Name:   "pos-extract",
+		Source: SourceInternal,
+		Specs: []types.BranchSpec{
+			{
+				Ref: RefLocal,
+				Mapping: []types.PathMapping{
+					{From: srcFile + ":L2-L4", To: destFile},
+				},
+			},
+		},
+	}
+
+	// Create the dest directory so PlaceContent can write
+	if err := os.MkdirAll("out", 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	results, stats, err := svc.SyncInternalVendor(vendor, SyncOptions{})
+	if err != nil {
+		t.Fatalf("SyncInternalVendor() unexpected error: %v", err)
+	}
+
+	if stats.FileCount != 1 {
+		t.Errorf("expected FileCount=1, got %d", stats.FileCount)
+	}
+
+	// Position record should be present
+	if len(stats.Positions) != 1 {
+		t.Fatalf("expected 1 position record, got %d", len(stats.Positions))
+	}
+	if stats.Positions[0].SourceHash == "" {
+		t.Error("expected non-empty source hash in position record")
+	}
+
+	meta, ok := results[RefLocal]
+	if !ok {
+		t.Fatal("expected results to contain key 'local'")
+	}
+	if meta.CommitHash == "" {
+		t.Error("expected non-empty content hash in CommitHash")
+	}
+
+	// Verify extracted content: lines 2-4 = "line2\nline3\nline4"
+	// ExtractPosition does not append a trailing newline.
+	destContent, readErr := os.ReadFile(destFile)
+	if readErr != nil {
+		t.Fatalf("read dest file: %v", readErr)
+	}
+	expected := "line2\nline3\nline4"
+	if string(destContent) != expected {
+		t.Errorf("expected extracted content %q, got %q", expected, string(destContent))
+	}
+}
+
+func TestInternalSync_CacheSkipWhenHashesUnchanged(t *testing.T) {
+	// Two consecutive syncs with identical source hashes should produce
+	// identical content hashes, enabling cache skip logic.
+	tmpDir := t.TempDir()
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldDir) //nolint:errcheck
+
+	srcFile := "src.go"
+	if err := os.WriteFile(srcFile, []byte("content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	mockFS := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+	cache.files[filepath.Join(".", srcFile)] = "stable_hash"
+
+	mockFS.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockFS.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 8}, nil).AnyTimes()
+
+	svc := NewInternalSyncService(configStore, lockStore, &stubFileCopyService{}, cache, mockFS, tmpDir)
+
+	vendor := &types.VendorSpec{
+		Name:   "cache-test",
+		Source: SourceInternal,
+		Specs: []types.BranchSpec{
+			{Ref: RefLocal, Mapping: []types.PathMapping{{From: srcFile, To: "dest.go"}}},
+		},
+	}
+
+	results1, _, err := svc.SyncInternalVendor(vendor, SyncOptions{})
+	if err != nil {
+		t.Fatalf("first sync error: %v", err)
+	}
+	hash1 := results1[RefLocal].CommitHash
+
+	// Second sync with same hash
+	results2, _, err := svc.SyncInternalVendor(vendor, SyncOptions{})
+	if err != nil {
+		t.Fatalf("second sync error: %v", err)
+	}
+	hash2 := results2[RefLocal].CommitHash
+
+	if hash1 != hash2 {
+		t.Errorf("expected identical content hashes for unchanged source, got %q vs %q", hash1, hash2)
+	}
+	if hash1 == "" {
+		t.Error("expected non-empty content hash")
+	}
+}

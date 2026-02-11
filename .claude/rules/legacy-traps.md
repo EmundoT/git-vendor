@@ -56,6 +56,26 @@ Original design created N commits for N vendors. Replaced with single-commit + m
 - Verify produces separate position-level and whole-file results. Both types for same file = two results; position can fail independently
 - IsBinaryContent is exported for use in both position extraction and whole-file copy warnings (SEC-023)
 
+## Internal Vendor Traps (Spec 070)
+
+### Transform pipeline for internal vendors
+REJECTED: Transforms (extract-section, embed-json, template rendering) are out of scope for Spec 070. Internal vendors support exact file copy and position extraction/placement only. Transforms deferred to a separate spec.
+
+### Parallel sync for internal vendors
+REJECTED: Internal vendors sync sequentially even with `--parallel`. Internal mappings may share destination files; concurrent writes would race. External vendors can still parallelize independently.
+
+### Full compliance enforcement modes (Spec 075)
+DEFERRED: Spec 070 implements drift detection and propagation only. Strict/lenient/info enforcement levels, CI exit codes, and policy-based compliance gating are deferred to Spec 075.
+
+### RefLocal is not a git ref
+`RefLocal` ("local") is a sentinel value for internal vendors. MUST NOT pass to git checkout, fetch, or any git-plumbing operation. Internal vendors use `os.Stat`/`os.ReadFile` for all file access. Passing RefLocal to git operations will produce cryptic errors.
+
+### Position auto-update only handles line-range specs
+`updatePositionSpecs` adjusts `L5-L20` style line ranges when propagation changes file line count. ToEOF specs auto-expand (no update needed). Single-line specs are stable. Column specs (`L1C5:L10C30`) are NOT auto-updated — byte offsets shift unpredictably. Document this to users.
+
+### Internal vendors sync before external in unified `git vendor sync`
+Internal vendors have no network dependency and MUST complete before external sync begins. If internal sync fails, external sync still proceeds (no atomic abort). Results are collected separately and reported together.
+
 ## Config / Data Gotchas
 
 - Empty PathMapping.To uses auto-naming based on source basename
