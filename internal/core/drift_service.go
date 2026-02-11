@@ -90,6 +90,11 @@ func (s *DriftService) Drift(ctx context.Context, opts DriftOptions) (*types.Dri
 	for i := range config.Vendors {
 		vendor := &config.Vendors[i]
 
+		// Skip internal vendors — drift is handled by compliance service
+		if vendor.Source == SourceInternal {
+			continue
+		}
+
 		// Filter to specific dependency if requested
 		if opts.Dependency != "" && vendor.Name != opts.Dependency {
 			continue

@@ -143,9 +143,9 @@ func newPositionTestEnv(t *testing.T, sourceFiles map[string]string, commitHash 
 
 	syncSvc := NewSyncService(
 		configStore, lockStore, git, osFS, fileCopy,
-		&stubLicenseService{}, cacheStore, &stubHookExecutor{}, ui, rootDir,
+		&stubLicenseService{}, cacheStore, &stubHookExecutor{}, ui, rootDir, nil,
 	)
-	updateSvc := NewUpdateService(configStore, lockStore, syncSvc, cacheStore, ui, rootDir)
+	updateSvc := NewUpdateService(configStore, lockStore, syncSvc, nil, cacheStore, ui, rootDir)
 	verifySvc := NewVerifyService(configStore, lockStore, cacheStore, osFS, rootDir)
 
 	return &positionTestEnv{
@@ -479,9 +479,9 @@ func TestPositionIntegration_ParallelSync(t *testing.T) {
 
 	// Create per-vendor sync services (each with its own stubbed git)
 	syncA := NewSyncService(configStore, lockStore, gitA, osFS, fileCopy,
-		&stubLicenseService{}, cacheStore, &stubHookExecutor{}, ui, rootDir)
+		&stubLicenseService{}, cacheStore, &stubHookExecutor{}, ui, rootDir, nil)
 	syncB := NewSyncService(configStore, lockStore, gitB, osFS, fileCopy,
-		&stubLicenseService{}, cacheStore, &stubHookExecutor{}, ui, rootDir)
+		&stubLicenseService{}, cacheStore, &stubHookExecutor{}, ui, rootDir, nil)
 
 	syncMap := map[string]*SyncService{
 		"vendor-a": syncA,

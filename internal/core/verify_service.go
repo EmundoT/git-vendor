@@ -152,6 +152,10 @@ func (s *VerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 	// target range, hash it, and compare to the source_hash stored at sync time.
 	s.verifyPositions(lock, result)
 
+	// Verify internal vendor entries — compare source and destination hashes
+	// to detect drift direction (Spec 070).
+	s.verifyInternalEntries(lock, config, result)
+
 	// Register position-destination files in expectedFiles so findAddedFiles
 	// does not flag them as "added". Position entries are verified separately
 	// by verifyPositions above; this loop runs after the whole-file verify loop
@@ -290,6 +294,91 @@ func (s *VerifyService) verifyPositions(lock types.VendorLock, result *types.Ver
 					Position:     posDetail,
 				})
 				result.Summary.Modified++
+			}
+		}
+	}
+}
+
+// verifyInternalEntries checks internal vendor mappings for source/dest drift.
+// For each internal lockfile entry, verifyInternalEntries compares the current
+// source and destination file hashes against the locked hashes to determine
+// the drift direction: synced, source_drifted, dest_drifted, or both_drifted.
+func (s *VerifyService) verifyInternalEntries(lock types.VendorLock, config types.VendorConfig, result *types.VerifyResult) {
+	// Build vendor config map for compliance mode lookup
+	configMap := make(map[string]types.VendorSpec)
+	for _, v := range config.Vendors {
+		configMap[v.Name] = v
+	}
+
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
+		if lockEntry.Source != SourceInternal {
+			continue
+		}
+
+		vendorConfig, exists := configMap[lockEntry.Name]
+		if !exists {
+			continue
+		}
+
+		compliance := vendorConfig.Compliance
+		if compliance == "" {
+			compliance = ComplianceSourceCanonical
+		}
+
+		// Check each source file hash
+		for srcPath, lockedSrcHash := range lockEntry.SourceFileHashes {
+			currentSrcHash, srcErr := s.cache.ComputeFileChecksum(srcPath)
+			sourceDrifted := srcErr != nil || currentSrcHash != lockedSrcHash
+
+			// Find matching destination files for this source
+			for destPath, lockedDestHash := range lockEntry.FileHashes {
+				currentDestHash, destErr := s.cache.ComputeFileChecksum(destPath)
+				destDrifted := destErr != nil || currentDestHash != lockedDestHash
+
+				var direction types.ComplianceDriftDirection
+				var action string
+
+				switch {
+				case !sourceDrifted && !destDrifted:
+					direction = types.DriftSynced
+					action = "none"
+				case sourceDrifted && !destDrifted:
+					direction = types.DriftSourceDrift
+					action = "propagate source → dest"
+				case !sourceDrifted && destDrifted:
+					direction = types.DriftDestDrift
+					if compliance == ComplianceBidirectional {
+						action = "propagate dest → source"
+					} else {
+						action = "warning: dest modified (source-canonical)"
+					}
+				default:
+					direction = types.DriftBothDrift
+					action = "conflict: manual resolution required"
+				}
+
+				currentSrcDisplay := currentSrcHash
+				if srcErr != nil {
+					currentSrcDisplay = "error: " + srcErr.Error()
+				}
+				currentDestDisplay := currentDestHash
+				if destErr != nil {
+					currentDestDisplay = "error: " + destErr.Error()
+				}
+
+				result.InternalStatus = append(result.InternalStatus, types.ComplianceEntry{
+					VendorName:        lockEntry.Name,
+					FromPath:          srcPath,
+					ToPath:            destPath,
+					Direction:         direction,
+					Compliance:        compliance,
+					SourceHashLocked:  lockedSrcHash,
+					SourceHashCurrent: currentSrcDisplay,
+					DestHashLocked:    lockedDestHash,
+					DestHashCurrent:   currentDestDisplay,
+					Action:            action,
+				})
 			}
 		}
 	}

@@ -257,6 +257,51 @@ func IsHookError(err error) bool {
 	return errors.As(err, &e)
 }
 
+// CycleError is returned when internal vendor mappings form a circular dependency.
+type CycleError struct {
+	Path []string // Ordered list of files forming the cycle
+}
+
+func (e *CycleError) Error() string {
+	return fmt.Sprintf("Error: Circular dependency detected in internal vendor mappings\n  Context: Cycle path: %s\n  Fix: Remove or restructure mappings to eliminate the cycle",
+		strings.Join(e.Path, " → "))
+}
+
+// NewCycleError creates a CycleError.
+func NewCycleError(path []string) *CycleError {
+	return &CycleError{Path: path}
+}
+
+// IsCycleError returns true if err is a CycleError.
+func IsCycleError(err error) bool {
+	var e *CycleError
+	return errors.As(err, &e)
+}
+
+// ComplianceConflictError is returned when both source and destination have drifted
+// for an internal vendor mapping, requiring manual resolution.
+type ComplianceConflictError struct {
+	VendorName string
+	From       string
+	To         string
+}
+
+func (e *ComplianceConflictError) Error() string {
+	return fmt.Sprintf("Error: Compliance conflict for vendor '%s'\n  Context: Both source '%s' and destination '%s' have been modified\n  Fix: Manually reconcile the files, then re-run sync",
+		e.VendorName, e.From, e.To)
+}
+
+// NewComplianceConflictError creates a ComplianceConflictError.
+func NewComplianceConflictError(vendorName, from, to string) *ComplianceConflictError {
+	return &ComplianceConflictError{VendorName: vendorName, From: from, To: to}
+}
+
+// IsComplianceConflictError returns true if err is a ComplianceConflictError.
+func IsComplianceConflictError(err error) bool {
+	var e *ComplianceConflictError
+	return errors.As(err, &e)
+}
+
 // OSVAPIError is returned when the OSV.dev API returns a non-OK response.
 type OSVAPIError struct {
 	StatusCode int

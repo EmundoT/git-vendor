@@ -229,8 +229,16 @@ func (s *VulnScanner) Scan(ctx context.Context, failOn string) (*types.ScanResul
 		},
 	}
 
+	// Filter out internal vendors before batch query — no external source to scan
+	externalDeps := make([]types.LockDetails, 0, len(lock.Vendors))
+	for i := range lock.Vendors {
+		if lock.Vendors[i].Source != SourceInternal {
+			externalDeps = append(externalDeps, lock.Vendors[i])
+		}
+	}
+
 	// Use batch query for efficiency
-	vulnResults, batchErr := s.batchQuery(ctx, lock.Vendors, vendorURLs)
+	vulnResults, batchErr := s.batchQuery(ctx, externalDeps, vendorURLs)
 
 	// Short-circuit on context cancellation — the user requested abort (e.g. Ctrl+C).
 	// Unlike network/API errors (which are handled per-vendor below), cancellation
@@ -248,6 +256,12 @@ func (s *VulnScanner) Scan(ctx context.Context, failOn string) (*types.ScanResul
 	// Process each vendor
 	for i := range lock.Vendors {
 		lockEntry := &lock.Vendors[i]
+
+		// Skip internal vendors — they have no external source to scan
+		if lockEntry.Source == SourceInternal {
+			continue
+		}
+
 		depScan := types.DependencyScan{
 			Name:   lockEntry.Name,
 			Commit: lockEntry.CommitHash,
