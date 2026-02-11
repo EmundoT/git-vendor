@@ -373,11 +373,16 @@ func captureStdout(fn func()) string {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	fn()
-	_ = w.Close()
-	os.Stdout = old
+	// Run fn in a goroutine to avoid deadlock when output exceeds the
+	// OS pipe buffer (4 KB on Windows). io.Copy drains the read end
+	// concurrently so the writer never blocks.
+	go func() {
+		fn()
+		_ = w.Close()
+	}()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
+	os.Stdout = old
 	return buf.String()
 }
 
