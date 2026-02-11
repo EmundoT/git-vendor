@@ -1,0 +1,22 @@
+#!/bin/bash
+# commit-msg — COMMIT-SCHEMA v1 validation hook
+# Validates subject length, normalizes tag case.
+# Progressive enhancement: uses git-plumbing binary if available, bash fallback otherwise.
+
+MSG_FILE="$1"
+
+# --- Tier 1: git-plumbing binary (full validation) ---
+if command -v git-plumbing &>/dev/null; then
+  git-plumbing hook commit-msg "$MSG_FILE"
+  exit $?
+fi
+
+# --- Tier 2: bash fallback ---
+SUBJECT=$(head -1 "$MSG_FILE")
+
+# Warn on long subject (non-blocking)
+if [ ${#SUBJECT} -gt 72 ]; then
+  echo "WARNING: Subject line is ${#SUBJECT} chars (max recommended: 72)" >&2
+fi
+
+exit 0
