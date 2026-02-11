@@ -2,6 +2,12 @@
 
 **CRITICAL: ALWAYS USE THE `private` REMOTE** (e.g. `git pull private main`, `git push private main`).
 
+## Ecosystem Rules
+
+This project follows the git-ecosystem shared rules:
+- Commit schema and tag conventions: see `../git-ecosystem/rules/commit-schema-tags.md`
+- Documentation and quality standards: see `../git-ecosystem/rules/ecosystem-protocol.md`
+
 ## What is git-vendor?
 
 Go CLI for deterministic, file-level source code vendoring from any Git repository. Granular path mapping — vendor specific files/directories from remote repos to specific local paths with full provenance tracking.
@@ -151,6 +157,16 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 8. **SourceFileHashes population**: Only populated during internal sync. Keyed by source file path (file-level granularity, position specs stripped before keying).
 9. **Position auto-update scope**: `updatePositionSpecs` only adjusts line-range specs (`L5-L20`). ToEOF specs auto-expand (no update). Column specs NOT auto-updated (documented limitation).
 
+## Common Patterns
+
+- **Multi-ref tracking**: Multiple `specs` entries per vendor target different refs to different local paths
+- **Vendor groups**: `groups: ["frontend"]` on vendor specs enables `--group frontend` for batch operations
+- **Custom hooks**: `hooks.pre_sync` / `hooks.post_sync` run shell commands; env vars `GIT_VENDOR_NAME`, `GIT_VENDOR_URL`, `GIT_VENDOR_REF`, `GIT_VENDOR_COMMIT`, `GIT_VENDOR_ROOT`, `GIT_VENDOR_FILES_COPIED` are injected
+- **Incremental cache**: SHA-256 checksums in `.git-vendor/.cache/` skip re-downloading unchanged files. Bypass with `--no-cache` or `--force`
+- **Parallel processing**: `--parallel [--workers N]` uses a worker pool for concurrent vendor operations (default workers: NumCPU, max 8)
+- **Watch mode**: `git-vendor watch` monitors `vendor.yml` for changes and auto-syncs (1s debounce)
+- **CI/CD**: Commit both `vendor.yml` and `vendor.lock` for deterministic builds. Use `--yes --quiet` for non-interactive mode
+
 ## Contextual Rules
 
 Detailed rules load automatically based on which files you're editing. See `.claude/rules/`:
@@ -168,7 +184,6 @@ Detailed rules load automatically based on which files you're editing. See `.cla
 ## Deeper Documentation
 
 - `docs/COMMANDS.md` — Full command reference with all flags
-- `docs/ARCHITECTURE.md` — Architecture deep-dive
 - `docs/CONFIGURATION.md` — vendor.yml and policy file format
 - `docs/ROADMAP.md` — Development roadmap and phases
 - `docs/TROUBLESHOOTING.md` — Common issues and solutions

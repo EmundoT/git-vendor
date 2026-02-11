@@ -34,6 +34,18 @@ type PathMapping struct {
 }
 
 // VendorLock represents the lock file (vendor.lock) storing resolved commit hashes.
+//
+// Schema version uses major.minor format:
+//   - Minor bump: new optional fields added (backward compatible)
+//   - Major bump: breaking changes requiring CLI upgrade
+//
+// Version compatibility:
+//   - Missing schema_version is treated as "1.0"
+//   - Unknown minor versions: warning, operation proceeds, unknown fields preserved
+//   - Unknown major versions: error, operation aborts to prevent data corruption
+//
+// Current version: 1.1 (adds LicenseSPDX, SourceVersionTag, VendoredAt,
+// VendoredBy, LastSyncedAt). Migrate via "git-vendor migrate".
 type VendorLock struct {
 	SchemaVersion string        `yaml:"schema_version,omitempty"`
 	Vendors       []LockDetails `yaml:"vendors"`

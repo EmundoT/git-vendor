@@ -8,9 +8,9 @@
 |----|--------|-------|-------|------|
 | CQ-001 | in_progress | Interface Mock Coverage | 5 gomock interfaces configured, 15+ manual stubs in test helpers; gomock generation for all interfaces not yet automated | - |
 | CQ-002 | completed | Error Wrapping Consistency | Use fmt.Errorf with %w for all error wrapping, enable error chain inspection | - |
-| CQ-003 | in_progress | Context Propagation | Scan() has context.Context; Sync/Update/Verify/Drift do not yet | - |
+| CQ-003 | completed | Context Propagation | context.Context threaded through all long-running operations (194c4e9) | - |
 | CQ-004 | pending | Godoc Coverage | Add godoc comments to all exported functions and types | - |
-| CQ-005 | in_progress | TUI Test Coverage | Coverage at 63% (up from 9.9%), target ≥60% met but room for improvement | - |
+| CQ-005 | completed | TUI Test Coverage | Coverage at 63% (up from 9.9%), target ≥60% met | - |
 | CQ-006 | completed | Configurable OSV Endpoint | GIT_VENDOR_OSV_ENDPOINT env var, context-aware Scan, 4 tests | - |
 
 ## MEDIUM Priority
@@ -54,6 +54,8 @@ Per ROADMAP.md Section 2.3, address before new features:
 | ID | Completed | Notes |
 |----|-----------|-------|
 | CQ-002 | 2026-02-09 | Error wrapping with %w across all services, merged in error context wrapping PR |
+| CQ-003 | 2026-02-10 | context.Context threaded through all long-running operations (194c4e9) |
+| CQ-005 | 2026-02-10 | TUI coverage raised to 63% (from 9.9%), target ≥60% met |
 | CQ-006 | 2026-02-10 | GIT_VENDOR_OSV_ENDPOINT env var, context-aware Scan signature, 4 tests |
 
 ---

@@ -19,7 +19,24 @@ const (
 	hookTimeout = 5 * time.Minute
 )
 
-// HookExecutor handles pre/post sync hook execution
+// HookExecutor handles pre/post sync hook execution.
+//
+// Hook Execution Security Model (SEC-012):
+// git-vendor hooks follow the same trust model as npm scripts, git hooks, and
+// Makefile targets: the user who controls vendor.yml controls the commands.
+// Hooks are NOT sandboxed.
+//
+// Security properties:
+//   - Hooks execute via sh -c (Unix) or cmd /c (Windows) in the project root
+//   - hookTimeout (5 min) prevents indefinite hangs via context.WithTimeout
+//   - sanitizeEnvValue strips \n, \r, \x00 from GIT_VENDOR_* env values
+//   - Hooks inherit the parent environment (including GITHUB_TOKEN etc.)
+//   - Hook output passes directly to stdout/stderr (unfiltered)
+//   - Pre-sync hooks run BEFORE clone; temp clone dir is not exposed
+//   - Post-sync hook failure does NOT roll back already-copied files
+//
+// Accepted risks: unsandboxed execution, credential access via env, unfiltered
+// output. These match the accepted trust model for configuration-driven tools.
 //
 //go:generate mockgen -source=hook_service.go -destination=hook_executor_mock_test.go -package=core
 type HookExecutor interface {
