@@ -1,3 +1,13 @@
+.PHONY: setup verify
+
+setup:
+	git config core.hooksPath .githooks
+
+verify:
+	go build ./...
+	go vet ./...
+	go test ./...
+
 MOCKGEN := $(shell go env GOPATH)/bin/mockgen
 
 .PHONY: mocks
@@ -34,11 +44,8 @@ fmt:
 	gofmt -w .
 
 .PHONY: install-hooks
-install-hooks:
-	@echo "Installing git hooks..."
-	git config core.hooksPath .githooks
-	chmod +x .githooks/pre-commit
-	@echo "Done! Hooks installed."
+install-hooks: setup
+	@echo "Done! Hooks installed via core.hooksPath = .githooks"
 
 .PHONY: ci
 ci: mocks lint test
