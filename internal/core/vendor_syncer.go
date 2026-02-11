@@ -79,17 +79,18 @@ func (t *NoOpProgressTracker) Fail(_ error) {}
 // VendorSyncer orchestrates vendor operations using domain services
 type VendorSyncer struct {
 	// Domain services (injectable via ServiceOverrides)
-	repository    VendorRepositoryInterface
-	sync          SyncServiceInterface
-	update        UpdateServiceInterface
-	license       LicenseServiceInterface
-	validation    ValidationServiceInterface
-	explorer      RemoteExplorerInterface
-	updateChecker UpdateCheckerInterface
-	verifyService VerifyServiceInterface
-	vulnScanner   VulnScannerInterface
-	driftService  DriftServiceInterface
-	auditService  AuditServiceInterface
+	repository        VendorRepositoryInterface
+	sync              SyncServiceInterface
+	update            UpdateServiceInterface
+	license           LicenseServiceInterface
+	validation        ValidationServiceInterface
+	explorer          RemoteExplorerInterface
+	updateChecker     UpdateCheckerInterface
+	verifyService     VerifyServiceInterface
+	vulnScanner       VulnScannerInterface
+	driftService      DriftServiceInterface
+	auditService      AuditServiceInterface
+	complianceService ComplianceServiceInterface // Spec 070
 
 	// Infrastructure dependencies
 	configStore    ConfigStore
@@ -115,7 +116,8 @@ type ServiceOverrides struct {
 	VerifyService VerifyServiceInterface
 	VulnScanner   VulnScannerInterface
 	DriftService  DriftServiceInterface
-	AuditService  AuditServiceInterface
+	AuditService      AuditServiceInterface
+	ComplianceService ComplianceServiceInterface
 }
 
 // NewVendorSyncer creates a new VendorSyncer with injected dependencies.
@@ -144,8 +146,9 @@ func NewVendorSyncer(
 	license := NewLicenseService(licenseChecker, fs, rootDir, ui)
 	cache := NewFileCacheStore(fs, rootDir)
 	hooks := NewHookService(ui)
-	syncSvc := NewSyncService(configStore, lockStore, gitClient, fs, fileCopy, license, cache, hooks, ui, rootDir)
-	updateSvc := NewUpdateService(configStore, lockStore, syncSvc, cache, ui, rootDir)
+	internalSyncSvc := NewInternalSyncService(configStore, lockStore, fileCopy, cache, fs, rootDir)
+	syncSvc := NewSyncService(configStore, lockStore, gitClient, fs, fileCopy, license, cache, hooks, ui, rootDir, internalSyncSvc)
+	updateSvc := NewUpdateService(configStore, lockStore, syncSvc, internalSyncSvc, cache, ui, rootDir)
 	validation := NewValidationService(configStore)
 	explorer := NewRemoteExplorer(gitClient, fs)
 	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
@@ -153,6 +156,7 @@ func NewVendorSyncer(
 	vulnScanner := VulnScannerInterface(NewVulnScanner(lockStore, configStore))
 	driftSvc := DriftServiceInterface(NewDriftService(configStore, lockStore, gitClient, fs, rootDir))
 	auditSvc := AuditServiceInterface(NewAuditService(verifyService, vulnScanner, driftSvc, configStore, lockStore))
+	complianceSvc := ComplianceServiceInterface(NewComplianceService(configStore, lockStore, cache, fs, rootDir))
 
 	// Apply overrides where provided
 	syncer := &VendorSyncer{
@@ -166,8 +170,9 @@ func NewVendorSyncer(
 		verifyService:  verifyService,
 		vulnScanner:    vulnScanner,
 		driftService:   driftSvc,
-		auditService:   auditSvc,
-		configStore:    configStore,
+		auditService:      auditSvc,
+		complianceService: complianceSvc,
+		configStore:       configStore,
 		lockStore:      lockStore,
 		gitClient:      gitClient,
 		licenseChecker: licenseChecker,
@@ -208,6 +213,9 @@ func NewVendorSyncer(
 	}
 	if overrides.AuditService != nil {
 		syncer.auditService = overrides.AuditService
+	}
+	if overrides.ComplianceService != nil {
+		syncer.complianceService = overrides.ComplianceService
 	}
 
 	return syncer
@@ -322,6 +330,22 @@ func (s *VendorSyncer) SyncWithOptions(ctx context.Context, vendorName string, f
 		Force:      force,
 		NoCache:    noCache,
 	})
+}
+
+// SyncWithFullOpts performs sync with a full SyncOptions struct.
+// Supports InternalOnly and Reverse flags for internal vendor compliance.
+func (s *VendorSyncer) SyncWithFullOpts(ctx context.Context, opts SyncOptions) error {
+	// Check if lockfile exists, if not, run UpdateAll
+	lock, err := s.lockStore.Load()
+	if err != nil || len(lock.Vendors) == 0 {
+		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
+		if err := s.update.UpdateAll(ctx); err != nil {
+			return fmt.Errorf("generate lockfile: %w", err)
+		}
+		fmt.Println()
+		fmt.Println("Lockfile created. Now syncing files...")
+	}
+	return s.sync.Sync(ctx, opts)
 }
 
 // SyncWithGroup performs sync for all vendors in a group.
@@ -547,6 +571,16 @@ func (s *VendorSyncer) LicenseReport(policyService LicensePolicyServiceInterface
 // ctx controls cancellation of git operations (clone, fetch, checkout).
 func (s *VendorSyncer) Drift(ctx context.Context, opts DriftOptions) (*types.DriftResult, error) {
 	return s.driftService.Drift(ctx, opts)
+}
+
+// ComplianceCheck runs compliance check for internal vendors.
+func (s *VendorSyncer) ComplianceCheck(opts ComplianceOptions) (*types.ComplianceResult, error) {
+	return s.complianceService.Check(opts)
+}
+
+// CompliancePropagate runs compliance check and propagates changes for internal vendors.
+func (s *VendorSyncer) CompliancePropagate(opts ComplianceOptions) (*types.ComplianceResult, error) {
+	return s.complianceService.Propagate(opts)
 }
 
 // MigrateLockfile updates an existing lockfile to add missing metadata fields.

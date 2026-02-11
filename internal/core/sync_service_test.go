@@ -1806,7 +1806,7 @@ func TestCanSkipSync_CacheMiss(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, NewOSFileSystem(),
 		NewFileCopyService(NewOSFileSystem()), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	mappings := []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}}
 	result := syncService.canSkipSync("test-vendor", "main", "abc123", mappings)
@@ -1848,7 +1848,7 @@ func TestCanSkipSync_CommitHashMismatch(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, osFS,
 		NewFileCopyService(osFS), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	mappings := []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}}
 	result := syncService.canSkipSync("test-vendor", "main", "new-hash-111", mappings)
@@ -1898,7 +1898,7 @@ func TestCanSkipSync_MatchingCache(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, osFS,
 		NewFileCopyService(osFS), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	mappings := []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}}
 	result := syncService.canSkipSync("test-vendor", "main", "abc123", mappings)
@@ -1933,7 +1933,7 @@ func TestCanSkipSync_FileMissing(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, osFS,
 		NewFileCopyService(osFS), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	mappings := []types.PathMapping{{From: "src/file.go", To: "lib/missing.go"}}
 	result := syncService.canSkipSync("test-vendor", "main", "abc123", mappings)
@@ -1964,7 +1964,7 @@ func TestCanSkipSync_AutoNamedPathSkips(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, osFS,
 		NewFileCopyService(osFS), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	// Empty "To" triggers auto-naming which can't be cache-checked
 	mappings := []types.PathMapping{{From: "src/file.go", To: ""}}
@@ -2067,7 +2067,7 @@ func TestSyncVendor_WithPositionMappings(t *testing.T) {
 	hooks := NewHookService(nil)
 	licSvc := NewLicenseService(license, fs, workDir, &SilentUICallback{})
 
-	syncSvc := NewSyncService(config, lock, git, fs, fileCopy, licSvc, cacheStore, hooks, &SilentUICallback{}, workDir)
+	syncSvc := NewSyncService(config, lock, git, fs, fileCopy, licSvc, cacheStore, hooks, &SilentUICallback{}, workDir, nil)
 
 	results, stats, err := syncSvc.SyncVendor(context.Background(), &vendor, nil, SyncOptions{NoCache: true})
 	if err != nil {

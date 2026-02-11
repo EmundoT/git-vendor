@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. It should prioritize detailing where everything key lives and how to work with it. It should serve as a primer for any Claude agent working here under any context.
 
 **CRITICAL: ALWAYS USE THE PRIVATE REMOTE**
 ALWAYS USE THE `private` remote ex. git pull private main or git push private main
@@ -129,6 +129,8 @@ The codebase follows clean architecture principles with proper separation of con
    - **errors.go**: Sentinel errors and structured error types (see Error Handling)
    - **config_commands.go**: LLM-friendly config manipulation (Spec 072): create, rename, mapping CRUD, show, config get/set
    - **cli_response.go**: CLIResponse JSON type, exit/error codes for Spec 072 commands
+   - **internal_sync_service.go**: `InternalSyncService` - local file sync for internal vendors (Spec 070)
+   - **compliance_service.go**: `ComplianceService` - drift detection and propagation for internal vendors (Spec 070)
    - **mocks_test.go**: Mock implementations for testing
 
 3. **internal/tui/wizard.go** - Interactive user interface
@@ -155,27 +157,29 @@ The codebase follows clean architecture principles with proper separation of con
 VendorConfig (vendor.yml)
   └─ VendorSpec (one per dependency)
       ├─ Name: display name
-      ├─ URL: git repository URL
-      ├─ License: SPDX license identifier
+      ├─ URL: git repository URL (empty for internal vendors)
+      ├─ License: SPDX license identifier (empty for internal vendors)
+      ├─ Source: string ("" = external, "internal" = same-repo) (schema v1.2)
+      ├─ Compliance: string ("" = source-canonical, "bidirectional") (schema v1.2)
       ├─ Groups: []string (optional group tags for batch operations)
-      ├─ Hooks: *HookConfig (optional pre/post sync automation)
+      ├─ Hooks: *HookConfig (optional pre/post sync automation, external only)
       │   ├─ PreSync: shell command to run before sync
       │   └─ PostSync: shell command to run after sync
       └─ Specs: []BranchSpec (can track multiple refs)
           └─ BranchSpec
-              ├─ Ref: branch/tag/commit
+              ├─ Ref: branch/tag/commit ("local" sentinel for internal vendors)
               ├─ DefaultTarget: optional default destination
               └─ Mapping: []PathMapping
                   └─ PathMapping
-                      ├─ From: remote path
+                      ├─ From: remote path (or local source path for internal vendors)
                       └─ To: local path (empty = auto)
 
 VendorLock (vendor.lock)
   └─ LockDetails (one per ref per vendor)
       ├─ Name: vendor name
-      ├─ Ref: branch/tag
-      ├─ CommitHash: exact commit SHA
-      ├─ LicensePath: path to cached license
+      ├─ Ref: branch/tag ("local" for internal vendors)
+      ├─ CommitHash: exact commit SHA (content-addressed hash for internal vendors)
+      ├─ LicensePath: path to cached license (empty for internal vendors)
       ├─ Updated: timestamp
       ├─ FileHashes: map[string]string (path → SHA-256 hash)
       ├─ LicenseSPDX: SPDX license identifier (schema v1.1)
@@ -183,11 +187,28 @@ VendorLock (vendor.lock)
       ├─ VendoredAt: ISO 8601 initial vendoring timestamp (schema v1.1)
       ├─ VendoredBy: git user identity (schema v1.1)
       ├─ LastSyncedAt: ISO 8601 most recent sync timestamp (schema v1.1)
+      ├─ Source: string ("internal" for internal vendors) (schema v1.2)
+      ├─ SourceFileHashes: map[string]string (source path → SHA-256, internal only) (schema v1.2)
       └─ Positions: []PositionLock (omitempty)
           └─ PositionLock
               ├─ From: source path with position (e.g., "api/constants.go:L4-L6")
               ├─ To: destination path with optional position
               └─ SourceHash: SHA-256 of extracted content
+
+ComplianceResult (internal/types/compliance_types.go)
+  ├─ SchemaVersion: string
+  ├─ Timestamp: string
+  ├─ Entries: []ComplianceEntry
+  │   └─ ComplianceEntry
+  │       ├─ VendorName, FromPath, ToPath: string
+  │       ├─ Direction: ComplianceDriftDirection (synced|source_drifted|dest_drifted|both_drifted)
+  │       ├─ Compliance: string (source-canonical|bidirectional)
+  │       ├─ SourceHashLocked, SourceHashCurrent: string
+  │       ├─ DestHashLocked, DestHashCurrent: string
+  │       └─ Action: string (suggested action)
+  └─ Summary: ComplianceSummary
+      ├─ Total, Synced, SourceDrift, DestDrift, BothDrift: int
+      └─ Result: string (SYNCED|DRIFTED|CONFLICT)
 
 PositionSpec (internal/types/position.go)
   ├─ StartLine: int (1-indexed)
@@ -340,6 +361,58 @@ file.go:L5C10:L10C30  # Line 5 col 10 through line 10 col 30 (1-indexed inclusiv
 
 **Key files:** `internal/types/position.go` (parser), `internal/core/position_extract.go` (extract/place), `internal/core/file_copy_service.go` (integration)
 
+### Internal Vendor Compliance (Spec 070)
+
+Track files within the same repository, enforcing consistency between a canonical source file and derived destinations.
+
+**Configuration:**
+
+```yaml
+vendors:
+  - name: shared-constants
+    source: internal           # "internal" = same-repo (no git clone)
+    compliance: bidirectional   # "" or "source-canonical" (default) or "bidirectional"
+    specs:
+      - ref: local             # MUST be "local" sentinel for internal vendors
+        mapping:
+          - from: pkg/shared/constants.go
+            to: services/api/constants.go
+```
+
+**Compliance modes:**
+
+| Mode | Source drifted | Dest drifted | Both drifted |
+|------|---------------|--------------|--------------|
+| source-canonical (default) | copy src → dest | warn (use `--reverse` to copy dest → src) | CONFLICT error |
+| bidirectional | copy src → dest | copy dest → src | CONFLICT error |
+
+**Sync behavior:**
+
+- `git vendor sync` — syncs internal vendors first (Phase 1, no network), then external (Phase 2)
+- `git vendor sync --internal` — syncs only internal vendors (fast, no network)
+- `git vendor sync --internal --reverse` — propagates dest changes back to source (source-canonical mode)
+
+**Verify behavior:**
+
+- `git vendor verify` includes internal vendor drift detection in `InternalStatus` field
+- Reports drift direction per source/dest pair: synced, source_drifted, dest_drifted, both_drifted
+
+**Validation rules (internal vendors):**
+
+- URL MUST be empty
+- License MUST be empty
+- Hooks MUST be nil
+- Ref MUST be "local"
+- Compliance MUST be "" or "source-canonical" or "bidirectional"
+- Source files MUST exist locally
+- Cycle detection via DFS on file-level directed graph
+
+**Position spec auto-update:**
+
+After propagation changes line count, `updatePositionSpecs()` adjusts EndLine of line-range specs (e.g., `L5-L20` → `L5-L25` after +5 lines). ToEOF, single-line, and column specs are NOT auto-updated.
+
+**Key files:** `internal/core/internal_sync_service.go` (sync), `internal/core/compliance_service.go` (drift+propagation), `internal/types/compliance_types.go` (types)
+
 ### Path Traversal Protection
 
 Security validation via `ValidateDestPath` (filesystem.go:121):
@@ -471,6 +544,9 @@ vendors:
 - **`file://` URLs in vendor.yml**: MUST NOT allow `file://` scheme in vendor URLs. `ValidateVendorURL()` rejects `file://`, `ftp://`, `javascript:`, and `data:` schemes. Only `https://`, `http://`, `ssh://`, `git://`, `git+ssh://`, and SCP-style (`git@host:path`) are accepted (SEC-011).
 - **Logging URLs with credentials**: MUST NOT include raw URLs in error messages when the URL may contain embedded credentials (`https://user:token@host/repo`). Use `SanitizeURL()` to strip userinfo before logging (SEC-013).
 - **Unbounded YAML file reads**: MUST NOT read vendor.yml/vendor.lock without checking file size. `YAMLStore.Load()` enforces a 1 MB size limit (`maxYAMLFileSize`) to prevent memory exhaustion (SEC-020).
+- **Transforms in internal vendor compliance**: Transforms (extract-section, embed-json, etc.) are OUT of Spec 070 scope — deferred to separate specs. The existing position extraction system (`L5-L20`, `L5C10:L10C30`) handles granularity. MUST NOT add transform logic to `InternalSyncService` or `ComplianceService`.
+- **Parallel internal vendors**: Internal vendors MUST run sequentially (not parallel) to avoid races when multiple internal vendors share destination files. `syncParallel()` runs internal vendors in Phase 1 (sequential) before external vendors in Phase 2 (parallel).
+- **Full compliance modes (Spec 075)**: Deferred. Only minimal `compliance` field on VendorSpec ("source-canonical" or "bidirectional"). MUST NOT add advanced compliance modes (lock, freeze, etc.) to Spec 070.
 
 ### Error Handling
 
@@ -478,7 +554,7 @@ Error handling follows Go conventions (see ROADMAP.md section 9.5 for details):
 
 - **`fmt.Errorf`**: Default for most errors (informational, wrapping with `%w`)
 - **Sentinel errors**: `ErrNotInitialized`, `ErrComplianceFailed` — use with `errors.Is()`
-- **Custom types**: `VendorNotFoundError`, `StaleCommitError`, `HookError`, `OSVAPIError`, etc. — use with `errors.As()` or `Is*()` helpers
+- **Custom types**: `VendorNotFoundError`, `StaleCommitError`, `HookError`, `OSVAPIError`, `CycleError`, `ComplianceConflictError`, etc. — use with `errors.As()` or `Is*()` helpers
 
 Service-specific error handling:
 - **Hooks**: `HookError` wraps hook failures with vendor name, phase (pre/post-sync), and command context. Hooks have a 5-minute timeout (configurable via `hookService.timeout` field for testing) via `context.WithTimeout` to prevent hangs. Environment variable values are sanitized to strip newlines/null bytes.
@@ -701,6 +777,13 @@ main.go (signal.NotifyContext) → Manager → VendorSyncer → Service interfac
 36. **One-commit-per-vendor is a legacy trap**: The original design created N commits for N vendors. This was replaced with single-commit + multi-valued trailers for correct atomic semantics. MUST NOT regress to per-vendor commits.
 37. **`Trailer` types are distinct across packages**: `types.Trailer` and `git.Trailer` have identical `Key`/`Value` fields but are separate Go types. `SystemGitClient.Commit()` MUST explicitly convert `[]types.Trailer` → `[]git.Trailer`. Direct assignment causes compile error.
 38. **`git vendor annotate` retroactively attaches notes**: `AnnotateVendorCommit` adds a vendor/v1 JSON note to an existing commit. Does not create a new commit. Used when a human manually commits vendor changes and wants structured provenance added after the fact.
+39. **Internal vendors MUST use `Ref: local` sentinel**: Empty Ref breaks cache/lockfile lookups. Validation enforces this — `validateInternalVendor()` rejects any Ref that is not "local".
+40. **Internal vendors are excluded from external-only operations**: vuln_scanner, drift_service, sbom_generator, and license_policy_service all skip entries with `Source == SourceInternal`. Drift for internal vendors is handled by ComplianceService instead.
+41. **Internal vendors sync FIRST in unified `git vendor sync`**: Internal vendors have no network dependency and MUST NOT be blocked by external vendor failures. In `syncSequential()` and `syncParallel()`, internal vendors are processed in Phase 1 before external vendors.
+42. **Position spec auto-update only handles line-range specs**: `updatePositionSpecs()` adjusts EndLine by delta when propagation changes line count. ToEOF specs (auto-expand), single-line specs, and column specs are NOT auto-updated. Column specs are documented as a limitation.
+43. **Compliance propagation serializes writes**: ComplianceService processes entries sequentially. If two internal vendors write to different positions in the same file, the second call sees the file as modified by the first (same as Gotcha #27 for position extraction).
+44. **Content-addressed hash for internal vendors**: Internal vendor "commit hash" is SHA-256 of sorted `"srcPath=hash"` pairs. This enables `canSkipSync` cache behavior without actual git commits. Hash changes when any source file content changes.
+45. **`--reverse` requires `--internal`**: The `--reverse` flag only applies to source-canonical internal vendors (copies dest changes back to source). CLI validates this constraint and exits with error if `--reverse` is used without `--internal`.
 
 ## Quick Reference
 
@@ -752,6 +835,8 @@ git-vendor config set <key> <value>  # Set config value
 --no-cache        # Disable incremental sync cache
 --commit          # Auto-commit with COMMIT-SCHEMA v1 trailers + git note
 --group <name>    # Sync only vendors in specified group
+--internal        # Sync only internal vendors (fast, no network)
+--reverse         # Propagate dest changes to source (requires --internal, source-canonical mode)
 --parallel        # Enable parallel processing
 --workers <N>     # Set custom worker count (requires --parallel)
 --verbose, -v     # Show git commands
@@ -998,6 +1083,25 @@ Error response:
 - `EmitCLISuccess()` / `EmitCLIError()` - JSON output helpers
 - `CLIExitCodeForError()` / `CLIErrorCodeForError()` - Error-to-code mappers
 - Exit code and error code constants
+
+**internal_sync_service.go:**
+
+- `InternalSyncServiceInterface` - Contract for internal vendor sync operations
+- `InternalSyncService` - Syncs files within the same repository (no git operations)
+- `SyncInternalVendor()` - Core sync: copies files, extracts positions, computes content-addressed hash
+- `syncInternalRef()` - Process a single BranchSpec (Ref="local") for an internal vendor
+- `syncInternalMapping()` - Copy/extract a single mapping (whole-file, position, or directory)
+- `computeContentHash()` - SHA-256 of sorted source file hashes (enables cache skip)
+
+**compliance_service.go:**
+
+- `ComplianceServiceInterface` - Contract for drift detection and propagation
+- `ComplianceService` - Handles drift detection and file propagation for internal vendors
+- `Check()` - Compute current drift state for all internal vendor mappings
+- `Propagate()` - Check drift then copy files per compliance rules (source-canonical or bidirectional)
+- `propagateEntry()` - Copy single file based on drift direction, auto-updates position specs if line count changes
+- `updatePositionSpecs()` - Adjust line-range position specs in vendor.yml when propagation changes line count
+- `updateLockfileHashes()` - Recompute source/dest hashes after propagation
 
 **audit_service.go:**
 

@@ -431,6 +431,8 @@ func main() {
 		parallel := false
 		workers := 0
 		commit := false
+		internalOnly := false
+		reverse := false
 
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
@@ -445,6 +447,10 @@ func main() {
 				commit = true
 			case arg == "--parallel":
 				parallel = true
+			case arg == "--internal":
+				internalOnly = true
+			case arg == "--reverse":
+				reverse = true
 			case arg == "--workers":
 				if i+1 < len(args) {
 					if _, err := fmt.Sscanf(args[i+1], "%d", &workers); err != nil {
@@ -470,6 +476,12 @@ func main() {
 			case !strings.HasPrefix(arg, "--"):
 				vendorName = arg
 			}
+		}
+
+		// --reverse requires --internal
+		if reverse && !internalOnly {
+			callback.ShowError("Invalid Options", "--reverse requires --internal")
+			os.Exit(1)
 		}
 
 		// Validate that vendor name and group are not both specified
@@ -505,6 +517,18 @@ func main() {
 		} else {
 			// Choose sync method based on flags
 			switch {
+			case internalOnly:
+				opts := core.SyncOptions{
+					VendorName:   vendorName,
+					Force:        force,
+					NoCache:      noCache,
+					InternalOnly: true,
+					Reverse:      reverse,
+				}
+				if err := manager.SyncWithFullOptions(ctx, opts); err != nil {
+					callback.ShowError("Sync Failed", err.Error())
+					os.Exit(1)
+				}
 			case parallel:
 				parallelOpts := types.ParallelOptions{
 					Enabled:    true,

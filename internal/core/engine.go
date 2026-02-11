@@ -161,6 +161,12 @@ func (m *Manager) SyncWithParallel(ctx context.Context, vendorName string, force
 	return m.syncer.SyncWithParallel(ctx, vendorName, force, noCache, parallelOpts)
 }
 
+// SyncWithFullOptions performs sync using a full SyncOptions struct.
+// Supports InternalOnly and Reverse flags for internal vendor compliance.
+func (m *Manager) SyncWithFullOptions(ctx context.Context, opts SyncOptions) error {
+	return m.syncer.SyncWithFullOpts(ctx, opts)
+}
+
 // UpdateAll updates all vendors and regenerates lockfile.
 // ctx controls cancellation of git operations during update.
 func (m *Manager) UpdateAll(ctx context.Context) error {
@@ -288,6 +294,18 @@ func (m *Manager) WatchConfig(callback func() error) error {
 func (m *Manager) GenerateSBOM(format SBOMFormat, projectName string) ([]byte, error) {
 	generator := NewSBOMGenerator(m.syncer.lockStore, m.syncer.configStore, projectName)
 	return generator.Generate(format)
+}
+
+// === Compliance (Spec 070) ===
+
+// ComplianceCheck computes drift state for all internal vendor mappings.
+func (m *Manager) ComplianceCheck(opts ComplianceOptions) (*types.ComplianceResult, error) {
+	return m.syncer.ComplianceCheck(opts)
+}
+
+// CompliancePropagate checks drift and copies files per compliance rules.
+func (m *Manager) CompliancePropagate(opts ComplianceOptions) (*types.ComplianceResult, error) {
+	return m.syncer.CompliancePropagate(opts)
 }
 
 // === LLM-Friendly CLI Commands (Spec 072) ===

@@ -10,12 +10,14 @@ type VendorConfig struct {
 
 // VendorSpec defines a single vendored dependency with source repository URL and path mappings.
 type VendorSpec struct {
-	Name    string       `yaml:"name"`
-	URL     string       `yaml:"url"`
-	License string       `yaml:"license"`
-	Groups  []string     `yaml:"groups,omitempty"` // Optional groups for batch operations
-	Hooks   *HookConfig  `yaml:"hooks,omitempty"`  // Optional pre/post sync hooks
-	Specs   []BranchSpec `yaml:"specs"`
+	Name       string       `yaml:"name"`
+	URL        string       `yaml:"url"`
+	License    string       `yaml:"license"`
+	Groups     []string     `yaml:"groups,omitempty"`     // Optional groups for batch operations
+	Hooks      *HookConfig  `yaml:"hooks,omitempty"`      // Optional pre/post sync hooks
+	Source     string       `yaml:"source,omitempty"`     // "" (external, default) or "internal"
+	Compliance string       `yaml:"compliance,omitempty"` // "" (source-canonical) or "bidirectional"
+	Specs      []BranchSpec `yaml:"specs"`
 }
 
 // BranchSpec defines mappings for a specific Git ref (branch, tag, or commit).
@@ -55,6 +57,10 @@ type LockDetails struct {
 
 	// Position extraction metadata (spec 071)
 	Positions []PositionLock `yaml:"positions,omitempty"` // Position-extracted mappings with source hashes
+
+	// Internal vendor metadata (spec 070)
+	Source           string            `yaml:"source,omitempty"`              // "internal" for internal vendors
+	SourceFileHashes map[string]string `yaml:"source_file_hashes,omitempty"` // source path -> SHA-256
 }
 
 // PositionLock records a position-extracted mapping in the lockfile for auditing and verification.
@@ -199,10 +205,11 @@ type ParallelOptions struct {
 
 // VerifyResult represents the outcome of verification
 type VerifyResult struct {
-	SchemaVersion string        `json:"schema_version"`
-	Timestamp     string        `json:"timestamp"`
-	Summary       VerifySummary `json:"summary"`
-	Files         []FileStatus  `json:"files"`
+	SchemaVersion  string            `json:"schema_version"`
+	Timestamp      string            `json:"timestamp"`
+	Summary        VerifySummary     `json:"summary"`
+	Files          []FileStatus      `json:"files"`
+	InternalStatus []ComplianceEntry `json:"internal_status,omitempty"` // Spec 070: internal vendor drift
 }
 
 // VerifySummary contains aggregate statistics for verification

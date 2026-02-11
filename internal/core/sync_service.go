@@ -13,13 +13,15 @@ import (
 
 // SyncOptions configures sync operation behavior
 type SyncOptions struct {
-	DryRun     bool
-	VendorName string // Empty = all vendors
-	GroupName  string // Empty = all groups, filters vendors by group
-	Force      bool
-	NoCache    bool                  // Disable incremental sync cache
-	Parallel   types.ParallelOptions // Parallel processing options
-	Commit     bool                  // Auto-commit after sync with vendor trailers
+	DryRun       bool
+	VendorName   string // Empty = all vendors
+	GroupName    string // Empty = all groups, filters vendors by group
+	Force        bool
+	NoCache      bool                  // Disable incremental sync cache
+	Parallel     types.ParallelOptions // Parallel processing options
+	Commit       bool                  // Auto-commit after sync with vendor trailers
+	InternalOnly bool                  // Only sync internal vendors (Spec 070)
+	Reverse      bool                  // Propagate dest changes back to source (Spec 070)
 }
 
 // RefMetadata holds per-ref metadata collected during sync
@@ -52,19 +54,21 @@ var _ SyncServiceInterface = (*SyncService)(nil)
 
 // SyncService handles vendor synchronization operations
 type SyncService struct {
-	configStore ConfigStore
-	lockStore   LockStore
-	gitClient   GitClient
-	fs          FileSystem
-	fileCopy    FileCopyServiceInterface
-	license     LicenseServiceInterface
-	cache       CacheStore
-	hooks       HookExecutor
-	ui          UICallback
-	rootDir     string
+	configStore  ConfigStore
+	lockStore    LockStore
+	gitClient    GitClient
+	fs           FileSystem
+	fileCopy     FileCopyServiceInterface
+	license      LicenseServiceInterface
+	cache        CacheStore
+	hooks        HookExecutor
+	ui           UICallback
+	rootDir      string
+	internalSync InternalSyncServiceInterface // Spec 070
 }
 
-// NewSyncService creates a new SyncService
+// NewSyncService creates a new SyncService.
+// internalSync may be nil if no internal vendor support is needed (will be set by VendorSyncer).
 func NewSyncService(
 	configStore ConfigStore,
 	lockStore LockStore,
@@ -76,18 +80,20 @@ func NewSyncService(
 	hooks HookExecutor,
 	ui UICallback,
 	rootDir string,
+	internalSync InternalSyncServiceInterface,
 ) *SyncService {
 	return &SyncService{
-		configStore: configStore,
-		lockStore:   lockStore,
-		gitClient:   gitClient,
-		fs:          fs,
-		fileCopy:    fileCopy,
-		license:     license,
-		cache:       cache,
-		hooks:       hooks,
-		ui:          ui,
-		rootDir:     rootDir,
+		configStore:  configStore,
+		lockStore:    lockStore,
+		gitClient:    gitClient,
+		fs:           fs,
+		fileCopy:     fileCopy,
+		license:      license,
+		cache:        cache,
+		hooks:        hooks,
+		ui:           ui,
+		rootDir:      rootDir,
+		internalSync: internalSync,
 	}
 }
 
@@ -157,6 +163,15 @@ func (s *SyncService) syncDryRun(vendors []types.VendorSpec, lockMap map[string]
 	defer progress.Complete()
 
 	for _, v := range vendors {
+		if v.Source == SourceInternal {
+			// Internal vendor dry-run: use InternalSyncService with DryRun option
+			if s.internalSync != nil {
+				//nolint:errcheck // Dry-run errors are non-fatal for preview
+				_, _, _ = s.internalSync.SyncInternalVendor(&v, SyncOptions{DryRun: true})
+			}
+			progress.Increment(v.Name)
+			continue
+		}
 		s.previewSyncVendor(&v, lockMap[v.Name])
 		progress.Increment(v.Name)
 	}
@@ -166,6 +181,7 @@ func (s *SyncService) syncDryRun(vendors []types.VendorSpec, lockMap map[string]
 
 // syncSequential performs sequential sync (original implementation).
 // ctx controls cancellation — checked at each vendor boundary.
+// Internal vendors sync first (no network), then external vendors.
 func (s *SyncService) syncSequential(ctx context.Context, vendors []types.VendorSpec, lockMap map[string]map[string]string, opts SyncOptions) error {
 	// Start progress tracking
 	progress := s.ui.StartProgress(len(vendors), "Syncing vendors")
@@ -174,8 +190,31 @@ func (s *SyncService) syncSequential(ctx context.Context, vendors []types.Vendor
 	// Track total stats across all vendors
 	var totalStats CopyStats
 
-	// Sync vendors
+	// Phase 1: Internal vendors (no network, fast)
 	for _, v := range vendors {
+		if v.Source != SourceInternal {
+			continue
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if s.internalSync == nil {
+			return fmt.Errorf("internal sync service not configured for vendor %s", v.Name)
+		}
+		_, stats, err := s.internalSync.SyncInternalVendor(&v, opts)
+		if err != nil {
+			progress.Fail(err)
+			return fmt.Errorf("sync internal vendor %s: %w", v.Name, err)
+		}
+		totalStats.Add(stats)
+		progress.Increment(fmt.Sprintf("✓ %s", v.Name))
+	}
+
+	// Phase 2: External vendors (git clone, slower)
+	for _, v := range vendors {
+		if v.Source == SourceInternal {
+			continue
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -204,35 +243,67 @@ func (s *SyncService) syncSequential(ctx context.Context, vendors []types.Vendor
 
 // syncParallel performs parallel sync using worker pool.
 // ctx controls cancellation — passed to the parallel executor and each worker.
+// Internal vendors always sync sequentially first (no parallel — may share dest files).
 func (s *SyncService) syncParallel(ctx context.Context, vendors []types.VendorSpec, lockMap map[string]map[string]string, opts SyncOptions) error {
 	// Start progress tracking
 	progress := s.ui.StartProgress(len(vendors), "Syncing vendors (parallel)")
 	defer progress.Complete()
 
-	// Create parallel executor
-	executor := NewParallelExecutor(opts.Parallel, s.ui)
+	var totalStats CopyStats
 
-	// Define sync function for a single vendor
-	syncFunc := func(workerCtx context.Context, v types.VendorSpec, lockedRefs map[string]string, syncOpts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
-		updatedRefs, stats, err := s.SyncVendor(workerCtx, &v, lockedRefs, syncOpts)
+	// Phase 1: Internal vendors — sequential (no parallel for internal, may share dest files)
+	for _, v := range vendors {
+		if v.Source != SourceInternal {
+			continue
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if s.internalSync == nil {
+			return fmt.Errorf("internal sync service not configured for vendor %s", v.Name)
+		}
+		_, stats, err := s.internalSync.SyncInternalVendor(&v, opts)
 		if err != nil {
 			progress.Fail(err)
-			return nil, CopyStats{}, err
+			return fmt.Errorf("sync internal vendor %s: %w", v.Name, err)
 		}
+		totalStats.Add(stats)
 		progress.Increment(fmt.Sprintf("✓ %s", v.Name))
-		return updatedRefs, stats, nil
 	}
 
-	// Execute parallel sync
-	results, err := executor.ExecuteParallelSync(ctx, vendors, lockMap, opts, syncFunc)
-	if err != nil {
-		return fmt.Errorf("parallel sync: %w", err)
+	// Phase 2: External vendors — parallel
+	var externalVendors []types.VendorSpec
+	for _, v := range vendors {
+		if v.Source != SourceInternal {
+			externalVendors = append(externalVendors, v)
+		}
 	}
 
-	// Calculate total stats
-	var totalStats CopyStats
-	for i := range results {
-		totalStats.Add(results[i].Stats)
+	if len(externalVendors) > 0 {
+		// Create parallel executor
+		executor := NewParallelExecutor(opts.Parallel, s.ui)
+
+		// Define sync function for a single vendor
+		syncFunc := func(workerCtx context.Context, v types.VendorSpec, lockedRefs map[string]string, syncOpts SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+			updatedRefs, stats, err := s.SyncVendor(workerCtx, &v, lockedRefs, syncOpts)
+			if err != nil {
+				progress.Fail(err)
+				return nil, CopyStats{}, err
+			}
+			progress.Increment(fmt.Sprintf("✓ %s", v.Name))
+			return updatedRefs, stats, nil
+		}
+
+		// Execute parallel sync
+		results, err := executor.ExecuteParallelSync(ctx, externalVendors, lockMap, opts, syncFunc)
+		if err != nil {
+			return fmt.Errorf("parallel sync: %w", err)
+		}
+
+		// Calculate total stats from parallel results
+		for i := range results {
+			totalStats.Add(results[i].Stats)
+		}
 	}
 
 	// Display summary
@@ -294,6 +365,11 @@ func (s *SyncService) validateGroupExists(config types.VendorConfig, groupName s
 
 // shouldSyncVendor checks if a vendor should be synced based on filters
 func (s *SyncService) shouldSyncVendor(v *types.VendorSpec, opts SyncOptions) bool {
+	// If InternalOnly, skip external vendors
+	if opts.InternalOnly && v.Source != SourceInternal {
+		return false
+	}
+
 	// If vendor name filter is set, only sync matching vendor
 	if opts.VendorName != "" && v.Name != opts.VendorName {
 		return false

@@ -41,6 +41,18 @@ const (
 	DefaultRef = "main"
 	// FetchHead is the git FETCH_HEAD reference
 	FetchHead = "FETCH_HEAD"
+	// RefLocal is the sentinel ref for internal vendors (no git operations)
+	RefLocal = "local"
+)
+
+// Internal vendor constants (Spec 070)
+const (
+	// SourceInternal marks a vendor as sourced from within the same repository
+	SourceInternal = "internal"
+	// ComplianceSourceCanonical means source file is authoritative; dest overwrites are normal
+	ComplianceSourceCanonical = "source-canonical"
+	// ComplianceBidirectional means changes in either direction propagate to the other
+	ComplianceBidirectional = "bidirectional"
 )
 
 // AllowedLicenses defines the list of open-source licenses permitted by default.

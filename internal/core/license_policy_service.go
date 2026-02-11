@@ -109,6 +109,11 @@ func (s *LicensePolicyService) GenerateReport(failOn string) (*types.LicenseRepo
 	}
 
 	for _, vendor := range cfg.Vendors {
+		// Skip internal vendors — no external license concept
+		if vendor.Source == SourceInternal {
+			continue
+		}
+
 		license := vendor.License
 
 		// Try to enrich from lockfile if config license is empty

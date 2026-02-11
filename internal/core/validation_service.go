@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -56,10 +57,21 @@ func (s *ValidationService) ValidateConfig() error {
 		}
 		names[vendor.Name] = true
 
-		// Validate vendor
-		if err := s.validateVendor(&vendor); err != nil {
-			return fmt.Errorf("ValidateConfig: %w", err)
+		// Route to internal or external validation
+		if vendor.Source == SourceInternal {
+			if err := s.validateInternalVendor(&vendor); err != nil {
+				return fmt.Errorf("ValidateConfig: %w", err)
+			}
+		} else {
+			if err := s.validateVendor(&vendor); err != nil {
+				return fmt.Errorf("ValidateConfig: %w", err)
+			}
 		}
+	}
+
+	// Detect circular dependencies among internal vendors
+	if err := s.detectInternalCycles(config); err != nil {
+		return fmt.Errorf("ValidateConfig: %w", err)
 	}
 
 	return nil
@@ -244,6 +256,141 @@ func (s *ValidationService) detectOverlappingPathConflicts(pathMap map[string][]
 	}
 
 	return conflicts
+}
+
+// validateInternalVendor validates a vendor with Source="internal".
+// Internal vendors MUST NOT have URL, License, or Hooks; MUST use Ref="local".
+func (s *ValidationService) validateInternalVendor(vendor *types.VendorSpec) error {
+	if vendor.URL != "" {
+		return NewValidationError(vendor.Name, "", "url", "internal vendors MUST NOT have a URL")
+	}
+	if vendor.License != "" {
+		return NewValidationError(vendor.Name, "", "license", "internal vendors MUST NOT have a license")
+	}
+	if vendor.Hooks != nil {
+		return NewValidationError(vendor.Name, "", "hooks", "internal vendors MUST NOT have hooks")
+	}
+	if vendor.Compliance != "" && vendor.Compliance != ComplianceSourceCanonical && vendor.Compliance != ComplianceBidirectional {
+		return NewValidationError(vendor.Name, "", "compliance",
+			fmt.Sprintf("compliance must be empty, %q, or %q", ComplianceSourceCanonical, ComplianceBidirectional))
+	}
+	if len(vendor.Specs) == 0 {
+		return fmt.Errorf("vendor %s has no specs configured", vendor.Name)
+	}
+	for _, spec := range vendor.Specs {
+		if spec.Ref != RefLocal {
+			return NewValidationError(vendor.Name, spec.Ref, "ref",
+				fmt.Sprintf("internal vendors MUST use ref %q", RefLocal))
+		}
+		if len(spec.Mapping) == 0 {
+			return fmt.Errorf("vendor %s @ %s has no path mappings", vendor.Name, spec.Ref)
+		}
+		for _, mapping := range spec.Mapping {
+			if mapping.From == "" {
+				return fmt.Errorf("vendor %s @ %s has a mapping with empty 'from' path", vendor.Name, spec.Ref)
+			}
+			// Strip position specifier before checking file existence
+			srcFile, _, err := types.ParsePathPosition(mapping.From)
+			if err != nil {
+				srcFile = mapping.From
+			}
+			if _, statErr := os.Stat(srcFile); statErr != nil {
+				return NewValidationError(vendor.Name, spec.Ref, "mapping.from",
+					fmt.Sprintf("source file %q does not exist", srcFile))
+			}
+		}
+	}
+	return nil
+}
+
+// detectInternalCycles builds a directed graph from internal vendor mappings
+// and checks for cycles via DFS. Returns CycleError if a cycle is found.
+// Uses file-level granularity (positions stripped) because any write to a file
+// invalidates all position reads from that file.
+func (s *ValidationService) detectInternalCycles(config types.VendorConfig) error {
+	// Build adjacency list: source file -> destination files
+	graph := make(map[string][]string)
+	for _, vendor := range config.Vendors {
+		if vendor.Source != SourceInternal {
+			continue
+		}
+		for _, spec := range vendor.Specs {
+			for _, mapping := range spec.Mapping {
+				fromFile, _, err := types.ParsePathPosition(mapping.From)
+				if err != nil {
+					fromFile = mapping.From
+				}
+				fromFile = filepath.Clean(fromFile)
+
+				toFile := mapping.To
+				if toFile == "" {
+					continue // Auto-named paths can't form cycles with source files
+				}
+				toClean, _, err := types.ParsePathPosition(toFile)
+				if err != nil {
+					toClean = toFile
+				}
+				toClean = filepath.Clean(toClean)
+
+				graph[fromFile] = append(graph[fromFile], toClean)
+			}
+		}
+	}
+
+	if len(graph) == 0 {
+		return nil
+	}
+
+	// DFS cycle detection
+	const (
+		white = 0 // unvisited
+		gray  = 1 // in current path
+		black = 2 // fully explored
+	)
+	color := make(map[string]int)
+	parent := make(map[string]string)
+
+	var dfs func(node string) []string
+	dfs = func(node string) []string {
+		color[node] = gray
+		for _, neighbor := range graph[node] {
+			if color[neighbor] == gray {
+				// Reconstruct cycle path
+				cycle := []string{neighbor, node}
+				cur := node
+				for cur != neighbor {
+					cur = parent[cur]
+					if cur == "" {
+						break
+					}
+					cycle = append(cycle, cur)
+				}
+				// Reverse to get forward order
+				for i, j := 0, len(cycle)-1; i < j; i, j = i+1, j-1 {
+					cycle[i], cycle[j] = cycle[j], cycle[i]
+				}
+				return cycle
+			}
+			if color[neighbor] == white {
+				parent[neighbor] = node
+				if cycle := dfs(neighbor); cycle != nil {
+					return cycle
+				}
+			}
+		}
+		color[node] = black
+		return nil
+	}
+
+	for node := range graph {
+		if color[node] == white {
+			if cycle := dfs(node); cycle != nil {
+				return NewCycleError(cycle)
+			}
+		}
+	}
+
+	return nil
 }
 
 // isSubPath checks if path1 is a subdirectory of path2 or vice versa
