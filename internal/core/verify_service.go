@@ -152,6 +152,26 @@ func (s *VerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 	// target range, hash it, and compare to the source_hash stored at sync time.
 	s.verifyPositions(lock, result)
 
+	// Register position-destination files in expectedFiles so findAddedFiles
+	// does not flag them as "added". Position entries are verified separately
+	// by verifyPositions above; this loop runs after the whole-file verify loop
+	// so the empty hash sentinel never triggers a false "modified" result.
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
+		for _, pos := range lockEntry.Positions {
+			destFile, _, parseErr := types.ParsePathPosition(pos.To)
+			if parseErr != nil {
+				continue
+			}
+			if _, exists := expectedFiles[destFile]; !exists {
+				expectedFiles[destFile] = expectedFileInfo{
+					vendor: lockEntry.Name,
+					hash:   "",
+				}
+			}
+		}
+	}
+
 	// Scan for added files (in vendor directories but not in lockfile)
 	addedFiles, err := s.findAddedFiles(config, expectedFiles)
 	if err != nil {
@@ -354,8 +374,14 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 				return nil
 			}
 
-			// Check if this file is in expected files
-			if _, exists := expectedFiles[path]; !exists {
+			// Check both OS-native path (from WalkDir) and forward-slash form
+			// (lockfile/config paths use forward slashes on all platforms, but
+			// filepath.WalkDir returns OS-native separators on Windows).
+			_, inExpected := expectedFiles[path]
+			if !inExpected {
+				_, inExpected = expectedFiles[filepath.ToSlash(path)]
+			}
+			if !inExpected {
 				// This is an added file
 				hash, hashErr := s.cache.ComputeFileChecksum(path)
 				var hashPtr *string
@@ -363,7 +389,7 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 					hashPtr = &hash
 				}
 				added = append(added, types.FileStatus{
-					Path:       path,
+					Path:       filepath.ToSlash(path),
 					Vendor:     nil, // Unknown vendor for added files
 					Status:     "added",
 					Type:       "file",
