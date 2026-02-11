@@ -283,6 +283,24 @@ func (s *VendorSyncer) RemoveVendor(name string) error {
 	return s.update.UpdateAll(context.Background())
 }
 
+// syncWithAutoUpdate calls sync.Sync and falls back to UpdateAll on stale lockfile errors.
+// When a locked commit no longer exists in the remote (e.g., after force-push),
+// syncWithAutoUpdate regenerates the lockfile via UpdateAll, which also re-syncs files.
+func (s *VendorSyncer) syncWithAutoUpdate(ctx context.Context, opts SyncOptions) error {
+	err := s.sync.Sync(ctx, opts)
+	if err == nil {
+		return nil
+	}
+	if !IsStaleCommit(err) {
+		return err
+	}
+	fmt.Println("⚠ Stale lockfile detected — auto-updating...")
+	if updateErr := s.update.UpdateAll(ctx); updateErr != nil {
+		return fmt.Errorf("auto-update after stale commit: %w", updateErr)
+	}
+	return nil
+}
+
 // Sync performs locked synchronization.
 // ctx controls cancellation of git operations during sync.
 func (s *VendorSyncer) Sync(ctx context.Context) error {
@@ -295,9 +313,9 @@ func (s *VendorSyncer) Sync(ctx context.Context) error {
 		}
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")
-		return s.sync.Sync(ctx, SyncOptions{})
+		return s.syncWithAutoUpdate(ctx, SyncOptions{})
 	}
-	return s.sync.Sync(ctx, SyncOptions{})
+	return s.syncWithAutoUpdate(ctx, SyncOptions{})
 }
 
 // SyncDryRun performs a dry-run sync.
@@ -325,7 +343,7 @@ func (s *VendorSyncer) SyncWithOptions(ctx context.Context, vendorName string, f
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")
 	}
-	return s.sync.Sync(ctx, SyncOptions{
+	return s.syncWithAutoUpdate(ctx, SyncOptions{
 		VendorName: vendorName,
 		Force:      force,
 		NoCache:    noCache,
@@ -345,7 +363,7 @@ func (s *VendorSyncer) SyncWithFullOpts(ctx context.Context, opts SyncOptions) e
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")
 	}
-	return s.sync.Sync(ctx, opts)
+	return s.syncWithAutoUpdate(ctx, opts)
 }
 
 // SyncWithGroup performs sync for all vendors in a group.
@@ -361,7 +379,7 @@ func (s *VendorSyncer) SyncWithGroup(ctx context.Context, groupName string, forc
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")
 	}
-	return s.sync.Sync(ctx, SyncOptions{
+	return s.syncWithAutoUpdate(ctx, SyncOptions{
 		GroupName: groupName,
 		Force:     force,
 		NoCache:   noCache,
@@ -381,7 +399,7 @@ func (s *VendorSyncer) SyncWithParallel(ctx context.Context, vendorName string, 
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")
 	}
-	return s.sync.Sync(ctx, SyncOptions{
+	return s.syncWithAutoUpdate(ctx, SyncOptions{
 		VendorName: vendorName,
 		Force:      force,
 		NoCache:    noCache,

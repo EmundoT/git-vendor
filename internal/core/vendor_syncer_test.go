@@ -65,13 +65,16 @@ func (s *stubSyncService) SyncVendor(_ context.Context, _ *types.VendorSpec, _ m
 // stubUpdateService implements UpdateServiceInterface for testing.
 type stubUpdateService struct {
 	updateErr error
+	callCount int
 }
 
 func (s *stubUpdateService) UpdateAll(_ context.Context) error {
+	s.callCount++
 	return s.updateErr
 }
 
 func (s *stubUpdateService) UpdateAllWithOptions(_ context.Context, _ types.ParallelOptions) error {
+	s.callCount++
 	return s.updateErr
 }
 
@@ -489,6 +492,120 @@ func TestVendorSyncer_SyncWithParallel(t *testing.T) {
 	err := syncer.SyncWithParallel(context.Background(), "", false, false, types.ParallelOptions{Enabled: true, MaxWorkers: 2})
 	if err != nil {
 		t.Fatalf("SyncWithParallel() error = %v", err)
+	}
+}
+
+// ============================================================================
+// VendorSyncer stale commit auto-recovery tests
+// ============================================================================
+
+func TestVendorSyncer_Sync_StaleCommitAutoUpdates(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockLock := NewMockLockStore(ctrl)
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{Name: "v1", Ref: "main", CommitHash: "stale123"}},
+	}, nil)
+
+	syncSvc := &stubSyncService{
+		syncErr: NewStaleCommitError("stale123", "v1", "main"),
+	}
+	updateSvc := &stubUpdateService{}
+
+	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{
+		Sync:   syncSvc,
+		Update: updateSvc,
+	})
+
+	err := syncer.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("Sync() expected nil after auto-update, got: %v", err)
+	}
+	if updateSvc.callCount != 1 {
+		t.Errorf("expected UpdateAll called once, got %d", updateSvc.callCount)
+	}
+}
+
+func TestVendorSyncer_Sync_StaleCommitAutoUpdateFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockLock := NewMockLockStore(ctrl)
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{Name: "v1", Ref: "main", CommitHash: "stale123"}},
+	}, nil)
+
+	syncSvc := &stubSyncService{
+		syncErr: NewStaleCommitError("stale123", "v1", "main"),
+	}
+	updateSvc := &stubUpdateService{updateErr: errors.New("network error")}
+
+	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{
+		Sync:   syncSvc,
+		Update: updateSvc,
+	})
+
+	err := syncer.Sync(context.Background())
+	if err == nil {
+		t.Fatal("Sync() expected error when auto-update fails")
+	}
+	if !contains(err.Error(), "auto-update after stale commit") {
+		t.Errorf("Sync() error = %q, want containing 'auto-update after stale commit'", err.Error())
+	}
+}
+
+func TestVendorSyncer_Sync_NonStaleErrorDoesNotAutoUpdate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockLock := NewMockLockStore(ctrl)
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{Name: "v1", Ref: "main", CommitHash: "abc"}},
+	}, nil)
+
+	syncSvc := &stubSyncService{syncErr: errors.New("network timeout")}
+	updateSvc := &stubUpdateService{}
+
+	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{
+		Sync:   syncSvc,
+		Update: updateSvc,
+	})
+
+	err := syncer.Sync(context.Background())
+	if err == nil {
+		t.Fatal("Sync() expected error for non-stale failure")
+	}
+	if updateSvc.callCount != 0 {
+		t.Errorf("expected UpdateAll NOT called for non-stale error, got %d calls", updateSvc.callCount)
+	}
+}
+
+func TestVendorSyncer_SyncWithOptions_StaleCommitAutoUpdates(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockLock := NewMockLockStore(ctrl)
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{Name: "v1", Ref: "main", CommitHash: "stale123"}},
+	}, nil)
+
+	syncSvc := &stubSyncService{
+		syncErr: NewStaleCommitError("stale123", "v1", "main"),
+	}
+	updateSvc := &stubUpdateService{}
+
+	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{
+		Sync:   syncSvc,
+		Update: updateSvc,
+	})
+
+	err := syncer.SyncWithOptions(context.Background(), "v1", false, false)
+	if err != nil {
+		t.Fatalf("SyncWithOptions() expected nil after auto-update, got: %v", err)
+	}
+	if updateSvc.callCount != 1 {
+		t.Errorf("expected UpdateAll called once, got %d", updateSvc.callCount)
 	}
 }
 
