@@ -163,7 +163,7 @@ Detailed rules load automatically based on which files you're editing. See `.cla
 | `security.md` | security-critical files | Path traversal, URL validation, hook threat model |
 | `position-extraction.md` | position/file_copy files | Syntax spec, pipeline, CRLF, column semantics |
 | `spec-072.md` | config_commands/cli_response | LLM-friendly CLI, JSON schema, error codes |
-| `commit-schema.md` | commit_service.go | Trailers, git notes, atomic commit design |
+| `vendor-commits.md` | commit_service.go | vendor/v1 delta: trailers, git notes, atomic commit design |
 
 ## Deeper Documentation
 
