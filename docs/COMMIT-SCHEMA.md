@@ -4,7 +4,7 @@ Structured commit format for the git-plumbing ecosystem. Defines
 trailers, tags, notes, and enrichment responsibilities shared by
 git-plumbing, git-agent, and git-vendor.
 
-**Status:** DRAFT — pending ratification across all three projects.
+**Status:** Ratified v1 — 2026-02-11. Implemented in git-plumbing, git-agent, git-vendor.
 
 ---
 
@@ -639,9 +639,11 @@ performance wall on tag queries.
 
 ---
 
-## 12. Open Design Questions (resolve before v1 ratification)
+## 12. Resolved Design Notes
 
-1. **Surface path mapping config format.** The default
-   heuristic covers common layouts. Project-specific
-   overrides need a config format and location (likely
-   `.git-plumbing/surface.yml` or section in existing config).
+1. **Surface path mapping config format.** Resolved: this is a tooling
+   concern, not a protocol concern (Principle 8: Protocol over mechanism).
+   `ClassifySurface(paths, rules)` in git-plumbing already accepts custom
+   rules programmatically. A declarative config file (`.git-plumbing/surface.yml`)
+   is deferred to a future release. The protocol defines the surface VALUES
+   and priority ordering — classification mechanism is each tool's business.
