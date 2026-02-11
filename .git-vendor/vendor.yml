@@ -35,7 +35,28 @@ vendors:
             to: pkg/git-plumbing/notes.go
           - from: custom_refs.go
             to: pkg/git-plumbing/custom_refs.go
+          - from: hook.go
+            to: pkg/git-plumbing/hook.go
+          - from: subject.go
+            to: pkg/git-plumbing/subject.go
+          - from: surface.go
+            to: pkg/git-plumbing/surface.go
+          - from: tags.go
+            to: pkg/git-plumbing/tags.go
+          - from: tagscan.go
+            to: pkg/git-plumbing/tagscan.go
           - from: testutil/repo.go
             to: pkg/git-plumbing/testutil/repo.go
           - from: testutil/fixtures.go
             to: pkg/git-plumbing/testutil/fixtures.go
+  - name: git-ecosystem
+    url: https://github.com/EmundoT/git-ecosystem.git
+    specs:
+      - ref: main
+        mapping:
+          - from: rules/commit-schema-tags.md
+            to: .claude/rules/commit-schema-tags.md
+          - from: rules/ecosystem-protocol.md
+            to: .claude/rules/ecosystem-protocol.md
+          - from: skills/commit-schema/SKILL.md
+            to: .claude/skills/commit-schema/SKILL.md
