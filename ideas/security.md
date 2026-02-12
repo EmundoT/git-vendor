@@ -6,31 +6,31 @@
 
 | ID | Status | Title | Brief | Spec |
 |----|--------|-------|-------|------|
-| SEC-001 | pending | Path Traversal Audit | Verify ValidateDestPath called before ALL file operations, no bypasses | - |
+| SEC-001 | completed | Path Traversal Audit | RootedFileSystem with ValidateWritePath in engine.go, comprehensive tests in filesystem_test.go | - |
 
 ## HIGH Priority
 
 | ID | Status | Title | Brief | Spec |
 |----|--------|-------|-------|------|
-| SEC-010 | pending | Git Command Injection Review | Audit all exec.Command calls for injection vulnerabilities in git_operations.go | - |
-| SEC-011 | pending | URL Validation Hardening | Ensure URL parsing rejects malicious URLs (file://, ftp://, etc.) | - |
-| SEC-012 | pending | Hook Execution Security | Document security model for hook execution, ensure no env var injection | - |
-| SEC-013 | pending | Credential Exposure Prevention | Ensure tokens/passwords never logged, printed, or included in errors | - |
+| SEC-010 | completed | Git Command Injection Review | All git commands delegated to git-plumbing, no exec.Command in git-vendor | - |
+| SEC-011 | completed | URL Validation Hardening | ValidateVendorURL rejects file://, ftp://, javascript:, data: schemes; tests in security_hardening_test.go | - |
+| SEC-012 | completed | Hook Execution Security | sanitizeEnvValue strips newlines/null bytes, 5-min timeout, inline SEC-012 doc on HookExecutor | - |
+| SEC-013 | completed | Credential Exposure Prevention | SanitizeURL strips credentials; tests verify tokens not in error messages | - |
 
 ## MEDIUM Priority
 
 | ID | Status | Title | Brief | Spec |
 |----|--------|-------|-------|------|
-| SEC-020 | pending | YAML Parsing Limits | Add size limits and structure validation for vendor.yml parsing | - |
-| SEC-021 | pending | Temp Directory Cleanup | Ensure all temp directories are cleaned up even on error/panic | - |
-| SEC-022 | pending | Symlink Handling | Verify symlinks in vendored content are handled safely | - |
-| SEC-023 | pending | Binary File Detection | Warn or block vendoring of binary/executable files | - |
+| SEC-020 | completed | YAML Parsing Limits | 1 MB size limit (maxYAMLFileSize) in YAMLStore.Load; tests in security_hardening_test.go | - |
+| SEC-021 | completed | Temp Directory Cleanup | defer-based cleanup verified in security_hardening_test.go | - |
+| SEC-022 | completed | Symlink Handling | Symlink detection in security_hardening_test.go; CopyDir does not follow directory symlinks | - |
+| SEC-023 | completed | Binary File Detection | IsBinaryContent exported, null-byte heuristic (first 8000 bytes) in position_extract.go | - |
 
 ## LOW Priority
 
 | ID | Status | Title | Brief | Spec |
 |----|--------|-------|-------|------|
-| SEC-030 | pending | Security Documentation | Create docs/SECURITY.md with threat model and security guarantees | - |
+| SEC-030 | completed | Security Documentation | SECURITY.md at project root, hook threat model inlined on HookExecutor (SEC-012 doc comment) | - |
 | SEC-031 | pending | Dependency Vulnerability Scan | Set up govulncheck in CI for dependency scanning | - |
 | SEC-032 | pending | Release Signing | Sign release binaries with GPG or Sigstore | - |
 
@@ -49,7 +49,7 @@ Per CLAUDE.md and codebase analysis, these areas require ongoing vigilance:
 // - Only allows relative paths within project
 ```
 
-**Current Status:** Implemented, needs audit for complete coverage.
+**Current Status:** Completed. RootedFileSystem with ValidateWritePath enforces path safety. Comprehensive tests in filesystem_test.go and security_hardening_test.go.
 
 ### 2. Git Operations (git_operations.go)
 
@@ -57,32 +57,33 @@ Per CLAUDE.md and codebase analysis, these areas require ongoing vigilance:
 // Git commands must not be injectable
 // - URL validation before use
 // - Ref/branch validation (no shell metacharacters)
-// - Use array-based exec.Command, not string concatenation
+// - All commands delegated to git-plumbing (no exec.Command)
 ```
 
-**Current Status:** Uses exec.Command with explicit args, needs review.
+**Current Status:** Completed. All git operations delegated to git-plumbing. No direct exec.Command calls in git-vendor.
 
 ### 3. Hook Execution (hook_service.go)
 
 ```go
 // Hooks execute arbitrary shell commands
 // - Runs with user's permissions (acceptable - same as npm scripts)
-// - Documents that users control vendor.yml
-// - Ensures working directory is project root
+// - 5-minute timeout prevents hangs
+// - Environment variables sanitized (newlines/null bytes stripped)
+// - Documented inline on HookExecutor interface (SEC-012 doc comment)
 ```
 
-**Current Status:** Documented in CLAUDE.md, consistent with npm/make model.
+**Current Status:** Completed. sanitizeEnvValue implemented, timeout enforced, threat model documented.
 
 ### 4. YAML Parsing (config_store.go, lock_store.go)
 
 ```go
-// YAML can be attack vector
-// - Consider input size limits
-// - Validate structure after parsing
-// - Reject unexpected types
+// YAML input protection
+// - 1 MB file size limit (maxYAMLFileSize)
+// - Structure validation after parsing
+// - Standard gopkg.in/yaml.v3 with size guard
 ```
 
-**Current Status:** Uses standard gopkg.in/yaml.v3, no custom limits.
+**Current Status:** Completed. Size limits tested in security_hardening_test.go.
 
 ---
 
@@ -99,4 +100,15 @@ Per CLAUDE.md and codebase analysis, these areas require ongoing vigilance:
 
 ## Completed Issue Details
 
-*No issues completed yet. This section will track remediation notes.*
+| ID | Completed | Notes |
+|----|-----------|-------|
+| SEC-001 | 2026-02-09 | RootedFileSystem with ValidateWritePath, comprehensive tests |
+| SEC-010 | 2026-02-09 | All git operations via git-plumbing, no exec.Command |
+| SEC-011 | 2026-02-09 | ValidateVendorURL rejects dangerous schemes |
+| SEC-012 | 2026-02-09 | sanitizeEnvValue, 5-min timeout, inline SEC-012 doc on HookExecutor |
+| SEC-013 | 2026-02-09 | SanitizeURL strips credentials from error messages |
+| SEC-020 | 2026-02-09 | 1 MB YAML size limit enforced |
+| SEC-021 | 2026-02-09 | defer-based temp dir cleanup verified |
+| SEC-022 | 2026-02-09 | Symlink detection, CopyDir does not follow dir symlinks |
+| SEC-023 | 2026-02-09 | IsBinaryContent exported, null-byte heuristic |
+| SEC-030 | 2026-02-09 | SECURITY.md at root, hook threat model inlined on HookExecutor |

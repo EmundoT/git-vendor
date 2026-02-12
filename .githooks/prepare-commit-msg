@@ -1,0 +1,92 @@
+#!/bin/bash
+# prepare-commit-msg — COMMIT-SCHEMA v1 enrichment hook
+# Adds: Commit-Schema: manual/v1, Tags, Touch, Diff-Additions/Deletions/Files, Diff-Surface
+# Progressive enhancement: uses git-plumbing binary if available, bash fallback otherwise.
+
+MSG_FILE="$1"
+SOURCE="$2"
+SHA="$3"
+
+# Skip merge commits, squash, amend
+case "$SOURCE" in
+  merge|squash) exit 0 ;;
+esac
+
+# --- Tier 1: git-plumbing binary (full enrichment) ---
+if command -v git-plumbing &>/dev/null; then
+  git-plumbing hook prepare-commit-msg "$MSG_FILE" "$SOURCE" "$SHA"
+  exit $?
+fi
+
+# --- Tier 2: bash fallback (~90% fidelity) ---
+MSG=$(cat "$MSG_FILE")
+
+# Skip if already has Commit-Schema (idempotent)
+if echo "$MSG" | grep -q "^Commit-Schema:"; then
+  exit 0
+fi
+
+# Compute diff metrics from staged changes
+NUMSTAT=$(git diff --cached --numstat 2>/dev/null)
+if [ -n "$NUMSTAT" ]; then
+  ADDITIONS=$(echo "$NUMSTAT" | awk '{s+=$1} END {print s+0}')
+  DELETIONS=$(echo "$NUMSTAT" | awk '{s+=$2} END {print s+0}')
+  FILES=$(echo "$NUMSTAT" | wc -l | tr -d ' ')
+else
+  ADDITIONS=0
+  DELETIONS=0
+  FILES=0
+fi
+
+# Classify primary surface from staged file paths
+STAGED=$(git diff --cached --name-only 2>/dev/null)
+SURFACE="internal"
+if echo "$STAGED" | grep -qE '(^cmd/|^api/|handler)'; then
+  SURFACE="api"
+elif echo "$STAGED" | grep -qE '(migration|schema)'; then
+  SURFACE="data"
+elif echo "$STAGED" | grep -qE '\.(yml|yaml|toml|json)$'; then
+  SURFACE="config"
+elif echo "$STAGED" | grep -qE '(_test\.go$|__tests__)'; then
+  SURFACE="test"
+elif echo "$STAGED" | grep -qE '(\.md$|^docs/|LICENSE)'; then
+  SURFACE="docs"
+fi
+
+# Extract Tags from conventional-commits subject line
+SUBJECT=$(head -1 "$MSG_FILE")
+TYPE=$(echo "$SUBJECT" | sed -n 's/^\([a-z][a-z]*\)[(!:].*/\1/p')
+SCOPE=$(echo "$SUBJECT" | sed -n 's/^[a-z][a-z]*(\([^)]*\)).*/\1/p')
+TAGS=""
+if [ -n "$TYPE" ]; then
+  TAGS="$TYPE"
+  if [ -n "$SCOPE" ]; then
+    TAGS="$TYPE, $SCOPE"
+  fi
+fi
+
+# Extract Touch from #tag comments in staged files
+TOUCH_TAGS=""
+for f in $STAGED; do
+  if [ -f "$f" ]; then
+    tags=$(grep -oE '#[a-z][a-z0-9._-]*' "$f" 2>/dev/null | sed 's/^#//')
+    TOUCH_TAGS="$TOUCH_TAGS $tags"
+  fi
+done
+TOUCH=$(echo "$TOUCH_TAGS" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
+
+# Append trailers (blank line + trailers)
+{
+  echo ""
+  echo "Commit-Schema: manual/v1"
+  if [ -n "$TAGS" ] && ! echo "$MSG" | grep -q "^Tags:"; then
+    echo "Tags: $TAGS"
+  fi
+  if [ -n "$TOUCH" ] && ! echo "$MSG" | grep -q "^Touch:"; then
+    echo "Touch: $TOUCH"
+  fi
+  echo "Diff-Additions: $ADDITIONS"
+  echo "Diff-Deletions: $DELETIONS"
+  echo "Diff-Files: $FILES"
+  echo "Diff-Surface: $SURFACE"
+} >> "$MSG_FILE"

@@ -109,6 +109,7 @@ func newSyncServiceWithCache(
 		&stubHookExecutor{},
 		&SilentUICallback{},
 		rootDir,
+		nil, // internalSync (unused in external sync tests)
 	)
 }
 

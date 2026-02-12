@@ -54,24 +54,27 @@ type stubSyncService struct {
 	syncVendorErr error
 }
 
-func (s *stubSyncService) Sync(_ SyncOptions) error {
+func (s *stubSyncService) Sync(_ context.Context, _ SyncOptions) error {
 	return s.syncErr
 }
 
-func (s *stubSyncService) SyncVendor(_ *types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
+func (s *stubSyncService) SyncVendor(_ context.Context, _ *types.VendorSpec, _ map[string]string, _ SyncOptions) (map[string]RefMetadata, CopyStats, error) {
 	return nil, CopyStats{}, s.syncVendorErr
 }
 
 // stubUpdateService implements UpdateServiceInterface for testing.
 type stubUpdateService struct {
 	updateErr error
+	callCount int
 }
 
-func (s *stubUpdateService) UpdateAll() error {
+func (s *stubUpdateService) UpdateAll(_ context.Context) error {
+	s.callCount++
 	return s.updateErr
 }
 
-func (s *stubUpdateService) UpdateAllWithOptions(_ types.ParallelOptions) error {
+func (s *stubUpdateService) UpdateAllWithOptions(_ context.Context, _ types.ParallelOptions) error {
+	s.callCount++
 	return s.updateErr
 }
 
@@ -96,7 +99,7 @@ type stubUpdateCheckerService struct {
 	err     error
 }
 
-func (s *stubUpdateCheckerService) CheckUpdates() ([]types.UpdateCheckResult, error) {
+func (s *stubUpdateCheckerService) CheckUpdates(_ context.Context) ([]types.UpdateCheckResult, error) {
 	return s.results, s.err
 }
 
@@ -106,7 +109,7 @@ type stubVerifyService struct {
 	err    error
 }
 
-func (s *stubVerifyService) Verify() (*types.VerifyResult, error) {
+func (s *stubVerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 	return s.result, s.err
 }
 
@@ -202,6 +205,74 @@ func TestVendorSyncer_Init_ConfigSaveFails(t *testing.T) {
 	}
 	if !contains(err.Error(), "save initial config") {
 		t.Errorf("Init() error = %q, want containing 'save initial config'", err.Error())
+	}
+}
+
+func TestVendorSyncer_Init_SetsHooksPath(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockFS := NewMockFileSystem(ctrl)
+	mockConfig := NewMockConfigStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+
+	mockFS.EXPECT().MkdirAll(gomock.Any(), os.FileMode(0755)).Return(nil).Times(2)
+	mockConfig.EXPECT().Save(types.VendorConfig{Vendors: []types.VendorSpec{}}).Return(nil)
+
+	// .githooks/ exists in project root → ConfigSet should be called
+	mockFS.EXPECT().Stat(".githooks").Return(nil, nil)
+	mockGit.EXPECT().ConfigSet(gomock.Any(), ".", "core.hooksPath", ".githooks").Return(nil)
+
+	syncer := NewVendorSyncer(mockConfig, nil, mockGit, mockFS, nil, ".git-vendor", &SilentUICallback{}, nil)
+
+	err := syncer.Init()
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+}
+
+func TestVendorSyncer_Init_SkipsHooksWhenNoDir(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockFS := NewMockFileSystem(ctrl)
+	mockConfig := NewMockConfigStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+
+	mockFS.EXPECT().MkdirAll(gomock.Any(), os.FileMode(0755)).Return(nil).Times(2)
+	mockConfig.EXPECT().Save(types.VendorConfig{Vendors: []types.VendorSpec{}}).Return(nil)
+
+	// .githooks/ does NOT exist → ConfigSet should NOT be called
+	mockFS.EXPECT().Stat(".githooks").Return(nil, os.ErrNotExist)
+
+	syncer := NewVendorSyncer(mockConfig, nil, mockGit, mockFS, nil, ".git-vendor", &SilentUICallback{}, nil)
+
+	err := syncer.Init()
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+}
+
+func TestVendorSyncer_Init_HookSetupFailureNonFatal(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockFS := NewMockFileSystem(ctrl)
+	mockConfig := NewMockConfigStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+
+	mockFS.EXPECT().MkdirAll(gomock.Any(), os.FileMode(0755)).Return(nil).Times(2)
+	mockConfig.EXPECT().Save(types.VendorConfig{Vendors: []types.VendorSpec{}}).Return(nil)
+
+	// .githooks/ exists but ConfigSet fails → should NOT fail Init
+	mockFS.EXPECT().Stat(".githooks").Return(nil, nil)
+	mockGit.EXPECT().ConfigSet(gomock.Any(), ".", "core.hooksPath", ".githooks").Return(errors.New("git config failed"))
+
+	syncer := NewVendorSyncer(mockConfig, nil, mockGit, mockFS, nil, ".git-vendor", &SilentUICallback{}, nil)
+
+	err := syncer.Init()
+	if err != nil {
+		t.Fatalf("Init() should succeed even if hook setup fails, got: %v", err)
 	}
 }
 
@@ -342,7 +413,7 @@ func TestVendorSyncer_Sync_WithExistingLock(t *testing.T) {
 		Sync: syncSvc,
 	})
 
-	err := syncer.Sync()
+	err := syncer.Sync(context.Background())
 	if err != nil {
 		t.Fatalf("Sync() error = %v", err)
 	}
@@ -364,7 +435,7 @@ func TestVendorSyncer_Sync_NoLockfileRunsUpdate(t *testing.T) {
 		Update: updateSvc,
 	})
 
-	err := syncer.Sync()
+	err := syncer.Sync(context.Background())
 	if err != nil {
 		t.Fatalf("Sync() error = %v", err)
 	}
@@ -384,7 +455,7 @@ func TestVendorSyncer_Sync_UpdateFails(t *testing.T) {
 		Update: updateSvc,
 	})
 
-	err := syncer.Sync()
+	err := syncer.Sync(context.Background())
 	if err == nil {
 		t.Fatal("Sync() expected error when update fails")
 	}
@@ -408,7 +479,7 @@ func TestVendorSyncer_SyncDryRun_WithLock(t *testing.T) {
 		Sync: syncSvc,
 	})
 
-	err := syncer.SyncDryRun()
+	err := syncer.SyncDryRun(context.Background())
 	if err != nil {
 		t.Fatalf("SyncDryRun() error = %v", err)
 	}
@@ -423,7 +494,7 @@ func TestVendorSyncer_SyncDryRun_NoLock(t *testing.T) {
 
 	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{})
 
-	err := syncer.SyncDryRun()
+	err := syncer.SyncDryRun(context.Background())
 	if err != nil {
 		t.Fatalf("SyncDryRun() error = %v, want nil", err)
 	}
@@ -444,7 +515,7 @@ func TestVendorSyncer_SyncWithOptions_WithLock(t *testing.T) {
 		Sync: syncSvc,
 	})
 
-	err := syncer.SyncWithOptions("v1", true, false)
+	err := syncer.SyncWithOptions(context.Background(), "v1", true, false)
 	if err != nil {
 		t.Fatalf("SyncWithOptions() error = %v", err)
 	}
@@ -465,7 +536,7 @@ func TestVendorSyncer_SyncWithGroup(t *testing.T) {
 		Sync: syncSvc,
 	})
 
-	err := syncer.SyncWithGroup("frontend", true, false)
+	err := syncer.SyncWithGroup(context.Background(), "frontend", true, false)
 	if err != nil {
 		t.Fatalf("SyncWithGroup() error = %v", err)
 	}
@@ -486,49 +557,123 @@ func TestVendorSyncer_SyncWithParallel(t *testing.T) {
 		Sync: syncSvc,
 	})
 
-	err := syncer.SyncWithParallel("", false, false, types.ParallelOptions{Enabled: true, MaxWorkers: 2})
+	err := syncer.SyncWithParallel(context.Background(), "", false, false, types.ParallelOptions{Enabled: true, MaxWorkers: 2})
 	if err != nil {
 		t.Fatalf("SyncWithParallel() error = %v", err)
 	}
 }
 
 // ============================================================================
-// VendorSyncer.Audit tests
+// VendorSyncer stale commit auto-recovery tests
 // ============================================================================
 
-func TestVendorSyncer_Audit_Success(t *testing.T) {
+func TestVendorSyncer_Sync_StaleCommitAutoUpdates(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockLock := NewMockLockStore(ctrl)
 	mockLock.EXPECT().Load().Return(types.VendorLock{
-		Vendors: []types.LockDetails{{Name: "v1"}, {Name: "v2"}},
+		Vendors: []types.LockDetails{{Name: "v1", Ref: "main", CommitHash: "stale123"}},
 	}, nil)
 
-	ui := &capturingUICallback{}
-	syncer := NewVendorSyncer(nil, mockLock, nil, nil, nil, "", ui, &ServiceOverrides{})
+	syncSvc := &stubSyncService{
+		syncErr: NewStaleCommitError("stale123", "v1", "main"),
+	}
+	updateSvc := &stubUpdateService{}
 
-	syncer.Audit()
+	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{
+		Sync:   syncSvc,
+		Update: updateSvc,
+	})
 
-	if !contains(ui.successMsg, "2 vendors locked") {
-		t.Errorf("Audit() success message = %q, want containing '2 vendors locked'", ui.successMsg)
+	err := syncer.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("Sync() expected nil after auto-update, got: %v", err)
+	}
+	if updateSvc.callCount != 1 {
+		t.Errorf("expected UpdateAll called once, got %d", updateSvc.callCount)
 	}
 }
 
-func TestVendorSyncer_Audit_NoLockfile(t *testing.T) {
+func TestVendorSyncer_Sync_StaleCommitAutoUpdateFails(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockLock := NewMockLockStore(ctrl)
-	mockLock.EXPECT().Load().Return(types.VendorLock{}, errors.New("no lockfile"))
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{Name: "v1", Ref: "main", CommitHash: "stale123"}},
+	}, nil)
 
-	ui := &capturingUICallback{}
-	syncer := NewVendorSyncer(nil, mockLock, nil, nil, nil, "", ui, &ServiceOverrides{})
+	syncSvc := &stubSyncService{
+		syncErr: NewStaleCommitError("stale123", "v1", "main"),
+	}
+	updateSvc := &stubUpdateService{updateErr: errors.New("network error")}
 
-	syncer.Audit()
+	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{
+		Sync:   syncSvc,
+		Update: updateSvc,
+	})
 
-	if !contains(ui.warningMsg, "No lockfile") {
-		t.Errorf("Audit() warning = %q, want containing 'No lockfile'", ui.warningMsg)
+	err := syncer.Sync(context.Background())
+	if err == nil {
+		t.Fatal("Sync() expected error when auto-update fails")
+	}
+	if !contains(err.Error(), "auto-update after stale commit") {
+		t.Errorf("Sync() error = %q, want containing 'auto-update after stale commit'", err.Error())
+	}
+}
+
+func TestVendorSyncer_Sync_NonStaleErrorDoesNotAutoUpdate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockLock := NewMockLockStore(ctrl)
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{Name: "v1", Ref: "main", CommitHash: "abc"}},
+	}, nil)
+
+	syncSvc := &stubSyncService{syncErr: errors.New("network timeout")}
+	updateSvc := &stubUpdateService{}
+
+	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{
+		Sync:   syncSvc,
+		Update: updateSvc,
+	})
+
+	err := syncer.Sync(context.Background())
+	if err == nil {
+		t.Fatal("Sync() expected error for non-stale failure")
+	}
+	if updateSvc.callCount != 0 {
+		t.Errorf("expected UpdateAll NOT called for non-stale error, got %d calls", updateSvc.callCount)
+	}
+}
+
+func TestVendorSyncer_SyncWithOptions_StaleCommitAutoUpdates(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockLock := NewMockLockStore(ctrl)
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{Name: "v1", Ref: "main", CommitHash: "stale123"}},
+	}, nil)
+
+	syncSvc := &stubSyncService{
+		syncErr: NewStaleCommitError("stale123", "v1", "main"),
+	}
+	updateSvc := &stubUpdateService{}
+
+	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{
+		Sync:   syncSvc,
+		Update: updateSvc,
+	})
+
+	err := syncer.SyncWithOptions(context.Background(), "v1", false, false)
+	if err != nil {
+		t.Fatalf("SyncWithOptions() expected nil after auto-update, got: %v", err)
+	}
+	if updateSvc.callCount != 1 {
+		t.Errorf("expected UpdateAll called once, got %d", updateSvc.callCount)
 	}
 }
 
@@ -836,7 +981,7 @@ func TestVendorSyncer_UpdateAll(t *testing.T) {
 	update := &stubUpdateService{}
 	syncer := newTestSyncer(nil, nil, nil, &ServiceOverrides{Update: update})
 
-	err := syncer.UpdateAll()
+	err := syncer.UpdateAll(context.Background())
 	if err != nil {
 		t.Fatalf("UpdateAll() error = %v", err)
 	}
@@ -846,7 +991,7 @@ func TestVendorSyncer_UpdateAllWithParallel(t *testing.T) {
 	update := &stubUpdateService{}
 	syncer := newTestSyncer(nil, nil, nil, &ServiceOverrides{Update: update})
 
-	err := syncer.UpdateAllWithParallel(types.ParallelOptions{Enabled: true, MaxWorkers: 2})
+	err := syncer.UpdateAllWithParallel(context.Background(), types.ParallelOptions{Enabled: true, MaxWorkers: 2})
 	if err != nil {
 		t.Fatalf("UpdateAllWithParallel() error = %v", err)
 	}
@@ -889,7 +1034,7 @@ func TestVendorSyncer_CheckUpdates(t *testing.T) {
 		},
 	})
 
-	results, err := syncer.CheckUpdates()
+	results, err := syncer.CheckUpdates(context.Background())
 	if err != nil {
 		t.Fatalf("CheckUpdates() error = %v", err)
 	}
@@ -906,7 +1051,7 @@ func TestVendorSyncer_Verify(t *testing.T) {
 		VerifyService: &stubVerifyService{result: expected},
 	})
 
-	result, err := syncer.Verify()
+	result, err := syncer.Verify(context.Background())
 	if err != nil {
 		t.Fatalf("Verify() error = %v", err)
 	}

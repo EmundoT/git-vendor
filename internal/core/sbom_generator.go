@@ -154,6 +154,10 @@ func (g *SBOMGenerator) generateCycloneDX(lock *types.VendorLock, urlMap map[str
 	// Build components from lock entries
 	components := make([]cdx.Component, 0, len(lock.Vendors))
 	for _, vendor := range lock.Vendors {
+		// Skip internal vendors — no external package to represent in SBOM
+		if vendor.Source == SourceInternal {
+			continue
+		}
 		repoURL := urlMap[vendor.Name]
 		component := g.buildCycloneDXComponent(&vendor, repoURL)
 		components = append(components, component)
@@ -292,6 +296,10 @@ func (g *SBOMGenerator) generateSPDX(lock *types.VendorLock, urlMap map[string]s
 	relationships := make([]*spdx23.Relationship, 0, len(lock.Vendors))
 
 	for _, vendor := range lock.Vendors {
+		// Skip internal vendors — no external package to represent in SBOM
+		if vendor.Source == SourceInternal {
+			continue
+		}
 		repoURL := urlMap[vendor.Name]
 		pkg := g.buildSPDXPackage(&vendor, repoURL)
 		packages = append(packages, pkg)

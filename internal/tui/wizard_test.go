@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -23,7 +24,7 @@ func (m *mockVendorManager) ParseSmartURL(_ string) (string, string, string) {
 	return "", "", ""
 }
 
-func (m *mockVendorManager) FetchRepoDir(_, _, _ string) ([]string, error) {
+func (m *mockVendorManager) FetchRepoDir(_ context.Context, _, _, _ string) ([]string, error) {
 	return nil, nil
 }
 
@@ -372,11 +373,16 @@ func captureStdout(fn func()) string {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	fn()
-	_ = w.Close()
-	os.Stdout = old
+	// Run fn in a goroutine to avoid deadlock when output exceeds the
+	// OS pipe buffer (4 KB on Windows). io.Copy drains the read end
+	// concurrently so the writer never blocks.
+	go func() {
+		fn()
+		_ = w.Close()
+	}()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
+	os.Stdout = old
 	return buf.String()
 }
 

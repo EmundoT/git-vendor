@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -494,12 +495,12 @@ func TestClassifyMappingAction(t *testing.T) {
 
 func TestBuildCreatorModeResult(t *testing.T) {
 	tests := []struct {
-		name        string
-		mode        string
-		browsed     string
-		manual      string
-		wantFrom    string
-		wantCancel  bool
+		name       string
+		mode       string
+		browsed    string
+		manual     string
+		wantFrom   string
+		wantCancel bool
 	}{
 		{"browse with path", "browse", "src/lib.go", "", "src/lib.go", false},
 		{"browse cancelled", "browse", "", "anything", "", true},
@@ -594,16 +595,16 @@ func TestBuildAcceptLicenseTitle(t *testing.T) {
 // --- stubVendorMgr for testing helpers that need VendorManager ---
 
 type stubVendorMgr struct {
-	fetchRepoDirFn  func(url, ref, dir string) ([]string, error)
-	listLocalDirFn  func(dir string) ([]string, error)
-	getLockHashFn   func(name, ref string) string
+	fetchRepoDirFn    func(url, ref, dir string) ([]string, error)
+	listLocalDirFn    func(dir string) ([]string, error)
+	getLockHashFn     func(name, ref string) string
 	detectConflictsFn func() ([]types.PathConflict, error)
 }
 
 func (m *stubVendorMgr) ParseSmartURL(raw string) (string, string, string) {
 	return raw, "", ""
 }
-func (m *stubVendorMgr) FetchRepoDir(url, ref, dir string) ([]string, error) {
+func (m *stubVendorMgr) FetchRepoDir(_ context.Context, url, ref, dir string) ([]string, error) {
 	if m.fetchRepoDirFn != nil {
 		return m.fetchRepoDirFn(url, ref, dir)
 	}
@@ -636,7 +637,7 @@ func TestPrepareRemoteBrowserOptions(t *testing.T) {
 			return []string{"src/", "README.md"}, nil
 		},
 	}
-	labels, values, breadcrumb, err := prepareRemoteBrowserOptions(mgr, "https://github.com/owner/repo.git", "main", "")
+	labels, values, breadcrumb, err := prepareRemoteBrowserOptions(context.Background(), mgr, "https://github.com/owner/repo.git", "main", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -660,7 +661,7 @@ func TestPrepareRemoteBrowserOptions_Error(t *testing.T) {
 			return nil, fmt.Errorf("network error")
 		},
 	}
-	_, _, _, err := prepareRemoteBrowserOptions(mgr, "https://github.com/owner/repo", "main", "")
+	_, _, _, err := prepareRemoteBrowserOptions(context.Background(), mgr, "https://github.com/owner/repo", "main", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -675,7 +676,7 @@ func TestPrepareRemoteBrowserOptions_Subdir(t *testing.T) {
 			return []string{"util.go"}, nil
 		},
 	}
-	labels, values, breadcrumb, err := prepareRemoteBrowserOptions(mgr, "https://github.com/owner/repo", "v1.0", "src")
+	labels, values, breadcrumb, err := prepareRemoteBrowserOptions(context.Background(), mgr, "https://github.com/owner/repo", "v1.0", "src")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

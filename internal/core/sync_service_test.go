@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,7 +40,7 @@ func TestSyncVendor_HappyPath_LockedRef(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	hashes, _, err := syncer.sync.SyncVendor(&vendor, lockedRefs, SyncOptions{})
+	hashes, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, lockedRefs, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -76,7 +77,7 @@ func TestSyncVendor_HappyPath_UnlockedRef(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute with nil lockedRefs (unlocked mode)
-	hashes, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	hashes, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -110,7 +111,7 @@ func TestSyncVendor_ShallowFetchSucceeds(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -145,7 +146,7 @@ func TestSyncVendor_ShallowFetchFails_FullFetchSucceeds(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -172,7 +173,7 @@ func TestSyncVendor_BothFetchesFail(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -203,7 +204,7 @@ func TestSyncVendor_StaleCommitHashDetection(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, lockedRefs, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, lockedRefs, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -244,7 +245,7 @@ func TestSyncVendor_CheckoutFETCH_HEADFails_RefFallbackSucceeds(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -271,7 +272,7 @@ func TestSyncVendor_AllCheckoutsFail(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -294,7 +295,7 @@ func TestSyncVendor_TempDirectoryCreationFails(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -343,7 +344,7 @@ func TestSyncVendor_PathTraversalBlocked(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -410,7 +411,7 @@ func TestSyncVendor_MultipleSpecsPerVendor(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	hashes, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	hashes, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -471,7 +472,7 @@ func TestSyncVendor_MultipleMappingsPerSpec(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err != nil {
@@ -510,7 +511,7 @@ func TestSyncVendor_FileCopyFailsInMapping(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -552,7 +553,7 @@ func TestSyncVendor_LicenseCopyFails(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute
-	_, _, err := syncer.sync.SyncVendor(&vendor, nil, SyncOptions{})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
 	// Verify
 	if err == nil {
@@ -611,7 +612,7 @@ func TestSync_AllVendors(t *testing.T) {
 	syncService := syncer.sync.(*SyncService)
 
 	// Execute: sync all vendors
-	err := syncService.Sync(SyncOptions{})
+	err := syncService.Sync(context.Background(), SyncOptions{})
 
 	// Verify: all 3 vendors synced
 	if err != nil {
@@ -659,7 +660,7 @@ func TestSync_SingleVendor_ByName(t *testing.T) {
 	syncService := syncer.sync.(*SyncService)
 
 	// Execute: sync only vendor-b
-	err := syncService.Sync(SyncOptions{VendorName: "vendor-b"})
+	err := syncService.Sync(context.Background(), SyncOptions{VendorName: "vendor-b"})
 
 	// Verify: only vendor-b synced (vendors a and c skipped)
 	if err != nil {
@@ -686,7 +687,7 @@ func TestSync_VendorNotFound(t *testing.T) {
 	syncService := syncer.sync.(*SyncService)
 
 	// Execute: sync nonexistent vendor
-	err := syncService.Sync(SyncOptions{VendorName: "nonexistent"})
+	err := syncService.Sync(context.Background(), SyncOptions{VendorName: "nonexistent"})
 
 	// Verify: expect ErrVendorNotFound
 	if err == nil {
@@ -730,7 +731,7 @@ func TestSync_DryRun_PreviewMode(t *testing.T) {
 	syncService := syncer.sync.(*SyncService)
 
 	// Execute: dry-run mode
-	err := syncService.Sync(SyncOptions{DryRun: true})
+	err := syncService.Sync(context.Background(), SyncOptions{DryRun: true})
 
 	// Verify: previewSyncVendor called (no actual sync)
 	if err != nil {
@@ -776,7 +777,7 @@ func TestSync_Force_IgnoresLock(t *testing.T) {
 	syncService := syncer.sync.(*SyncService)
 
 	// Execute: force re-download (ignore lock)
-	err := syncService.Sync(SyncOptions{Force: true})
+	err := syncService.Sync(context.Background(), SyncOptions{Force: true})
 
 	// Verify: fetched latest (not locked hash)
 	if err != nil {
@@ -794,7 +795,7 @@ func TestSync_ConfigLoadFails(t *testing.T) {
 	syncService := syncer.sync.(*SyncService)
 
 	// Execute
-	err := syncService.Sync(SyncOptions{})
+	err := syncService.Sync(context.Background(), SyncOptions{})
 
 	// Verify: error propagated
 	if err == nil {
@@ -822,7 +823,7 @@ func TestSync_LockLoadFails(t *testing.T) {
 	syncService := syncer.sync.(*SyncService)
 
 	// Execute
-	err := syncService.Sync(SyncOptions{})
+	err := syncService.Sync(context.Background(), SyncOptions{})
 
 	// Verify: error propagated
 	if err == nil {
@@ -1195,7 +1196,7 @@ func TestSync_GroupFilter_SingleGroup(t *testing.T) {
 		GroupName: "frontend",
 	}
 
-	err := syncer.sync.Sync(opts)
+	err := syncer.sync.Sync(context.Background(), opts)
 
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
@@ -1288,7 +1289,7 @@ func TestSync_GroupFilter_BackendGroup(t *testing.T) {
 		GroupName: "backend",
 	}
 
-	err := syncer.sync.Sync(opts)
+	err := syncer.sync.Sync(context.Background(), opts)
 
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
@@ -1329,7 +1330,7 @@ func TestSync_GroupFilter_NonexistentGroup(t *testing.T) {
 		GroupName: "mobile", // This group doesn't exist
 	}
 
-	err := syncer.sync.Sync(opts)
+	err := syncer.sync.Sync(context.Background(), opts)
 
 	// Should return error
 	if err == nil {
@@ -1402,7 +1403,7 @@ func TestSync_GroupFilter_VendorWithoutGroups(t *testing.T) {
 		GroupName: "frontend",
 	}
 
-	err := syncer.sync.Sync(opts)
+	err := syncer.sync.Sync(context.Background(), opts)
 
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
@@ -1457,7 +1458,7 @@ func TestSync_GroupFilter_MultipleGroups(t *testing.T) {
 		GroupName: "mobile", // Vendor has "mobile" group among others
 	}
 
-	err := syncer.sync.Sync(opts)
+	err := syncer.sync.Sync(context.Background(), opts)
 
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
@@ -1534,7 +1535,7 @@ func TestSync_GroupFilter_EmptyGroupName(t *testing.T) {
 		GroupName: "", // Empty = no filter
 	}
 
-	err := syncer.sync.Sync(opts)
+	err := syncer.sync.Sync(context.Background(), opts)
 
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
@@ -1577,7 +1578,7 @@ func TestSyncVendor_CacheError_ForcesResync(t *testing.T) {
 	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/sync-test").Return("abc123def456", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
-	result, stats, err := svc.SyncVendor(&vendor, lockedRefs, SyncOptions{})
+	result, stats, err := svc.SyncVendor(context.Background(), &vendor, lockedRefs, SyncOptions{})
 
 	if err != nil {
 		t.Fatalf("Expected success despite cache error, got: %v", err)
@@ -1630,7 +1631,7 @@ func TestSyncVendor_CacheHit_DestFileDeleted(t *testing.T) {
 	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/sync-test").Return("abc123def456", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
-	result, stats, err := svc.SyncVendor(&vendor, lockedRefs, SyncOptions{})
+	result, stats, err := svc.SyncVendor(context.Background(), &vendor, lockedRefs, SyncOptions{})
 
 	if err != nil {
 		t.Fatalf("Expected success (re-sync after cache miss), got: %v", err)
@@ -1678,7 +1679,7 @@ func TestSyncVendor_CommitHashMismatch_ForcesResync(t *testing.T) {
 	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/sync-test").Return("new_commit_hash_999", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
-	result, _, err := svc.SyncVendor(&vendor, lockedRefs, SyncOptions{})
+	result, _, err := svc.SyncVendor(context.Background(), &vendor, lockedRefs, SyncOptions{})
 
 	if err != nil {
 		t.Fatalf("Expected success (re-sync after hash mismatch), got: %v", err)
@@ -1716,7 +1717,7 @@ func TestSyncVendor_NoCacheFlag_BypassesCacheEntirely(t *testing.T) {
 	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/sync-test").Return("abc123def456", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
-	_, _, err := svc.SyncVendor(&vendor, lockedRefs, SyncOptions{NoCache: true})
+	_, _, err := svc.SyncVendor(context.Background(), &vendor, lockedRefs, SyncOptions{NoCache: true})
 
 	if err != nil {
 		t.Fatalf("Expected success, got: %v", err)
@@ -1746,7 +1747,7 @@ func TestFetchWithFallback_ShallowSucceeds(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 	syncService := syncer.sync.(*SyncService)
 
-	err := syncService.fetchWithFallback("/tmp/repo", "main")
+	err := syncService.fetchWithFallback(context.Background(), "/tmp/repo", "main")
 	if err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
@@ -1764,7 +1765,7 @@ func TestFetchWithFallback_ShallowFails_FullSucceeds(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 	syncService := syncer.sync.(*SyncService)
 
-	err := syncService.fetchWithFallback("/tmp/repo", "v1.0")
+	err := syncService.fetchWithFallback(context.Background(), "/tmp/repo", "v1.0")
 	if err != nil {
 		t.Fatalf("expected nil (full fetch fallback), got %v", err)
 	}
@@ -1782,7 +1783,7 @@ func TestFetchWithFallback_BothFail(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 	syncService := syncer.sync.(*SyncService)
 
-	err := syncService.fetchWithFallback("/tmp/repo", "stale-tag")
+	err := syncService.fetchWithFallback(context.Background(), "/tmp/repo", "stale-tag")
 	if err == nil {
 		t.Fatal("expected error when both fetches fail")
 	}
@@ -1805,7 +1806,7 @@ func TestCanSkipSync_CacheMiss(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, NewOSFileSystem(),
 		NewFileCopyService(NewOSFileSystem()), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	mappings := []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}}
 	result := syncService.canSkipSync("test-vendor", "main", "abc123", mappings)
@@ -1847,7 +1848,7 @@ func TestCanSkipSync_CommitHashMismatch(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, osFS,
 		NewFileCopyService(osFS), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	mappings := []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}}
 	result := syncService.canSkipSync("test-vendor", "main", "new-hash-111", mappings)
@@ -1897,7 +1898,7 @@ func TestCanSkipSync_MatchingCache(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, osFS,
 		NewFileCopyService(osFS), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	mappings := []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}}
 	result := syncService.canSkipSync("test-vendor", "main", "abc123", mappings)
@@ -1932,7 +1933,7 @@ func TestCanSkipSync_FileMissing(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, osFS,
 		NewFileCopyService(osFS), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	mappings := []types.PathMapping{{From: "src/file.go", To: "lib/missing.go"}}
 	result := syncService.canSkipSync("test-vendor", "main", "abc123", mappings)
@@ -1963,7 +1964,7 @@ func TestCanSkipSync_AutoNamedPathSkips(t *testing.T) {
 
 	syncService := NewSyncService(config, lock, git, osFS,
 		NewFileCopyService(osFS), nil, cacheStore, NewHookService(nil),
-		&SilentUICallback{}, tempDir)
+		&SilentUICallback{}, tempDir, nil)
 
 	// Empty "To" triggers auto-naming which can't be cache-checked
 	mappings := []types.PathMapping{{From: "src/file.go", To: ""}}
@@ -2003,7 +2004,7 @@ func TestSyncVendor_NoCache_BypassesCache(t *testing.T) {
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
 	// Execute with NoCache=true
-	_, _, err := syncer.sync.SyncVendor(&vendor, lockedRefs, SyncOptions{NoCache: true})
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, lockedRefs, SyncOptions{NoCache: true})
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -2066,9 +2067,9 @@ func TestSyncVendor_WithPositionMappings(t *testing.T) {
 	hooks := NewHookService(nil)
 	licSvc := NewLicenseService(license, fs, workDir, &SilentUICallback{})
 
-	syncSvc := NewSyncService(config, lock, git, fs, fileCopy, licSvc, cacheStore, hooks, &SilentUICallback{}, workDir)
+	syncSvc := NewSyncService(config, lock, git, fs, fileCopy, licSvc, cacheStore, hooks, &SilentUICallback{}, workDir, nil)
 
-	results, stats, err := syncSvc.SyncVendor(&vendor, nil, SyncOptions{NoCache: true})
+	results, stats, err := syncSvc.SyncVendor(context.Background(), &vendor, nil, SyncOptions{NoCache: true})
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}

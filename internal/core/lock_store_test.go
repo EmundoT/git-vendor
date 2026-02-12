@@ -371,10 +371,10 @@ func TestValidateSchemaVersion(t *testing.T) {
 			wantWarning: false,
 		},
 		{
-			name:        "newer minor version 1.2 warns",
+			name:        "current version 1.2",
 			version:     "1.2",
 			wantErr:     false,
-			wantWarning: true,
+			wantWarning: false,
 		},
 		{
 			name:        "newer minor version 1.5 warns",

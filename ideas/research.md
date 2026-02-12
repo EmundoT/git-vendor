@@ -6,15 +6,15 @@
 
 | ID | Status | Title | Brief | Output |
 |----|--------|-------|-------|--------|
-| R001 | pending | CycloneDX vs SPDX Comparison | Compare SBOM formats, library support in Go, tooling ecosystem, adoption rates | - |
-| R002 | pending | OSV.dev API Integration | Research OSV API, rate limits, query patterns, caching strategies | - |
-| R003 | pending | Diff Algorithm for Drift Detection | Research diff algorithms for efficient file comparison across repos | - |
+| R001 | completed | CycloneDX vs SPDX Comparison | Superseded: SBOM generation shipped (010) with both CycloneDX 1.5 + SPDX 2.3 | - |
+| R002 | completed | OSV.dev API Integration | Superseded: CVE scanning shipped (011) with OSV.dev, caching, configurable endpoint | - |
+| R003 | completed | Diff Algorithm for Drift Detection | Superseded: Drift detection shipped (012) with LCS-based three-way diff | - |
 
 ## MEDIUM Priority
 
 | ID | Status | Title | Brief | Output |
 |----|--------|-------|-------|--------|
-| R004 | pending | SPDX License List Integration | Research go-license-detector, SPDX license identification, accuracy rates | - |
+| R004 | completed | SPDX License List Integration | Superseded: License policy enforcement shipped (013) with SPDX detection | - |
 | R005 | pending | Compliance Framework Requirements | Deep dive into EO 14028, NIST SP 800-161, DORA Article 28 requirements | - |
 | R006 | pending | GitHub Action Best Practices | Research action patterns, caching, PR comment formatting, check APIs | - |
 | R007 | pending | Mermaid/Graphviz Integration | Research graph generation libraries, D3.js for interactive HTML | - |

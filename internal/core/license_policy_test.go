@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1088,6 +1089,10 @@ func TestGenerateReport_VendorInConfigButNotInLock(t *testing.T) {
 // ============================================================================
 
 func TestLoadLicensePolicy_ReadPermissionError(t *testing.T) {
+	// Windows os.Chmod only sets read-only attribute, does not deny read access
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod does not deny read access on Windows")
+	}
 	// Root bypasses file permissions — skip when running as root
 	if os.Getuid() == 0 {
 		t.Skip("test requires non-root to enforce file permissions")
