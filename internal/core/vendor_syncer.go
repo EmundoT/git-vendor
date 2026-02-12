@@ -246,7 +246,9 @@ func (s *VendorSyncer) Init() error {
 		}
 		hooksDir := filepath.Join(projectRoot, ".githooks")
 		if _, err := s.fs.Stat(hooksDir); err == nil {
-			_ = s.gitClient.ConfigSet(context.Background(), projectRoot, "core.hooksPath", ".githooks")
+			if err := s.gitClient.ConfigSet(context.Background(), projectRoot, "core.hooksPath", ".githooks"); err == nil {
+				s.ui.ShowSuccess("Configured core.hooksPath = .githooks")
+			}
 		}
 	}
 
