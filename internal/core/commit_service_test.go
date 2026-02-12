@@ -26,17 +26,18 @@ func TestVendorTrailers_SingleVendor(t *testing.T) {
 
 	trailers := VendorTrailers(locks)
 
-	// Commit-Schema + Name + Ref + Commit + License + Source-Tag = 6
-	if len(trailers) != 6 {
-		t.Fatalf("expected 6 trailers, got %d: %v", len(trailers), trailers)
+	// Commit-Schema + Tags + Name + Ref + Commit + License + Source-Tag = 7
+	if len(trailers) != 7 {
+		t.Fatalf("expected 7 trailers, got %d: %v", len(trailers), trailers)
 	}
 
 	assertTrailer(t, trailers, 0, "Commit-Schema", "vendor/v1")
-	assertTrailer(t, trailers, 1, "Vendor-Name", "my-lib")
-	assertTrailer(t, trailers, 2, "Vendor-Ref", "main")
-	assertTrailer(t, trailers, 3, "Vendor-Commit", "abc123def456789012345678901234567890abcd")
-	assertTrailer(t, trailers, 4, "Vendor-License", "MIT")
-	assertTrailer(t, trailers, 5, "Vendor-Source-Tag", "v1.2.3")
+	assertTrailer(t, trailers, 1, "Tags", "vendor.update")
+	assertTrailer(t, trailers, 2, "Vendor-Name", "my-lib")
+	assertTrailer(t, trailers, 3, "Vendor-Ref", "main")
+	assertTrailer(t, trailers, 4, "Vendor-Commit", "abc123def456789012345678901234567890abcd")
+	assertTrailer(t, trailers, 5, "Vendor-License", "MIT")
+	assertTrailer(t, trailers, 6, "Vendor-Source-Tag", "v1.2.3")
 }
 
 func TestVendorTrailers_OptionalFields(t *testing.T) {
@@ -50,9 +51,9 @@ func TestVendorTrailers_OptionalFields(t *testing.T) {
 
 	trailers := VendorTrailers(locks)
 
-	// Commit-Schema + Name + Ref + Commit = 4 (no License, no Source-Tag)
-	if len(trailers) != 4 {
-		t.Fatalf("expected 4 trailers, got %d", len(trailers))
+	// Commit-Schema + Tags + Name + Ref + Commit = 5 (no License, no Source-Tag)
+	if len(trailers) != 5 {
+		t.Fatalf("expected 5 trailers, got %d", len(trailers))
 	}
 
 	for _, tr := range trailers {
@@ -70,21 +71,22 @@ func TestVendorTrailers_MultiVendor(t *testing.T) {
 
 	trailers := VendorTrailers(locks)
 
-	// 1 (Commit-Schema) + 3 (lib-a: Name+Ref+Commit) + 4 (lib-b: Name+Ref+Commit+License) = 8
-	if len(trailers) != 8 {
-		t.Fatalf("expected 8 trailers, got %d", len(trailers))
+	// 1 (Commit-Schema) + 1 (Tags) + 3 (lib-a: Name+Ref+Commit) + 4 (lib-b: Name+Ref+Commit+License) = 9
+	if len(trailers) != 9 {
+		t.Fatalf("expected 9 trailers, got %d", len(trailers))
 	}
 
 	assertTrailer(t, trailers, 0, "Commit-Schema", "vendor/v1")
+	assertTrailer(t, trailers, 1, "Tags", "vendor.update")
 	// lib-a group
-	assertTrailer(t, trailers, 1, "Vendor-Name", "lib-a")
-	assertTrailer(t, trailers, 2, "Vendor-Ref", "main")
-	assertTrailer(t, trailers, 3, "Vendor-Commit", "aaaa000000000000000000000000000000000000")
+	assertTrailer(t, trailers, 2, "Vendor-Name", "lib-a")
+	assertTrailer(t, trailers, 3, "Vendor-Ref", "main")
+	assertTrailer(t, trailers, 4, "Vendor-Commit", "aaaa000000000000000000000000000000000000")
 	// lib-b group
-	assertTrailer(t, trailers, 4, "Vendor-Name", "lib-b")
-	assertTrailer(t, trailers, 5, "Vendor-Ref", "v2")
-	assertTrailer(t, trailers, 6, "Vendor-Commit", "bbbb000000000000000000000000000000000000")
-	assertTrailer(t, trailers, 7, "Vendor-License", "MIT")
+	assertTrailer(t, trailers, 5, "Vendor-Name", "lib-b")
+	assertTrailer(t, trailers, 6, "Vendor-Ref", "v2")
+	assertTrailer(t, trailers, 7, "Vendor-Commit", "bbbb000000000000000000000000000000000000")
+	assertTrailer(t, trailers, 8, "Vendor-License", "MIT")
 }
 
 func TestVendorTrailers_CommitSchemaAlwaysFirst(t *testing.T) {
@@ -314,6 +316,13 @@ func TestDedup_WindowsPathNormalization(t *testing.T) {
 
 // --- Mock-based CommitVendorChanges tests ---
 
+// expectSharedTrailerCalls sets up mock expectations for DiffCachedNames and
+// DiffCachedStat which are called during shared trailer enrichment.
+func expectSharedTrailerCalls(mockGit *MockGitClient, dir string, names []string, metrics DiffMetrics) {
+	mockGit.EXPECT().DiffCachedNames(gomock.Any(), dir).Return(names, nil)
+	mockGit.EXPECT().DiffCachedStat(gomock.Any(), dir).Return(metrics, nil)
+}
+
 func TestCommitVendorChanges_SingleVendor(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -357,18 +366,29 @@ func TestCommitVendorChanges_SingleVendor(t *testing.T) {
 		},
 	)
 
-	// Single Commit with multi-valued trailers
+	// Shared trailer enrichment
+	expectSharedTrailerCalls(mockGit, ".", []string{"vendor/a.go", ConfigPath, LockPath}, DiffMetrics{Added: 10, Removed: 0, FileCount: 3})
+
+	// Single Commit with multi-valued trailers + shared trailers
 	mockGit.EXPECT().Commit(gomock.Any(), ".", gomock.Any()).DoAndReturn(
 		func(_ context.Context, _ string, opts types.CommitOptions) error {
 			if opts.Message != "chore(vendor): sync my-lib to main" {
 				t.Errorf("commit message = %q", opts.Message)
 			}
-			// Verify ordered trailers
-			if len(opts.Trailers) < 4 {
-				t.Fatalf("expected at least 4 trailers, got %d", len(opts.Trailers))
+			// Vendor: Schema + Tags + Name + Ref + Commit = 5
+			// Shared: Diff-Additions + Diff-Deletions + Diff-Files + Diff-Surface = 4
+			// Total: 9
+			if len(opts.Trailers) != 9 {
+				t.Fatalf("expected 9 trailers, got %d: %v", len(opts.Trailers), opts.Trailers)
 			}
 			assertTrailer(t, opts.Trailers, 0, "Commit-Schema", "vendor/v1")
-			assertTrailer(t, opts.Trailers, 1, "Vendor-Name", "my-lib")
+			assertTrailer(t, opts.Trailers, 1, "Tags", "vendor.update")
+			assertTrailer(t, opts.Trailers, 2, "Vendor-Name", "my-lib")
+			// Verify shared trailers at end
+			assertTrailer(t, opts.Trailers, 5, "Diff-Additions", "10")
+			assertTrailer(t, opts.Trailers, 6, "Diff-Deletions", "0")
+			assertTrailer(t, opts.Trailers, 7, "Diff-Files", "3")
+			assertTrailer(t, opts.Trailers, 8, "Diff-Surface", "config")
 			return nil
 		},
 	)
@@ -420,14 +440,17 @@ func TestCommitVendorChanges_MultiVendor_SingleCommit(t *testing.T) {
 		},
 	)
 
+	// Shared trailer enrichment
+	expectSharedTrailerCalls(mockGit, ".", []string{"va.go", "vb.go", ConfigPath, LockPath}, DiffMetrics{Added: 20, Removed: 5, FileCount: 4})
+
 	mockGit.EXPECT().Commit(gomock.Any(), ".", gomock.Any()).DoAndReturn(
 		func(_ context.Context, _ string, opts types.CommitOptions) error {
 			if opts.Message != "chore(vendor): update 2 vendors" {
 				t.Errorf("commit message = %q, want multi-vendor subject", opts.Message)
 			}
-			// Should have: Commit-Schema + 2*(Name+Ref+Commit) = 7
-			if len(opts.Trailers) != 7 {
-				t.Errorf("expected 7 trailers, got %d", len(opts.Trailers))
+			// Should have: Schema + Tags + 2*(Name+Ref+Commit) + Diff-Add+Del+Files+Surface = 12
+			if len(opts.Trailers) != 12 {
+				t.Errorf("expected 12 trailers, got %d", len(opts.Trailers))
 			}
 			// Verify multi-valued Vendor-Name
 			names := filterTrailerValues(opts.Trailers, "Vendor-Name")
@@ -473,6 +496,7 @@ func TestCommitVendorChanges_VendorFilter(t *testing.T) {
 
 	// Only lib-a should be in the commit
 	mockGit.EXPECT().Add(gomock.Any(), ".", gomock.Any()).Return(nil)
+	expectSharedTrailerCalls(mockGit, ".", []string{"va.go", ConfigPath, LockPath}, DiffMetrics{Added: 5, Removed: 0, FileCount: 3})
 	mockGit.EXPECT().Commit(gomock.Any(), ".", gomock.Any()).DoAndReturn(
 		func(_ context.Context, _ string, opts types.CommitOptions) error {
 			names := filterTrailerValues(opts.Trailers, "Vendor-Name")
@@ -542,6 +566,7 @@ func TestCommitVendorChanges_CommitFailure(t *testing.T) {
 	mockConfig.EXPECT().Load().Return(config, nil)
 	mockLock.EXPECT().Load().Return(lock, nil)
 	mockGit.EXPECT().Add(gomock.Any(), ".", gomock.Any()).Return(nil)
+	expectSharedTrailerCalls(mockGit, ".", []string{"b.go"}, DiffMetrics{Added: 1, Removed: 0, FileCount: 1})
 	mockGit.EXPECT().Commit(gomock.Any(), ".", gomock.Any()).Return(fmt.Errorf("nothing to commit"))
 
 	err := CommitVendorChanges(context.Background(), mockGit, mockConfig, mockLock, ".", "sync", "")
@@ -597,6 +622,7 @@ func TestCommitVendorChanges_NoteFailureNonFatal(t *testing.T) {
 	mockConfig.EXPECT().Load().Return(config, nil)
 	mockLock.EXPECT().Load().Return(lock, nil)
 	mockGit.EXPECT().Add(gomock.Any(), ".", gomock.Any()).Return(nil)
+	expectSharedTrailerCalls(mockGit, ".", []string{"b.go"}, DiffMetrics{Added: 1, Removed: 0, FileCount: 1})
 	mockGit.EXPECT().Commit(gomock.Any(), ".", gomock.Any()).Return(nil)
 	mockGit.EXPECT().GetHeadHash(gomock.Any(), ".").Return("1111111111111111111111111111111111111111", nil)
 	// Note fails — should NOT cause CommitVendorChanges to return error
@@ -606,6 +632,71 @@ func TestCommitVendorChanges_NoteFailureNonFatal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("note failure should be non-fatal, got: %v", err)
 	}
+}
+
+// --- Shared trailer enrichment tests ---
+
+func TestCommitVendorChanges_SharedTrailerEnrichmentFailureNonFatal(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockGit := NewMockGitClient(ctrl)
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+
+	config := types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "lib", Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "a.go", To: "b.go"}}}}},
+		},
+	}
+	lock := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "lib", Ref: "main", CommitHash: "0000000000000000000000000000000000000000"},
+		},
+	}
+
+	mockConfig.EXPECT().Load().Return(config, nil)
+	mockLock.EXPECT().Load().Return(lock, nil)
+	mockGit.EXPECT().Add(gomock.Any(), ".", gomock.Any()).Return(nil)
+
+	// DiffCachedNames fails — shared trailers should be skipped gracefully
+	mockGit.EXPECT().DiffCachedNames(gomock.Any(), ".").Return(nil, fmt.Errorf("diff failed"))
+	// DiffCachedStat also fails
+	mockGit.EXPECT().DiffCachedStat(gomock.Any(), ".").Return(DiffMetrics{}, fmt.Errorf("diff failed"))
+
+	mockGit.EXPECT().Commit(gomock.Any(), ".", gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ string, opts types.CommitOptions) error {
+			// Should only have vendor trailers (Schema + Tags + Name + Ref + Commit = 5), no shared
+			if len(opts.Trailers) != 5 {
+				t.Errorf("expected 5 trailers (no shared), got %d: %v", len(opts.Trailers), opts.Trailers)
+			}
+			// Verify no Diff-* trailers
+			for _, tr := range opts.Trailers {
+				if tr.Key == "Diff-Additions" || tr.Key == "Diff-Deletions" || tr.Key == "Diff-Files" || tr.Key == "Diff-Surface" {
+					t.Errorf("unexpected shared trailer: %s=%s", tr.Key, tr.Value)
+				}
+			}
+			return nil
+		},
+	)
+	mockGit.EXPECT().GetHeadHash(gomock.Any(), ".").Return("0000000000000000000000000000000000000000", nil)
+	mockGit.EXPECT().AddNote(gomock.Any(), ".", VendorNoteRef, gomock.Any(), gomock.Any()).Return(nil)
+
+	err := CommitVendorChanges(context.Background(), mockGit, mockConfig, mockLock, ".", "sync", "")
+	if err != nil {
+		t.Fatalf("shared trailer failure should be non-fatal, got: %v", err)
+	}
+}
+
+func TestVendorTrailers_TagsPresent(t *testing.T) {
+	locks := []types.LockDetails{
+		{Name: "x", Ref: "main", CommitHash: "0000000000000000000000000000000000000000"},
+	}
+
+	trailers := VendorTrailers(locks)
+
+	// Tags MUST be second trailer (after Commit-Schema, before vendor trailers)
+	assertTrailer(t, trailers, 1, "Tags", "vendor.update")
 }
 
 // --- AnnotateVendorCommit tests ---

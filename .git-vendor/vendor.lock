@@ -2,9 +2,9 @@ schema_version: "1.2"
 vendors:
     - name: git-plumbing
       ref: main
-      commit_hash: 5a495f7edb157c0c0f86b8e7793e5e9cb11a8fca
+      commit_hash: 7f85f7020ff64420ca14928f515463cc51d85c4b
       license_path: .git-vendor\licenses\git-plumbing.txt
-      updated: "2026-02-11T19:49:11Z"
+      updated: "2026-02-12T00:32:47Z"
       file_hashes:
         pkg/git-plumbing/branch.go: 4f7989bd438e932204d0c39ce8b8ed59c3734c5d6058a09f574caea8baa635be
         pkg/git-plumbing/commit.go: ed816f4b7a18210afb8cbe6b44df30954cb060bfeac1393e429ac9452fd7ec74
@@ -31,12 +31,12 @@ vendors:
       license_spdx: MIT
       vendored_at: "2026-02-09T12:00:00Z"
       vendored_by: Claude <noreply@anthropic.com>
-      last_synced_at: "2026-02-11T19:49:11Z"
+      last_synced_at: "2026-02-12T00:32:47Z"
     - name: git-ecosystem
       ref: main
-      commit_hash: 1cd024c64df5500a105e207f2479092f844e3ae6
+      commit_hash: 6933d141129786b5ba20e6420811481ca11a9c8c
       license_path: .git-vendor\licenses\git-ecosystem.txt
-      updated: "2026-02-11T19:49:11Z"
+      updated: "2026-02-12T00:32:47Z"
       file_hashes:
         .claude/hooks/env.sh: 430c9860a3fd6fc44a141304fe5c868ba5c2215931fec7a63ee44ceb5b928f5f
         .claude/hooks/go-format.sh: 02ea7ddd2b063f5e9ecf071c0c78a7cc85f5e41e98a3142f0d45979814d74998
@@ -44,11 +44,11 @@ vendors:
         .claude/rules/commit-schema-tags.md: 7a8bf78b4113e8dcd0141dc845e028b361667786aab42bdc7dc1a1cdf46f22ac
         .claude/rules/ecosystem-protocol.md: 75de7b6c60d9a4415b2bed00c592d627faa8f0b83b3b68df12dee261e6508769
         .claude/skills/commit-schema/SKILL.md: 1480e2526a3fd5d02d4ae1510814f78c94d6aa460b376db9957cc8769758da9c
-        .githooks/commit-msg: 5f8852ce5a54eb821321e4036b779b6f59bfe311f362287d27537b87f11e412b
+        .githooks/commit-msg: 88e7d7ad82d167127aa4bfaae0914d88090f688a406410c84190b62936059fb8
         .githooks/pre-commit: f031345894d090a1f4a105114bd6208f8edda5f55829f0bea5aa365315dd8050
-        .githooks/prepare-commit-msg: 815d71219c4497857bba0f735bf75a22bea4e3d3c6ae14fac57b6c45a4019996
+        .githooks/prepare-commit-msg: 603e5b5cb78f2b7d03450411de9cb0652275b7ee814e20728c4a07c1207c4a8a
         docs/COMMIT-COOKBOOK.md: e954cc547f0d2e61867983eadd6d949c7ddc1f148465025586610e53f50000c1
         docs/COMMIT-SCHEMA.md: 313ec2bb5f6868382f4133fc17977a6a456dac644f19c5c6dcd6daba74c615b2
       vendored_at: "2026-02-11T19:49:11Z"
       vendored_by: EmundoT <emtheredia@gmail.com>
-      last_synced_at: "2026-02-11T19:49:11Z"
+      last_synced_at: "2026-02-12T00:32:47Z"

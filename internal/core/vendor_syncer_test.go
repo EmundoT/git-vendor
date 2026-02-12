@@ -208,6 +208,74 @@ func TestVendorSyncer_Init_ConfigSaveFails(t *testing.T) {
 	}
 }
 
+func TestVendorSyncer_Init_SetsHooksPath(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockFS := NewMockFileSystem(ctrl)
+	mockConfig := NewMockConfigStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+
+	mockFS.EXPECT().MkdirAll(gomock.Any(), os.FileMode(0755)).Return(nil).Times(2)
+	mockConfig.EXPECT().Save(types.VendorConfig{Vendors: []types.VendorSpec{}}).Return(nil)
+
+	// .githooks/ exists in project root → ConfigSet should be called
+	mockFS.EXPECT().Stat(".githooks").Return(nil, nil)
+	mockGit.EXPECT().ConfigSet(gomock.Any(), ".", "core.hooksPath", ".githooks").Return(nil)
+
+	syncer := NewVendorSyncer(mockConfig, nil, mockGit, mockFS, nil, ".git-vendor", &SilentUICallback{}, nil)
+
+	err := syncer.Init()
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+}
+
+func TestVendorSyncer_Init_SkipsHooksWhenNoDir(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockFS := NewMockFileSystem(ctrl)
+	mockConfig := NewMockConfigStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+
+	mockFS.EXPECT().MkdirAll(gomock.Any(), os.FileMode(0755)).Return(nil).Times(2)
+	mockConfig.EXPECT().Save(types.VendorConfig{Vendors: []types.VendorSpec{}}).Return(nil)
+
+	// .githooks/ does NOT exist → ConfigSet should NOT be called
+	mockFS.EXPECT().Stat(".githooks").Return(nil, os.ErrNotExist)
+
+	syncer := NewVendorSyncer(mockConfig, nil, mockGit, mockFS, nil, ".git-vendor", &SilentUICallback{}, nil)
+
+	err := syncer.Init()
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+}
+
+func TestVendorSyncer_Init_HookSetupFailureNonFatal(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockFS := NewMockFileSystem(ctrl)
+	mockConfig := NewMockConfigStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+
+	mockFS.EXPECT().MkdirAll(gomock.Any(), os.FileMode(0755)).Return(nil).Times(2)
+	mockConfig.EXPECT().Save(types.VendorConfig{Vendors: []types.VendorSpec{}}).Return(nil)
+
+	// .githooks/ exists but ConfigSet fails → should NOT fail Init
+	mockFS.EXPECT().Stat(".githooks").Return(nil, nil)
+	mockGit.EXPECT().ConfigSet(gomock.Any(), ".", "core.hooksPath", ".githooks").Return(errors.New("git config failed"))
+
+	syncer := NewVendorSyncer(mockConfig, nil, mockGit, mockFS, nil, ".git-vendor", &SilentUICallback{}, nil)
+
+	err := syncer.Init()
+	if err != nil {
+		t.Fatalf("Init() should succeed even if hook setup fails, got: %v", err)
+	}
+}
+
 // ============================================================================
 // VendorSyncer.AddVendor tests
 // ============================================================================

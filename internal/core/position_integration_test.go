@@ -72,6 +72,13 @@ func (s *stubGitClient) AddNote(_ context.Context, _, _, _, _ string) error { re
 func (s *stubGitClient) GetNote(_ context.Context, _, _, _ string) (string, error) {
 	return "", nil
 }
+func (s *stubGitClient) DiffCachedNames(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+func (s *stubGitClient) DiffCachedStat(_ context.Context, _ string) (DiffMetrics, error) {
+	return DiffMetrics{}, nil
+}
+func (s *stubGitClient) ConfigSet(_ context.Context, _, _, _ string) error { return nil }
 
 // stubLicenseService and stubHookExecutor are defined in testhelpers_gomock_test.go.
 

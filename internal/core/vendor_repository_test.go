@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -29,6 +30,9 @@ func TestInit_CreatesEmptyConfig(t *testing.T) {
 		}
 		return nil
 	})
+
+	// Hook setup: .githooks/ check (not present)
+	fs.EXPECT().Stat(gomock.Any()).Return(nil, os.ErrNotExist)
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
