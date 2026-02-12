@@ -15,15 +15,6 @@ import (
 // Package-level compiled regex for semver matching
 var semverRegex = regexp.MustCompile(`^\d+\.\d+\.\d+`)
 
-// DiffMetrics holds aggregate diff statistics from staged changes.
-// DiffMetrics is returned by GitClient.DiffCachedStat and used to compute
-// shared COMMIT-SCHEMA trailers (Diff-Additions, Diff-Deletions, Diff-Files).
-type DiffMetrics struct {
-	Added     int
-	Removed   int
-	FileCount int
-}
-
 // GitClient handles git command operations
 type GitClient interface {
 	Init(ctx context.Context, dir string) error
@@ -40,8 +31,6 @@ type GitClient interface {
 	Commit(ctx context.Context, dir string, opts types.CommitOptions) error
 	AddNote(ctx context.Context, dir, noteRef, commitHash, content string) error
 	GetNote(ctx context.Context, dir, noteRef, commitHash string) (string, error)
-	DiffCachedNames(ctx context.Context, dir string) ([]string, error)
-	DiffCachedStat(ctx context.Context, dir string) (DiffMetrics, error)
 	ConfigSet(ctx context.Context, dir, key, value string) error
 }
 
@@ -202,25 +191,6 @@ func (g *SystemGitClient) GetNote(ctx context.Context, dir, noteRef, commitHash 
 	return g.gitFor(dir).GetNote(ctx, git.NoteRef(noteRef), commitHash)
 }
 
-// DiffCachedNames returns file paths with staged (cached) changes.
-// DiffCachedNames delegates to git-plumbing's DiffCachedNames for the given directory.
-func (g *SystemGitClient) DiffCachedNames(ctx context.Context, dir string) ([]string, error) {
-	return g.gitFor(dir).DiffCachedNames(ctx)
-}
-
-// DiffCachedStat returns aggregate line-change statistics for staged changes.
-// DiffCachedStat converts git-plumbing's DiffStat into DiffMetrics (added, removed, file count).
-func (g *SystemGitClient) DiffCachedStat(ctx context.Context, dir string) (DiffMetrics, error) {
-	stat, err := g.gitFor(dir).DiffCachedStat(ctx)
-	if err != nil {
-		return DiffMetrics{}, err
-	}
-	return DiffMetrics{
-		Added:     stat.Total.Added,
-		Removed:   stat.Total.Removed,
-		FileCount: len(stat.Files),
-	}, nil
-}
 
 // ConfigSet writes a git config key-value pair.
 // ConfigSet delegates to git-plumbing's ConfigSet for the given directory.

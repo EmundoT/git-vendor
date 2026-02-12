@@ -138,36 +138,6 @@ func (mr *MockGitClientMockRecorder) ConfigSet(ctx, dir, key, value interface{})
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfigSet", reflect.TypeOf((*MockGitClient)(nil).ConfigSet), ctx, dir, key, value)
 }
 
-// DiffCachedNames mocks base method.
-func (m *MockGitClient) DiffCachedNames(ctx context.Context, dir string) ([]string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DiffCachedNames", ctx, dir)
-	ret0, _ := ret[0].([]string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// DiffCachedNames indicates an expected call of DiffCachedNames.
-func (mr *MockGitClientMockRecorder) DiffCachedNames(ctx, dir interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DiffCachedNames", reflect.TypeOf((*MockGitClient)(nil).DiffCachedNames), ctx, dir)
-}
-
-// DiffCachedStat mocks base method.
-func (m *MockGitClient) DiffCachedStat(ctx context.Context, dir string) (DiffMetrics, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DiffCachedStat", ctx, dir)
-	ret0, _ := ret[0].(DiffMetrics)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// DiffCachedStat indicates an expected call of DiffCachedStat.
-func (mr *MockGitClientMockRecorder) DiffCachedStat(ctx, dir interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DiffCachedStat", reflect.TypeOf((*MockGitClient)(nil).DiffCachedStat), ctx, dir)
-}
-
 // Fetch mocks base method.
 func (m *MockGitClient) Fetch(ctx context.Context, dir string, depth int, ref string) error {
 	m.ctrl.T.Helper()
