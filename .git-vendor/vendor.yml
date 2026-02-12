@@ -58,6 +58,8 @@ vendors:
             to: .claude/rules/commit-schema-tags.md
           - from: rules/ecosystem-protocol.md
             to: .claude/rules/ecosystem-protocol.md
+          - from: rules/project-task.md
+            to: .claude/rules/project-task.md
           - from: skills/commit-schema/SKILL.md
             to: .claude/skills/commit-schema/SKILL.md
           # Hooks: Claude Code (MUST be identical across projects)
