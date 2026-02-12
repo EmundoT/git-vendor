@@ -1,0 +1,5 @@
+# Enforce LF line endings on vendored ecosystem files.
+# Prevents CRLF/LF hash mismatches against git-ecosystem canonical copies.
+.claude/rules/*.md text eol=lf
+.claude/hooks/*.sh text eol=lf
+.githooks/* text eol=lf
