@@ -4,10 +4,10 @@ go 1.23
 
 require (
 	github.com/CycloneDX/cyclonedx-go v0.8.0
+	github.com/EmundoT/git-plumbing v0.1.0
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/huh v0.3.0
 	github.com/charmbracelet/lipgloss v0.10.0
-	github.com/EmundoT/git-plumbing v0.1.0
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0

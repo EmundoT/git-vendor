@@ -1,7 +1,17 @@
+.PHONY: setup verify
+
+setup:
+	git config core.hooksPath .githooks
+
+verify:
+	go build ./...
+	go vet ./...
+	go test ./...
+
 MOCKGEN := $(shell go env GOPATH)/bin/mockgen
 
 .PHONY: mocks
-mocks:
+mocks: vendor
 	@echo "Generating mocks in core package..."
 	go install github.com/golang/mock/mockgen@latest
 	$(MOCKGEN) -source=internal/core/git_operations.go -destination=internal/core/git_client_mock_test.go -package=core
@@ -34,11 +44,8 @@ fmt:
 	gofmt -w .
 
 .PHONY: install-hooks
-install-hooks:
-	@echo "Installing git hooks..."
-	git config core.hooksPath .githooks
-	chmod +x .githooks/pre-commit
-	@echo "Done! Hooks installed."
+install-hooks: setup
+	@echo "Done! Hooks installed via core.hooksPath = .githooks"
 
 .PHONY: ci
 ci: mocks lint test
@@ -88,6 +95,12 @@ install-man:
 	sudo mkdir -p /usr/local/share/man/man1
 	sudo cp docs/man/git-vendor.1 /usr/local/share/man/man1/
 	@echo "Done! Try: man git-vendor"
+
+.PHONY: vendor
+vendor:
+	@echo "Syncing Go vendor directory with replace directives..."
+	go mod vendor
+	@echo "Done! vendor/ now matches pkg/git-plumbing/"
 
 .PHONY: clean
 clean:

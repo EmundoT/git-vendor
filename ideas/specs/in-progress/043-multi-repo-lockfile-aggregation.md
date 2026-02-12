@@ -184,17 +184,21 @@ Summary: 1 diverged, 1 matched
 
 ### Trailer Schema (v1)
 
+Uses the COMMIT-SCHEMA v1 protocol (see `git-plumbing/docs/COMMIT-SCHEMA.md`).
+`Commit-Schema: vendor/v1` is the discriminator — parsers check this trailer
+to identify vendor commits and determine which trailers to expect.
+
 ```text
 feat: update security-lib to v2.2.0
 
 Updated logging format for consistency with org standards.
 Minor text fix, no behavioral change.
 
+Commit-Schema: vendor/v1
 Vendor-Name: security-lib
 Vendor-Ref: v2.2.0
 Vendor-Commit: abc123def456...
 Vendor-Compliance: lenient
-Vendor-Syntax: v1
 Tags: vendor.update, logging, minor
 ```
 
@@ -202,10 +206,10 @@ Tags: vendor.update, logging, minor
 
 | Trailer | Type | Description | Stable? |
 |---------|------|-------------|---------|
+| `Commit-Schema` | `vendor/v1` | COMMIT-SCHEMA discriminator. MUST be present. Parsers MUST check this before processing. Shared with git-plumbing and git-agent. | Yes |
 | `Vendor-Name` | string | Vendor name as defined in vendor.yml | Yes |
 | `Vendor-Ref` | string | Git ref being synced to | Yes |
 | `Vendor-Commit` | string | Full commit SHA resolved | Yes |
-| `Vendor-Syntax` | `v1` | Trailer schema version. MUST be present. Parsers MUST check this before processing. | Yes |
 
 #### Optional Trailers
 
@@ -219,33 +223,38 @@ Tags: vendor.update, logging, minor
 
 #### Multi-Vendor Commits
 
-When a single commit updates multiple vendors, repeat the trailer block with numeric suffix:
+When a single commit updates multiple vendors, use duplicate trailer keys
+with positional association (per COMMIT-SCHEMA v1 §4.2 and pinned
+decision #12). The Nth `Vendor-Name` corresponds to the Nth `Vendor-Ref`
+and `Vendor-Commit`:
 
 ```text
 feat: update security-lib and util-helpers
 
+Commit-Schema: vendor/v1
 Vendor-Name: security-lib
 Vendor-Ref: v2.2.0
 Vendor-Commit: abc123...
 Vendor-Compliance: lenient
-Vendor-Syntax: v1
-
 Vendor-Name: util-helpers
 Vendor-Ref: main
 Vendor-Commit: def456...
-Vendor-Syntax: v1
 ```
 
-**Parsing rule:** Group trailers by sequential `Vendor-Name` occurrences. Each `Vendor-Name` starts a new vendor block. All subsequent `Vendor-*` trailers belong to that block until the next `Vendor-Name`.
+**Parsing rule:** Use `TrailerValues("Vendor-Name")` to retrieve all
+values in order. The Nth entry of each `Vendor-*` key forms a group.
+`Commit-Schema` appears once (not per vendor).
 
 #### Versioning Contract
 
-- `Vendor-Syntax: v1` — current and only version
-- Parsers MUST check `Vendor-Syntax` before processing
+Versioning follows the COMMIT-SCHEMA v1 protocol (git-plumbing/docs/COMMIT-SCHEMA.md §2):
+
+- `Commit-Schema: vendor/v1` — current and only version
+- Parsers MUST check `Commit-Schema` before processing vendor trailers
 - New OPTIONAL trailers can be added without version bump
-- Changing the meaning of an existing trailer or adding new REQUIRED trailers bumps the version
+- Changing the meaning of an existing trailer or adding new REQUIRED trailers bumps the version (vendor/v2)
 - Parsers SHOULD ignore unknown trailers (forward-compat)
-- Parsers MUST reject commits where `Vendor-Syntax` is higher than their supported version (fail-safe)
+- Parsers MUST gracefully degrade when `Commit-Schema` version > known version (parse recognized trailers, skip unknown)
 
 ### Why Trailers, Not Comments or Tags
 
@@ -287,12 +296,16 @@ def normalize_query(raw: str) -> str:
 
 #### Rules
 
+Per COMMIT-SCHEMA v1 §6 and git-plumbing's canonical regex (pinned decision #3):
+
 | Rule | Spec |
 |------|------|
-| Format | `#` followed by `[a-zA-Z][a-zA-Z0-9._-]*` |
-| Space tolerance | Both `#tag` and `# tag` are valid (Elixir convention) |
+| Canonical regex | `(?:^|[^a-zA-Z0-9])#([a-z][a-z0-9._-]*)` |
+| Format | `#` immediately adjacent to tag (no space). `[a-z]` start, `[a-z0-9._-]*` body. |
+| Case | Lowercase only. `#TODO`, `#FIXME` are NOT tags. |
 | Hierarchy | Dot-separated: `#security.auth.oauth` |
 | Location | In comment lines only (not strings, not code) |
+| Preceding char | MUST be non-alphanumeric (rejects URL fragments, color codes) |
 | Scope | Tied to the next declaration (function, type, const, var, struct, class) |
 | File-level | Tags in a comment block before any declaration = file-level tags |
 | Aggregation | File tags = union of all declaration tags + file-level tags |
@@ -315,7 +328,7 @@ Addresses #security.xss finding from audit.
 Only affects HTML rendering path.
 
 Tags: security.xss, bugfix, critical
-Vendor-Syntax: v1
+Commit-Schema: vendor/v1
 ```
 
 **Parsing priority:** The `Tags:` trailer is the machine-readable source of truth. Inline `#tags` in the commit body are supplementary (for human readability and git log searches via `--grep`).
@@ -459,9 +472,9 @@ No magic. No hidden state. Everything is in git.
 
 ### Commit Syntax (Tier 1 infrastructure, used by all tiers)
 
-- [ ] `Vendor-Syntax: v1` trailer defined and documented
-- [ ] Multi-vendor commit parsing logic defined
-- [ ] Versioning contract documented (breaking vs non-breaking changes)
+- [ ] `Commit-Schema: vendor/v1` discriminator used per COMMIT-SCHEMA v1 protocol
+- [ ] Multi-vendor commit parsing via `TrailerValues()` positional association
+- [ ] Versioning contract aligned with COMMIT-SCHEMA v1 §2
 - [ ] Reserved tag prefixes documented
 
 ---

@@ -12,12 +12,13 @@ import (
 
 // Schema version constants
 const (
-	// CurrentSchemaVersion is the version written to new lockfiles
-	CurrentSchemaVersion = "1.1"
+	// CurrentSchemaVersion is the version written to new lockfiles.
+	// Bumped to 1.2 for Spec 070 (internal vendor Source/SourceFileHashes fields).
+	CurrentSchemaVersion = "1.2"
 	// MaxSupportedMajor is the maximum major version this CLI can handle
 	MaxSupportedMajor = 1
 	// MaxSupportedMinor is the maximum minor version this CLI fully understands
-	MaxSupportedMinor = 1
+	MaxSupportedMinor = 2
 )
 
 // parseSchemaVersion parses a schema version string into major and minor components.

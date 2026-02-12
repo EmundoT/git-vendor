@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,8 +20,9 @@ type expectedFileInfo struct {
 
 // VerifyServiceInterface defines the contract for file verification against lockfile.
 // VerifyServiceInterface enables mocking in tests and alternative verification strategies.
+// ctx is accepted for cancellation support and future network-based verification.
 type VerifyServiceInterface interface {
-	Verify() (*types.VerifyResult, error)
+	Verify(ctx context.Context) (*types.VerifyResult, error)
 }
 
 // Compile-time interface satisfaction check.
@@ -52,8 +54,9 @@ func NewVerifyService(
 	}
 }
 
-// Verify checks all vendored files against the lockfile
-func (s *VerifyService) Verify() (*types.VerifyResult, error) {
+// Verify checks all vendored files against the lockfile.
+// ctx is accepted for cancellation support and future network-based verification.
+func (s *VerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 	// Load lockfile
 	lock, err := s.lockStore.Load()
 	if err != nil {
@@ -148,6 +151,30 @@ func (s *VerifyService) Verify() (*types.VerifyResult, error) {
 	// This is a local-only check: read the destination file, extract the
 	// target range, hash it, and compare to the source_hash stored at sync time.
 	s.verifyPositions(lock, result)
+
+	// Verify internal vendor entries — compare source and destination hashes
+	// to detect drift direction (Spec 070).
+	s.verifyInternalEntries(lock, config, result)
+
+	// Register position-destination files in expectedFiles so findAddedFiles
+	// does not flag them as "added". Position entries are verified separately
+	// by verifyPositions above; this loop runs after the whole-file verify loop
+	// so the empty hash sentinel never triggers a false "modified" result.
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
+		for _, pos := range lockEntry.Positions {
+			destFile, _, parseErr := types.ParsePathPosition(pos.To)
+			if parseErr != nil {
+				continue
+			}
+			if _, exists := expectedFiles[destFile]; !exists {
+				expectedFiles[destFile] = expectedFileInfo{
+					vendor: lockEntry.Name,
+					hash:   "",
+				}
+			}
+		}
+	}
 
 	// Scan for added files (in vendor directories but not in lockfile)
 	addedFiles, err := s.findAddedFiles(config, expectedFiles)
@@ -272,6 +299,91 @@ func (s *VerifyService) verifyPositions(lock types.VendorLock, result *types.Ver
 	}
 }
 
+// verifyInternalEntries checks internal vendor mappings for source/dest drift.
+// For each internal lockfile entry, verifyInternalEntries compares the current
+// source and destination file hashes against the locked hashes to determine
+// the drift direction: synced, source_drifted, dest_drifted, or both_drifted.
+func (s *VerifyService) verifyInternalEntries(lock types.VendorLock, config types.VendorConfig, result *types.VerifyResult) {
+	// Build vendor config map for compliance mode lookup
+	configMap := make(map[string]types.VendorSpec)
+	for _, v := range config.Vendors {
+		configMap[v.Name] = v
+	}
+
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
+		if lockEntry.Source != SourceInternal {
+			continue
+		}
+
+		vendorConfig, exists := configMap[lockEntry.Name]
+		if !exists {
+			continue
+		}
+
+		compliance := vendorConfig.Compliance
+		if compliance == "" {
+			compliance = ComplianceSourceCanonical
+		}
+
+		// Check each source file hash
+		for srcPath, lockedSrcHash := range lockEntry.SourceFileHashes {
+			currentSrcHash, srcErr := s.cache.ComputeFileChecksum(srcPath)
+			sourceDrifted := srcErr != nil || currentSrcHash != lockedSrcHash
+
+			// Find matching destination files for this source
+			for destPath, lockedDestHash := range lockEntry.FileHashes {
+				currentDestHash, destErr := s.cache.ComputeFileChecksum(destPath)
+				destDrifted := destErr != nil || currentDestHash != lockedDestHash
+
+				var direction types.ComplianceDriftDirection
+				var action string
+
+				switch {
+				case !sourceDrifted && !destDrifted:
+					direction = types.DriftSynced
+					action = "none"
+				case sourceDrifted && !destDrifted:
+					direction = types.DriftSourceDrift
+					action = "propagate source → dest"
+				case !sourceDrifted && destDrifted:
+					direction = types.DriftDestDrift
+					if compliance == ComplianceBidirectional {
+						action = "propagate dest → source"
+					} else {
+						action = "warning: dest modified (source-canonical)"
+					}
+				default:
+					direction = types.DriftBothDrift
+					action = "conflict: manual resolution required"
+				}
+
+				currentSrcDisplay := currentSrcHash
+				if srcErr != nil {
+					currentSrcDisplay = "error: " + srcErr.Error()
+				}
+				currentDestDisplay := currentDestHash
+				if destErr != nil {
+					currentDestDisplay = "error: " + destErr.Error()
+				}
+
+				result.InternalStatus = append(result.InternalStatus, types.ComplianceEntry{
+					VendorName:        lockEntry.Name,
+					FromPath:          srcPath,
+					ToPath:            destPath,
+					Direction:         direction,
+					Compliance:        compliance,
+					SourceHashLocked:  lockedSrcHash,
+					SourceHashCurrent: currentSrcDisplay,
+					DestHashLocked:    lockedDestHash,
+					DestHashCurrent:   currentDestDisplay,
+					Action:            action,
+				})
+			}
+		}
+	}
+}
+
 // buildExpectedFilesFromCache builds expected files map from cache (fallback)
 func (s *VerifyService) buildExpectedFilesFromCache(lock types.VendorLock) (map[string]expectedFileInfo, error) {
 	expectedFiles := make(map[string]expectedFileInfo)
@@ -351,8 +463,14 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 				return nil
 			}
 
-			// Check if this file is in expected files
-			if _, exists := expectedFiles[path]; !exists {
+			// Check both OS-native path (from WalkDir) and forward-slash form
+			// (lockfile/config paths use forward slashes on all platforms, but
+			// filepath.WalkDir returns OS-native separators on Windows).
+			_, inExpected := expectedFiles[path]
+			if !inExpected {
+				_, inExpected = expectedFiles[filepath.ToSlash(path)]
+			}
+			if !inExpected {
 				// This is an added file
 				hash, hashErr := s.cache.ComputeFileChecksum(path)
 				var hashPtr *string
@@ -360,7 +478,7 @@ func (s *VerifyService) findAddedFiles(config types.VendorConfig, expectedFiles 
 					hashPtr = &hash
 				}
 				added = append(added, types.FileStatus{
-					Path:       path,
+					Path:       filepath.ToSlash(path),
 					Vendor:     nil, // Unknown vendor for added files
 					Status:     "added",
 					Type:       "file",

@@ -35,7 +35,47 @@ vendors:
             to: pkg/git-plumbing/notes.go
           - from: custom_refs.go
             to: pkg/git-plumbing/custom_refs.go
+          - from: hook.go
+            to: pkg/git-plumbing/hook.go
+          - from: subject.go
+            to: pkg/git-plumbing/subject.go
+          - from: surface.go
+            to: pkg/git-plumbing/surface.go
+          - from: tags.go
+            to: pkg/git-plumbing/tags.go
+          - from: tagscan.go
+            to: pkg/git-plumbing/tagscan.go
           - from: testutil/repo.go
             to: pkg/git-plumbing/testutil/repo.go
           - from: testutil/fixtures.go
             to: pkg/git-plumbing/testutil/fixtures.go
+  - name: git-ecosystem
+    url: https://github.com/EmundoT/git-ecosystem.git
+    specs:
+      - ref: main
+        mapping:
+          - from: rules/commit-schema-tags.md
+            to: .claude/rules/commit-schema-tags.md
+          - from: rules/ecosystem-protocol.md
+            to: .claude/rules/ecosystem-protocol.md
+          - from: skills/commit-schema/SKILL.md
+            to: .claude/skills/commit-schema/SKILL.md
+          # Hooks: Claude Code (MUST be identical across projects)
+          - from: hooks/env.sh
+            to: .claude/hooks/env.sh
+          - from: hooks/go-format.sh
+            to: .claude/hooks/go-format.sh
+          - from: hooks/go-verify.sh
+            to: .claude/hooks/go-verify.sh
+          # Hooks: Git (COMMIT-SCHEMA enrichment + validation)
+          - from: hooks/prepare-commit-msg
+            to: .githooks/prepare-commit-msg
+          - from: hooks/commit-msg
+            to: .githooks/commit-msg
+          - from: hooks/pre-commit
+            to: .githooks/pre-commit
+          # Docs (canonical copies — kept in sync via vendor)
+          - from: COMMIT-SCHEMA.md
+            to: docs/COMMIT-SCHEMA.md
+          - from: COMMIT-COOKBOOK.md
+            to: docs/COMMIT-COOKBOOK.md

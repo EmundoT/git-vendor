@@ -478,7 +478,7 @@ func TestDrift_NoLockfile(t *testing.T) {
 	lockStore.EXPECT().Load().Return(types.VendorLock{}, nil)
 
 	svc := NewDriftService(configStore, lockStore, nil, fs, "/root")
-	_, err := svc.Drift(DriftOptions{})
+	_, err := svc.Drift(context.Background(), DriftOptions{})
 
 	if err == nil {
 		t.Fatal("expected error for empty lockfile")
@@ -508,7 +508,7 @@ func TestDrift_VendorNotFound(t *testing.T) {
 	}, nil)
 
 	svc := NewDriftService(configStore, lockStore, nil, fs, "/root")
-	_, err := svc.Drift(DriftOptions{Dependency: "nonexistent"})
+	_, err := svc.Drift(context.Background(), DriftOptions{Dependency: "nonexistent"})
 
 	if err == nil {
 		t.Fatal("expected error for nonexistent vendor")
@@ -528,7 +528,7 @@ func TestDrift_ConfigLoadError(t *testing.T) {
 	configStore.EXPECT().Load().Return(types.VendorConfig{}, fmt.Errorf("config broken"))
 
 	svc := NewDriftService(configStore, lockStore, nil, nil, "/root")
-	_, err := svc.Drift(DriftOptions{})
+	_, err := svc.Drift(context.Background(), DriftOptions{})
 
 	if err == nil {
 		t.Fatal("expected error for config load failure")
@@ -549,7 +549,7 @@ func TestDrift_LockLoadError(t *testing.T) {
 	lockStore.EXPECT().Load().Return(types.VendorLock{}, fmt.Errorf("lock broken"))
 
 	svc := NewDriftService(configStore, lockStore, nil, nil, "/root")
-	_, err := svc.Drift(DriftOptions{})
+	_, err := svc.Drift(context.Background(), DriftOptions{})
 
 	if err == nil {
 		t.Fatal("expected error for lock load failure")
@@ -592,7 +592,7 @@ func TestDrift_SkipsPositionMappings(t *testing.T) {
 	}, nil)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, "/root")
-	result, err := svc.Drift(DriftOptions{})
+	result, err := svc.Drift(context.Background(), DriftOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -713,7 +713,7 @@ func TestDrift_HappyPath_NoChanges(t *testing.T) {
 	expectGitOpsForDrift(t, fs, gitClient, cloneDir, false)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{})
+	result, err := svc.Drift(context.Background(), DriftOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -774,7 +774,7 @@ func TestDrift_HappyPath_LocalModified(t *testing.T) {
 	expectGitOpsForDrift(t, fs, gitClient, cloneDir, false)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{})
+	result, err := svc.Drift(context.Background(), DriftOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -833,7 +833,7 @@ func TestDrift_HappyPath_LocalDeleted(t *testing.T) {
 	expectGitOpsForDrift(t, fs, gitClient, cloneDir, false)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{})
+	result, err := svc.Drift(context.Background(), DriftOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -898,7 +898,7 @@ func TestDrift_HappyPath_UpstreamModified(t *testing.T) {
 	gitClient.EXPECT().GetHeadHash(gomock.Any(), cloneDir).Return("latest999999", nil)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{})
+	result, err := svc.Drift(context.Background(), DriftOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -964,7 +964,7 @@ func TestDrift_ConflictRisk(t *testing.T) {
 	gitClient.EXPECT().GetHeadHash(gomock.Any(), cloneDir).Return("latest999999", nil)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{})
+	result, err := svc.Drift(context.Background(), DriftOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1019,7 +1019,7 @@ func TestDrift_OfflineMode(t *testing.T) {
 	expectGitOpsForDrift(t, fs, gitClient, cloneDir, true)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{Offline: true})
+	result, err := svc.Drift(context.Background(), DriftOptions{Offline: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1070,7 +1070,7 @@ func TestDrift_DetailMode(t *testing.T) {
 	expectGitOpsForDrift(t, fs, gitClient, cloneDir, true)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{Offline: true, Detail: true})
+	result, err := svc.Drift(context.Background(), DriftOptions{Offline: true, Detail: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1122,7 +1122,7 @@ func TestDrift_AutoPath(t *testing.T) {
 	expectGitOpsForDrift(t, fs, gitClient, cloneDir, true)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{Offline: true})
+	result, err := svc.Drift(context.Background(), DriftOptions{Offline: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1168,7 +1168,7 @@ func TestDrift_CreateTempError(t *testing.T) {
 	fs.EXPECT().CreateTemp("", "drift-*").Return("", fmt.Errorf("disk full"))
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, "/root")
-	_, err := svc.Drift(DriftOptions{})
+	_, err := svc.Drift(context.Background(), DriftOptions{})
 	if err == nil {
 		t.Fatal("expected error from CreateTemp failure")
 	}
@@ -1206,7 +1206,7 @@ func TestDrift_GitInitError(t *testing.T) {
 	gitClient.EXPECT().Init(gomock.Any(), tmpDir).Return(fmt.Errorf("init failed"))
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, "/root")
-	_, err := svc.Drift(DriftOptions{})
+	_, err := svc.Drift(context.Background(), DriftOptions{})
 	if err == nil {
 		t.Fatal("expected error from git init failure")
 	}
@@ -1247,7 +1247,7 @@ func TestDrift_FetchAllAndFetchBothFail(t *testing.T) {
 	gitClient.EXPECT().Fetch(gomock.Any(), tmpDir, 0, "main").Return(fmt.Errorf("fetch ref failed"))
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, "/root")
-	_, err := svc.Drift(DriftOptions{})
+	_, err := svc.Drift(context.Background(), DriftOptions{})
 	if err == nil {
 		t.Fatal("expected error when both FetchAll and Fetch fail")
 	}
@@ -1288,7 +1288,7 @@ func TestDrift_CheckoutLockedCommitError(t *testing.T) {
 	gitClient.EXPECT().Checkout(gomock.Any(), tmpDir, "abc1234567890").Return(fmt.Errorf("bad commit"))
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, "/root")
-	_, err := svc.Drift(DriftOptions{})
+	_, err := svc.Drift(context.Background(), DriftOptions{})
 	if err == nil {
 		t.Fatal("expected error from checkout failure")
 	}
@@ -1338,7 +1338,7 @@ func TestDrift_UpstreamCheckoutFallbackToOffline(t *testing.T) {
 	gitClient.EXPECT().Checkout(gomock.Any(), cloneDir, "origin/main").Return(fmt.Errorf("no origin/main"))
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{})
+	result, err := svc.Drift(context.Background(), DriftOptions{})
 	if err != nil {
 		t.Fatalf("expected graceful fallback, got error: %v", err)
 	}
@@ -1400,7 +1400,7 @@ func TestDrift_MultipleVendorsFilterOne(t *testing.T) {
 	expectGitOpsForDrift(t, fs, gitClient, cloneDir, true)
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, workDir)
-	result, err := svc.Drift(DriftOptions{Dependency: "vendor-a", Offline: true})
+	result, err := svc.Drift(context.Background(), DriftOptions{Dependency: "vendor-a", Offline: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1440,7 +1440,7 @@ func TestDrift_VendorInConfigNotInLock(t *testing.T) {
 	}, nil)
 
 	svc := NewDriftService(configStore, lockStore, nil, nil, "/root")
-	result, err := svc.Drift(DriftOptions{})
+	result, err := svc.Drift(context.Background(), DriftOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -10,12 +10,14 @@ type VendorConfig struct {
 
 // VendorSpec defines a single vendored dependency with source repository URL and path mappings.
 type VendorSpec struct {
-	Name    string       `yaml:"name"`
-	URL     string       `yaml:"url"`
-	License string       `yaml:"license"`
-	Groups  []string     `yaml:"groups,omitempty"` // Optional groups for batch operations
-	Hooks   *HookConfig  `yaml:"hooks,omitempty"`  // Optional pre/post sync hooks
-	Specs   []BranchSpec `yaml:"specs"`
+	Name       string       `yaml:"name"`
+	URL        string       `yaml:"url"`
+	License    string       `yaml:"license"`
+	Groups     []string     `yaml:"groups,omitempty"`     // Optional groups for batch operations
+	Hooks      *HookConfig  `yaml:"hooks,omitempty"`      // Optional pre/post sync hooks
+	Source     string       `yaml:"source,omitempty"`     // "" (external, default) or "internal"
+	Compliance string       `yaml:"compliance,omitempty"` // "" (source-canonical) or "bidirectional"
+	Specs      []BranchSpec `yaml:"specs"`
 }
 
 // BranchSpec defines mappings for a specific Git ref (branch, tag, or commit).
@@ -32,6 +34,18 @@ type PathMapping struct {
 }
 
 // VendorLock represents the lock file (vendor.lock) storing resolved commit hashes.
+//
+// Schema version uses major.minor format:
+//   - Minor bump: new optional fields added (backward compatible)
+//   - Major bump: breaking changes requiring CLI upgrade
+//
+// Version compatibility:
+//   - Missing schema_version is treated as "1.0"
+//   - Unknown minor versions: warning, operation proceeds, unknown fields preserved
+//   - Unknown major versions: error, operation aborts to prevent data corruption
+//
+// Current version: 1.1 (adds LicenseSPDX, SourceVersionTag, VendoredAt,
+// VendoredBy, LastSyncedAt). Migrate via "git-vendor migrate".
 type VendorLock struct {
 	SchemaVersion string        `yaml:"schema_version,omitempty"`
 	Vendors       []LockDetails `yaml:"vendors"`
@@ -55,6 +69,10 @@ type LockDetails struct {
 
 	// Position extraction metadata (spec 071)
 	Positions []PositionLock `yaml:"positions,omitempty"` // Position-extracted mappings with source hashes
+
+	// Internal vendor metadata (spec 070)
+	Source           string            `yaml:"source,omitempty"`              // "internal" for internal vendors
+	SourceFileHashes map[string]string `yaml:"source_file_hashes,omitempty"` // source path -> SHA-256
 }
 
 // PositionLock records a position-extracted mapping in the lockfile for auditing and verification.
@@ -78,6 +96,22 @@ type CloneOptions struct {
 	Filter     string // e.g., "blob:none"
 	NoCheckout bool
 	Depth      int
+}
+
+// Trailer represents a single key-value git trailer.
+// Multiple Trailers with the same Key are valid for multi-valued trailers
+// (e.g., multiple Vendor-Name entries in a multi-vendor commit).
+type Trailer struct {
+	Key   string
+	Value string
+}
+
+// CommitOptions holds options for creating a git commit with structured trailers.
+// CommitOptions is used by CommitVendorChanges to pass message and trailer data
+// to the GitClient.Commit adapter. Trailers are ordered and support duplicate keys.
+type CommitOptions struct {
+	Message  string
+	Trailers []Trailer
 }
 
 // VendorStatus represents the sync status of a vendor
@@ -183,10 +217,11 @@ type ParallelOptions struct {
 
 // VerifyResult represents the outcome of verification
 type VerifyResult struct {
-	SchemaVersion string        `json:"schema_version"`
-	Timestamp     string        `json:"timestamp"`
-	Summary       VerifySummary `json:"summary"`
-	Files         []FileStatus  `json:"files"`
+	SchemaVersion  string            `json:"schema_version"`
+	Timestamp      string            `json:"timestamp"`
+	Summary        VerifySummary     `json:"summary"`
+	Files          []FileStatus      `json:"files"`
+	InternalStatus []ComplianceEntry `json:"internal_status,omitempty"` // Spec 070: internal vendor drift
 }
 
 // VerifySummary contains aggregate statistics for verification

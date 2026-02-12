@@ -1,0 +1,95 @@
+#!/bin/bash
+# commit-msg — COMMIT-SCHEMA v1 validation hook
+# Validates subject format, normalizes tag case, enforces namespace-required trailers.
+# Progressive enhancement: uses git-plumbing binary if available, bash fallback otherwise.
+
+MSG_FILE="$1"
+
+# --- Tier 1: git-plumbing binary (full validation) ---
+if command -v git-plumbing &>/dev/null; then
+  git-plumbing hook commit-msg "$MSG_FILE"
+  exit $?
+fi
+
+# --- Tier 2: bash fallback ---
+SUBJECT=$(head -1 "$MSG_FILE")
+
+# Warn on long subject (non-blocking)
+if [ ${#SUBJECT} -gt 72 ]; then
+  echo "WARNING: Subject line is ${#SUBJECT} chars (max recommended: 72)" >&2
+fi
+
+# Warn if subject doesn't match conventional-commits pattern (non-blocking)
+if ! echo "$SUBJECT" | grep -qE '^[a-z]+(\([a-z][a-z0-9-]*\))?!?:'; then
+  echo "WARNING: Subject does not match conventional-commits format: type(scope): description" >&2
+fi
+
+# Normalize Tags/Touch to lowercase in-place
+for KEY in Tags Touch; do
+  VALUE=$(grep "^$KEY:" "$MSG_FILE" | head -1 | sed "s/^$KEY:[[:space:]]*//")
+  if [ -n "$VALUE" ]; then
+    LOWER=$(echo "$VALUE" | tr '[:upper:]' '[:lower:]')
+    if [ "$VALUE" != "$LOWER" ]; then
+      TMP=$(mktemp)
+      while IFS= read -r line; do
+        case "$line" in
+          "$KEY:"*)
+            KPART=$(echo "$line" | sed 's/:.*//')
+            VPART=$(echo "$line" | sed 's/^[^:]*:[[:space:]]*//' | tr '[:upper:]' '[:lower:]')
+            echo "$KPART: $VPART"
+            ;;
+          *)
+            echo "$line"
+            ;;
+        esac
+      done < "$MSG_FILE" > "$TMP"
+      mv "$TMP" "$MSG_FILE"
+      echo "NORMALIZED: $KEY values lowercased" >&2
+    fi
+  fi
+done
+
+# Namespace enforcement — read Commit-Schema value
+SCHEMA=$(grep "^Commit-Schema:" "$MSG_FILE" | head -1 | sed 's/^Commit-Schema:[[:space:]]*//')
+
+case "$SCHEMA" in
+  agent/v1)
+    MISSING=""
+    grep -q "^Agent-Id:" "$MSG_FILE" || MISSING="$MISSING Agent-Id"
+    grep -q "^Intent:" "$MSG_FILE"   || MISSING="$MISSING Intent"
+    grep -q "^Tags:" "$MSG_FILE"     || MISSING="$MISSING Tags"
+    if [ -n "$MISSING" ]; then
+      echo "ERROR: agent/v1 commit missing required trailers:$MISSING" >&2
+      exit 1
+    fi
+    ;;
+  vendor/v1)
+    MISSING=""
+    grep -q "^Vendor-Name:" "$MSG_FILE"   || MISSING="$MISSING Vendor-Name"
+    grep -q "^Vendor-Ref:" "$MSG_FILE"    || MISSING="$MISSING Vendor-Ref"
+    grep -q "^Vendor-Commit:" "$MSG_FILE" || MISSING="$MISSING Vendor-Commit"
+    if [ -n "$MISSING" ]; then
+      echo "ERROR: vendor/v1 commit missing required trailers:$MISSING" >&2
+      exit 1
+    fi
+    ;;
+  manual/v1)
+    if ! grep -q "^Tags:" "$MSG_FILE"; then
+      echo "WARNING: manual/v1 commit has no Tags trailer. Consider adding Tags for queryability." >&2
+    fi
+    ;;
+esac
+
+# Tag syntax validation — warn on invalid tag format
+for KEY in Tags Touch; do
+  VALUE=$(grep "^$KEY:" "$MSG_FILE" | head -1 | sed "s/^$KEY:[[:space:]]*//")
+  if [ -n "$VALUE" ]; then
+    echo "$VALUE" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | while read -r tag; do
+      if [ -n "$tag" ] && ! echo "$tag" | grep -qE '^[a-z][a-z0-9._-]*$'; then
+        echo "WARNING: invalid tag syntax in $KEY: '$tag'" >&2
+      fi
+    done
+  fi
+done
+
+exit 0

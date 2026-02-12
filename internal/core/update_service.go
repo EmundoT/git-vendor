@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -10,9 +11,10 @@ import (
 
 // UpdateServiceInterface defines the contract for update operations and lockfile regeneration.
 // UpdateServiceInterface enables mocking in tests and alternative update strategies.
+// All methods accept a context.Context for cancellation support (e.g., Ctrl+C).
 type UpdateServiceInterface interface {
-	UpdateAll() error
-	UpdateAllWithOptions(parallelOpts types.ParallelOptions) error
+	UpdateAll(ctx context.Context) error
+	UpdateAllWithOptions(ctx context.Context, parallelOpts types.ParallelOptions) error
 }
 
 // Compile-time interface satisfaction check.
@@ -20,12 +22,13 @@ var _ UpdateServiceInterface = (*UpdateService)(nil)
 
 // UpdateService handles update operations and lockfile regeneration
 type UpdateService struct {
-	configStore ConfigStore
-	lockStore   LockStore
-	syncService SyncServiceInterface
-	cache       CacheStore
-	ui          UICallback
-	rootDir     string
+	configStore  ConfigStore
+	lockStore    LockStore
+	syncService  SyncServiceInterface
+	internalSync InternalSyncServiceInterface // Spec 070
+	cache        CacheStore
+	ui           UICallback
+	rootDir      string
 }
 
 // NewUpdateService creates a new UpdateService
@@ -33,41 +36,46 @@ func NewUpdateService(
 	configStore ConfigStore,
 	lockStore LockStore,
 	syncService SyncServiceInterface,
+	internalSync InternalSyncServiceInterface,
 	cache CacheStore,
 	ui UICallback,
 	rootDir string,
 ) *UpdateService {
 	return &UpdateService{
-		configStore: configStore,
-		lockStore:   lockStore,
-		syncService: syncService,
-		cache:       cache,
-		ui:          ui,
-		rootDir:     rootDir,
+		configStore:  configStore,
+		lockStore:    lockStore,
+		syncService:  syncService,
+		internalSync: internalSync,
+		cache:        cache,
+		ui:           ui,
+		rootDir:      rootDir,
 	}
 }
 
-// UpdateAll updates all vendors and regenerates the lockfile
-func (s *UpdateService) UpdateAll() error {
-	return s.UpdateAllWithOptions(types.ParallelOptions{Enabled: false})
+// UpdateAll updates all vendors and regenerates the lockfile.
+// ctx controls cancellation of git operations during update.
+func (s *UpdateService) UpdateAll(ctx context.Context) error {
+	return s.UpdateAllWithOptions(ctx, types.ParallelOptions{Enabled: false})
 }
 
-// UpdateAllWithOptions updates all vendors with optional parallel processing
-func (s *UpdateService) UpdateAllWithOptions(parallelOpts types.ParallelOptions) error {
+// UpdateAllWithOptions updates all vendors with optional parallel processing.
+// ctx controls cancellation of git operations during update.
+func (s *UpdateService) UpdateAllWithOptions(ctx context.Context, parallelOpts types.ParallelOptions) error {
 	config, err := s.configStore.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
 	if parallelOpts.Enabled {
-		return s.updateAllParallel(config, parallelOpts)
+		return s.updateAllParallel(ctx, config, parallelOpts)
 	}
 
-	return s.updateAllSequential(config)
+	return s.updateAllSequential(ctx, config)
 }
 
-// updateAllSequential performs sequential update (original implementation)
-func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
+// updateAllSequential performs sequential update (original implementation).
+// ctx controls cancellation — checked at each vendor boundary.
+func (s *UpdateService) updateAllSequential(ctx context.Context, config types.VendorConfig) error {
 	// Load existing lock to preserve VendoredAt and VendoredBy
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
@@ -88,14 +96,35 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 
 	// Update each vendor
 	for _, v := range config.Vendors {
-		// Sync vendor without lock (force latest)
-		// During update, we always force and skip cache (we want fresh data)
-		updatedRefs, _, err := s.syncService.SyncVendor(&v, nil, SyncOptions{Force: true, NoCache: true})
-		if err != nil {
-			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
-			// Continue on error - don't fail the whole update
-			progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
-			continue
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		var updatedRefs map[string]RefMetadata
+
+		if v.Source == SourceInternal {
+			// Internal vendor: sync locally, no git operations
+			if s.internalSync == nil {
+				s.ui.ShowError("Update Failed", fmt.Sprintf("%s: internal sync service not configured", v.Name))
+				progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
+				continue
+			}
+			refs, _, err := s.internalSync.SyncInternalVendor(&v, SyncOptions{Force: true, NoCache: true})
+			if err != nil {
+				s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
+				progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
+				continue
+			}
+			updatedRefs = refs
+		} else {
+			// External vendor: sync via git
+			refs, _, err := s.syncService.SyncVendor(ctx, &v, nil, SyncOptions{Force: true, NoCache: true})
+			if err != nil {
+				s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
+				progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
+				continue
+			}
+			updatedRefs = refs
 		}
 
 		// Add lock entries for each ref
@@ -104,6 +133,12 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 
 			// Compute file hashes for all destination files
 			fileHashes := s.computeFileHashes(&v, ref)
+
+			// Compute source file hashes for internal vendors
+			var sourceFileHashes map[string]string
+			if v.Source == SourceInternal {
+				sourceFileHashes = s.computeSourceFileHashes(&v, ref)
+			}
 
 			// Preserve VendoredAt and VendoredBy from existing entry, or set to now
 			key := v.Name + "@" + ref
@@ -118,7 +153,7 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 				}
 			}
 
-			lock.Vendors = append(lock.Vendors, types.LockDetails{
+			entry := types.LockDetails{
 				Name:             v.Name,
 				Ref:              ref,
 				CommitHash:       metadata.CommitHash,
@@ -131,9 +166,21 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 				VendoredBy:       vendoredBy,
 				LastSyncedAt:     now,
 				Positions:        toPositionLocks(metadata.Positions),
-			})
+			}
 
-			s.ui.ShowSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, metadata.CommitHash[:7]))
+			if v.Source == SourceInternal {
+				entry.Source = SourceInternal
+				entry.SourceFileHashes = sourceFileHashes
+				entry.LicensePath = "" // Internal vendors have no license
+			}
+
+			lock.Vendors = append(lock.Vendors, entry)
+
+			hashDisplay := metadata.CommitHash
+			if len(hashDisplay) > 7 {
+				hashDisplay = hashDisplay[:7]
+			}
+			s.ui.ShowSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, hashDisplay))
 		}
 
 		progress.Increment(fmt.Sprintf("✓ %s", v.Name))
@@ -143,8 +190,9 @@ func (s *UpdateService) updateAllSequential(config types.VendorConfig) error {
 	return s.lockStore.Save(lock)
 }
 
-// updateAllParallel performs parallel update using worker pool
-func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpts types.ParallelOptions) error {
+// updateAllParallel performs parallel update using worker pool.
+// ctx controls cancellation — passed to the parallel executor and each worker.
+func (s *UpdateService) updateAllParallel(ctx context.Context, config types.VendorConfig, parallelOpts types.ParallelOptions) error {
 	// Load existing lock to preserve VendoredAt and VendoredBy
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
@@ -165,16 +213,77 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 	// Create parallel executor
 	executor := NewParallelExecutor(parallelOpts, s.ui)
 
+	// Phase 1: Internal vendors — sequential (before parallel external vendors)
+	lock := types.VendorLock{}
+	var externalVendors []types.VendorSpec
+
+	for _, v := range config.Vendors {
+		if v.Source == SourceInternal {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if s.internalSync == nil {
+				s.ui.ShowError("Update Failed", fmt.Sprintf("%s: internal sync service not configured", v.Name))
+				progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
+				continue
+			}
+			refs, _, err := s.internalSync.SyncInternalVendor(&v, SyncOptions{Force: true, NoCache: true})
+			if err != nil {
+				s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
+				progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
+				continue
+			}
+
+			for ref, metadata := range refs {
+				fileHashes := s.computeFileHashes(&v, ref)
+				sourceFileHashes := s.computeSourceFileHashes(&v, ref)
+				key := v.Name + "@" + ref
+				vendoredAt := now
+				vendoredBy := user
+				if existing, ok := existingEntries[key]; ok {
+					if existing.VendoredAt != "" {
+						vendoredAt = existing.VendoredAt
+					}
+					if existing.VendoredBy != "" {
+						vendoredBy = existing.VendoredBy
+					}
+				}
+				lock.Vendors = append(lock.Vendors, types.LockDetails{
+					Name:             v.Name,
+					Ref:              ref,
+					CommitHash:       metadata.CommitHash,
+					Updated:          now,
+					FileHashes:       fileHashes,
+					VendoredAt:       vendoredAt,
+					VendoredBy:       vendoredBy,
+					LastSyncedAt:     now,
+					Positions:        toPositionLocks(metadata.Positions),
+					Source:           SourceInternal,
+					SourceFileHashes: sourceFileHashes,
+				})
+
+				hashDisplay := metadata.CommitHash
+				if len(hashDisplay) > 7 {
+					hashDisplay = hashDisplay[:7]
+				}
+				s.ui.ShowSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, hashDisplay))
+			}
+			progress.Increment(fmt.Sprintf("✓ %s", v.Name))
+		} else {
+			externalVendors = append(externalVendors, v)
+		}
+	}
+
+	// Phase 2: External vendors — parallel
 	// Define update function for a single vendor
-	updateFunc := func(v types.VendorSpec, opts SyncOptions) (map[string]RefMetadata, error) {
-		updatedRefs, _, err := s.syncService.SyncVendor(&v, nil, opts)
+	updateFunc := func(workerCtx context.Context, v types.VendorSpec, opts SyncOptions) (map[string]RefMetadata, error) {
+		updatedRefs, _, err := s.syncService.SyncVendor(workerCtx, &v, nil, opts)
 		if err != nil {
 			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 			progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
 			return nil, err
 		}
 
-		// Show success for this vendor
 		for ref, metadata := range updatedRefs {
 			s.ui.ShowSuccess(fmt.Sprintf("Updated %s @ %s to commit %s", v.Name, ref, metadata.CommitHash[:7]))
 		}
@@ -183,29 +292,22 @@ func (s *UpdateService) updateAllParallel(config types.VendorConfig, parallelOpt
 		return updatedRefs, nil
 	}
 
-	// Execute parallel updates
-	results, err := executor.ExecuteParallelUpdate(config.Vendors, updateFunc)
+	// Execute parallel updates for external vendors
+	results, err := executor.ExecuteParallelUpdate(ctx, externalVendors, updateFunc)
 	if err != nil {
-		// Continue even if some vendors failed - we still want to save successful updates
 		s.ui.ShowWarning("Some Updates Failed", err.Error())
 	}
 
-	// Build new lockfile from results
-	lock := types.VendorLock{}
+	// Build lockfile entries from parallel results
 	for i := range results {
 		if results[i].Error != nil {
-			// Skip failed vendors
 			continue
 		}
 
-		// Add lock entries for each ref
 		for ref, metadata := range results[i].UpdatedRefs {
 			licenseFile := filepath.Join(s.rootDir, LicensesDir, results[i].Vendor.Name+".txt")
-
-			// Compute file hashes for all destination files
 			fileHashes := s.computeFileHashes(&results[i].Vendor, ref)
 
-			// Preserve VendoredAt and VendoredBy from existing entry, or set to now
 			key := results[i].Vendor.Name + "@" + ref
 			vendoredAt := now
 			vendoredBy := user
@@ -253,6 +355,37 @@ func toPositionLocks(records []positionRecord) []types.PositionLock {
 		}
 	}
 	return locks
+}
+
+// computeSourceFileHashes calculates SHA-256 hashes for all source files of an internal vendor.
+// Source file hashes enable drift detection: comparing current source state vs locked state.
+func (s *UpdateService) computeSourceFileHashes(vendor *types.VendorSpec, ref string) map[string]string {
+	sourceHashes := make(map[string]string)
+
+	var matchingSpec *types.BranchSpec
+	for i := range vendor.Specs {
+		if vendor.Specs[i].Ref == ref {
+			matchingSpec = &vendor.Specs[i]
+			break
+		}
+	}
+	if matchingSpec == nil {
+		return sourceHashes
+	}
+
+	for _, mapping := range matchingSpec.Mapping {
+		srcFile, _, err := types.ParsePathPosition(mapping.From)
+		if err != nil {
+			srcFile = mapping.From
+		}
+
+		hash, err := s.cache.ComputeFileChecksum(srcFile)
+		if err == nil {
+			sourceHashes[srcFile] = hash
+		}
+	}
+
+	return sourceHashes
 }
 
 // computeFileHashes calculates SHA-256 hashes for all destination files of a vendor

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"strings"
@@ -512,8 +513,8 @@ func buildAcceptLicenseTitle(license string) string {
 // prepareRemoteBrowserOptions fetches remote directory contents and builds
 // option labels/values for the remote file browser display.
 // prepareRemoteBrowserOptions returns an error if the remote fetch fails.
-func prepareRemoteBrowserOptions(mgr VendorManager, url, ref, currentDir string) (labels, values []string, breadcrumb string, err error) {
-	items, fetchErr := mgr.FetchRepoDir(url, ref, currentDir)
+func prepareRemoteBrowserOptions(ctx context.Context, mgr VendorManager, url, ref, currentDir string) (labels, values []string, breadcrumb string, err error) {
+	items, fetchErr := mgr.FetchRepoDir(ctx, url, ref, currentDir)
 	if fetchErr != nil {
 		return nil, nil, "", fetchErr
 	}

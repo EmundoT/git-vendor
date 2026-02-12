@@ -20,8 +20,9 @@ type DriftOptions struct {
 
 // DriftServiceInterface defines the contract for drift detection.
 // DriftServiceInterface enables mocking in tests and alternative drift strategies.
+// ctx is accepted for cancellation of network operations (git fetch/clone).
 type DriftServiceInterface interface {
-	Drift(opts DriftOptions) (*types.DriftResult, error)
+	Drift(ctx context.Context, opts DriftOptions) (*types.DriftResult, error)
 }
 
 // Compile-time interface satisfaction check.
@@ -57,7 +58,8 @@ func NewDriftService(
 // Drift runs drift detection across all (or a specific) vendored dependency.
 // For each dependency, Drift compares local files against the locked commit state
 // and (unless offline) against the latest upstream commit.
-func (s *DriftService) Drift(opts DriftOptions) (*types.DriftResult, error) {
+// ctx controls cancellation of git operations (clone, fetch, checkout).
+func (s *DriftService) Drift(ctx context.Context, opts DriftOptions) (*types.DriftResult, error) {
 	config, err := s.configStore.Load()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
@@ -88,18 +90,27 @@ func (s *DriftService) Drift(opts DriftOptions) (*types.DriftResult, error) {
 	for i := range config.Vendors {
 		vendor := &config.Vendors[i]
 
+		// Skip internal vendors — drift is handled by compliance service
+		if vendor.Source == SourceInternal {
+			continue
+		}
+
 		// Filter to specific dependency if requested
 		if opts.Dependency != "" && vendor.Name != opts.Dependency {
 			continue
 		}
 
 		for _, spec := range vendor.Specs {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+
 			lockEntry, ok := lockMap[vendor.Name+"@"+spec.Ref]
 			if !ok {
 				continue // Not locked, skip
 			}
 
-			dep, err := s.driftForVendorRef(vendor, &spec, lockEntry, opts)
+			dep, err := s.driftForVendorRef(ctx, vendor, &spec, lockEntry, opts)
 			if err != nil {
 				return nil, fmt.Errorf("drift analysis for %s@%s: %w", vendor.Name, spec.Ref, err)
 			}
@@ -120,13 +131,14 @@ func (s *DriftService) Drift(opts DriftOptions) (*types.DriftResult, error) {
 }
 
 // driftForVendorRef analyzes drift for a single vendor at a specific ref.
+// ctx controls cancellation of git operations (clone, fetch, checkout).
 func (s *DriftService) driftForVendorRef(
+	ctx context.Context,
 	vendor *types.VendorSpec,
 	spec *types.BranchSpec,
 	lockEntry *types.LockDetails,
 	opts DriftOptions,
 ) (*types.DriftDependency, error) {
-	ctx := context.Background()
 
 	dep := &types.DriftDependency{
 		Name:         vendor.Name,
