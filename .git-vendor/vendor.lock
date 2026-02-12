@@ -4,7 +4,7 @@ vendors:
       ref: main
       commit_hash: 4152629f59412164ee6af3e2bfa6e83d2c7f5e72
       license_path: .git-vendor\licenses\git-plumbing.txt
-      updated: "2026-02-12T01:14:45Z"
+      updated: "2026-02-12T06:42:27Z"
       file_hashes:
         pkg/git-plumbing/branch.go: 4f7989bd438e932204d0c39ce8b8ed59c3734c5d6058a09f574caea8baa635be
         pkg/git-plumbing/commit.go: ed816f4b7a18210afb8cbe6b44df30954cb060bfeac1393e429ac9452fd7ec74
@@ -31,12 +31,12 @@ vendors:
       license_spdx: MIT
       vendored_at: "2026-02-09T12:00:00Z"
       vendored_by: Claude <noreply@anthropic.com>
-      last_synced_at: "2026-02-12T01:14:45Z"
+      last_synced_at: "2026-02-12T06:42:27Z"
     - name: git-ecosystem
       ref: main
-      commit_hash: 6933d141129786b5ba20e6420811481ca11a9c8c
+      commit_hash: f1155137713124b2d81886d52a365d979fce9e36
       license_path: .git-vendor\licenses\git-ecosystem.txt
-      updated: "2026-02-12T01:14:45Z"
+      updated: "2026-02-12T06:42:27Z"
       file_hashes:
         .claude/hooks/env.sh: 430c9860a3fd6fc44a141304fe5c868ba5c2215931fec7a63ee44ceb5b928f5f
         .claude/hooks/go-format.sh: 02ea7ddd2b063f5e9ecf071c0c78a7cc85f5e41e98a3142f0d45979814d74998
@@ -51,4 +51,4 @@ vendors:
         docs/COMMIT-SCHEMA.md: 313ec2bb5f6868382f4133fc17977a6a456dac644f19c5c6dcd6daba74c615b2
       vendored_at: "2026-02-11T19:49:11Z"
       vendored_by: EmundoT <emtheredia@gmail.com>
-      last_synced_at: "2026-02-12T01:14:45Z"
+      last_synced_at: "2026-02-12T06:42:27Z"
