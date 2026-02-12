@@ -8,23 +8,25 @@ import (
 	"strings"
 )
 
-// HookPrepareCommitMsg enriches a commit message with shared trailers:
-// Commit-Schema, Touch, Diff-Additions, Diff-Deletions, Diff-Files, and
-// Diff-Surface. Reads staged state from the git repo at dir.
-// Does not write the file — caller decides whether to write.
-// Existing trailer keys are never overwritten (idempotent).
-func HookPrepareCommitMsg(ctx context.Context, dir string, msg string) (string, error) {
+// SharedTrailers computes the auto-generated COMMIT-SCHEMA v1 enrichment
+// trailers from staged changes in the git repo at dir. Returns trailers for:
+// Touch (if any #tags found), Diff-Additions, Diff-Deletions, Diff-Files,
+// and Diff-Surface.
+//
+// SharedTrailers does NOT include Commit-Schema (namespace varies by caller)
+// or Tags (author-declared, not auto-computed). Callers that need those
+// trailers append them separately.
+func SharedTrailers(ctx context.Context, dir string) ([]Trailer, error) {
 	g := New(dir)
 
-	// Commit-Schema: manual/v1 (only if no Commit-Schema trailer present)
-	msg = AppendTrailer(msg, "Commit-Schema", "manual/v1")
-
-	// Touch: extract tags from staged files
 	names, err := g.DiffCachedNames(ctx)
 	if err != nil {
-		return "", fmt.Errorf("HookPrepareCommitMsg DiffCachedNames: %w", err)
+		return nil, fmt.Errorf("SharedTrailers DiffCachedNames: %w", err)
 	}
 
+	var trailers []Trailer
+
+	// Touch: extract #tags from staged files
 	if len(names) > 0 {
 		absPaths := make([]string, len(names))
 		for i, n := range names {
@@ -33,22 +35,44 @@ func HookPrepareCommitMsg(ctx context.Context, dir string, msg string) (string, 
 		scanResult, _ := TagScan(absPaths)
 		tags := MergeTags(scanResult)
 		if len(tags) > 0 {
-			msg = AppendTrailer(msg, "Touch", strings.Join(tags, ", "))
+			trailers = append(trailers, Trailer{Key: "Touch", Value: strings.Join(tags, ", ")})
 		}
 	}
 
 	// Diff metrics
 	stat, err := g.DiffCachedStat(ctx)
 	if err != nil {
-		return "", fmt.Errorf("HookPrepareCommitMsg DiffCachedStat: %w", err)
+		return nil, fmt.Errorf("SharedTrailers DiffCachedStat: %w", err)
 	}
-	msg = AppendTrailer(msg, "Diff-Additions", strconv.Itoa(stat.Total.Added))
-	msg = AppendTrailer(msg, "Diff-Deletions", strconv.Itoa(stat.Total.Removed))
-	msg = AppendTrailer(msg, "Diff-Files", strconv.Itoa(len(stat.Files)))
+	trailers = append(trailers,
+		Trailer{Key: "Diff-Additions", Value: strconv.Itoa(stat.Total.Added)},
+		Trailer{Key: "Diff-Deletions", Value: strconv.Itoa(stat.Total.Removed)},
+		Trailer{Key: "Diff-Files", Value: strconv.Itoa(len(stat.Files))},
+	)
 
 	// Diff-Surface
 	surface := ClassifySurface(names, DefaultSurfaceRules())
-	msg = AppendTrailer(msg, "Diff-Surface", string(surface))
+	trailers = append(trailers, Trailer{Key: "Diff-Surface", Value: string(surface)})
+
+	return trailers, nil
+}
+
+// HookPrepareCommitMsg enriches a commit message with shared trailers:
+// Commit-Schema, Touch, Diff-Additions, Diff-Deletions, Diff-Files, and
+// Diff-Surface. Reads staged state from the git repo at dir.
+// Does not write the file — caller decides whether to write.
+// Existing trailer keys are never overwritten (idempotent).
+func HookPrepareCommitMsg(ctx context.Context, dir string, msg string) (string, error) {
+	// Commit-Schema: manual/v1 (only if no Commit-Schema trailer present)
+	msg = AppendTrailer(msg, "Commit-Schema", "manual/v1")
+
+	trailers, err := SharedTrailers(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	for _, t := range trailers {
+		msg = AppendTrailer(msg, t.Key, t.Value)
+	}
 
 	return msg, nil
 }

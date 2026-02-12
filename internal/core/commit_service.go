@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -194,35 +193,15 @@ func CommitVendorChanges(ctx context.Context, gitClient GitClient, configStore C
 	subject := VendorCommitSubject(matchedLocks, operation)
 	trailers := VendorTrailers(matchedLocks)
 
-	// Compute shared trailers (Touch, Diff-*, Diff-Surface).
+	// Compute shared trailers (Touch, Diff-*, Diff-Surface) via git-plumbing.
 	// The programmatic commit path bypasses git hooks, so enrichment
-	// that hooks would normally provide must be computed inline.
+	// that hooks would normally provide must be computed here.
 	// Failures are non-fatal — missing enrichment does not block the commit.
-	names, namesErr := gitClient.DiffCachedNames(ctx, rootDir)
-	if namesErr == nil && len(names) > 0 {
-		absPaths := make([]string, len(names))
-		for i, n := range names {
-			absPaths[i] = filepath.Join(rootDir, n)
+	sharedTrailers, sharedErr := git.SharedTrailers(ctx, rootDir)
+	if sharedErr == nil {
+		for _, t := range sharedTrailers {
+			trailers = append(trailers, types.Trailer{Key: t.Key, Value: t.Value})
 		}
-		scanResult, _ := git.TagScan(absPaths)
-		tags := git.MergeTags(scanResult)
-		if len(tags) > 0 {
-			trailers = append(trailers, types.Trailer{Key: "Touch", Value: strings.Join(tags, ", ")})
-		}
-	}
-
-	metrics, metricsErr := gitClient.DiffCachedStat(ctx, rootDir)
-	if metricsErr == nil {
-		trailers = append(trailers,
-			types.Trailer{Key: "Diff-Additions", Value: strconv.Itoa(metrics.Added)},
-			types.Trailer{Key: "Diff-Deletions", Value: strconv.Itoa(metrics.Removed)},
-			types.Trailer{Key: "Diff-Files", Value: strconv.Itoa(metrics.FileCount)},
-		)
-	}
-
-	if namesErr == nil {
-		surface := git.ClassifySurface(names, git.DefaultSurfaceRules())
-		trailers = append(trailers, types.Trailer{Key: "Diff-Surface", Value: string(surface)})
 	}
 
 	if err := gitClient.Commit(ctx, rootDir, types.CommitOptions{
