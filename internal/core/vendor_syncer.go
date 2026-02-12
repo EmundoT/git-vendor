@@ -221,7 +221,11 @@ func NewVendorSyncer(
 	return syncer
 }
 
-// Init initializes vendor directory structure
+// Init initializes vendor directory structure and configures git hooks.
+// Init creates the .git-vendor/ tree, saves an empty config, and sets
+// core.hooksPath to .githooks if that directory already exists in the
+// project root. Hook setup is best-effort — failures do not fail Init()
+// since the core vendor directory setup already succeeded.
 func (s *VendorSyncer) Init() error {
 	if err := s.fs.MkdirAll(s.rootDir, 0755); err != nil {
 		return fmt.Errorf("create vendor directory: %w", err)
@@ -233,6 +237,19 @@ func (s *VendorSyncer) Init() error {
 	if err := s.configStore.Save(types.VendorConfig{Vendors: []types.VendorSpec{}}); err != nil {
 		return fmt.Errorf("save initial config: %w", err)
 	}
+
+	// Set core.hooksPath if .githooks/ exists in the project root.
+	if s.gitClient != nil {
+		projectRoot := filepath.Dir(s.rootDir)
+		if projectRoot == "" {
+			projectRoot = "."
+		}
+		hooksDir := filepath.Join(projectRoot, ".githooks")
+		if _, err := s.fs.Stat(hooksDir); err == nil {
+			_ = s.gitClient.ConfigSet(context.Background(), projectRoot, "core.hooksPath", ".githooks")
+		}
+	}
+
 	return nil
 }
 

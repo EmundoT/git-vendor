@@ -21,7 +21,11 @@ make build
 # Build (debug)
 make build-dev
 
+# Sync Go vendor/ dir (required after updating pkg/git-plumbing/ files)
+make vendor
+
 # Generate mocks (required before first test run or after interface changes)
+# Automatically runs `make vendor` first
 make mocks
 
 # Tests
@@ -156,6 +160,7 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 7. **RefLocal is a sentinel, not a git ref**: `RefLocal` ("local") is used for internal vendors. MUST NOT pass to git operations (checkout, fetch). All internal vendor ops use `os.Stat`/`os.ReadFile`, not git commands.
 8. **SourceFileHashes population**: Only populated during internal sync. Keyed by source file path (file-level granularity, position specs stripped before keying).
 9. **Position auto-update scope**: `updatePositionSpecs` only adjusts line-range specs (`L5-L20`). ToEOF specs auto-expand (no update). Column specs NOT auto-updated (documented limitation).
+10. **Stale `vendor/` directory**: Go's `vendor/` (gitignored) overrides `replace` directives. After adding/modifying files in `pkg/git-plumbing/`, MUST run `make vendor` (or `go mod vendor`) before build/test. Symptoms: `undefined: git.<NewSymbol>` despite the symbol existing in `pkg/git-plumbing/`.
 
 ## Common Patterns
 
