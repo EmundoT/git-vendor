@@ -58,11 +58,7 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 		Run()
 	check(err)
 
-	baseURL, smartRef, smartPath := manager.ParseSmartURL(rawURL)
-	url = baseURL
-	ref = resolveRef(smartRef, core.DefaultRef)
-
-	name = inferVendorName(url)
+	url, ref, name, smartPath := resolveVendorData(rawURL, manager.ParseSmartURL)
 
 	existing, exists := isExistingVendor(url, existingVendors)
 	isAppending := false
@@ -70,7 +66,7 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 	if exists {
 		addToExisting := true
 		err = huh.NewConfirm().
-			Title(fmt.Sprintf("Repo '%s' is already tracked.", existing.Name)).
+			Title(buildExistingVendorPrompt(existing.Name)).
 			Description("Add to existing vendor?").
 			Value(&addToExisting).
 			Run()
@@ -116,18 +112,14 @@ func RunEditVendorWizard(mgr interface{}, vendor *types.VendorSpec) *types.Vendo
 
 	for {
 		// 1. Select Ref (Branch) to Edit
+		optLabels, optValues := buildBranchOptionData(vendor.Specs, vendor.Name, manager.GetLockHash)
 		var branchOpts []huh.Option[string]
-		for i, s := range vendor.Specs {
-			lockHash := manager.GetLockHash(vendor.Name, s.Ref)
-			label := formatBranchLabel(s.Ref, len(s.Mapping), lockHash)
-			branchOpts = append(branchOpts, huh.NewOption(label, fmt.Sprintf("%d", i)))
+		for i := range optLabels {
+			branchOpts = append(branchOpts, huh.NewOption(optLabels[i], optValues[i]))
 		}
-		branchOpts = append(branchOpts, huh.NewOption("+ Add New Branch", "new"))
-		branchOpts = append(branchOpts, huh.NewOption("💾 Save & Exit", "save"))
-		branchOpts = append(branchOpts, huh.NewOption("❌ Cancel", "cancel"))
 
 		var selection string
-		fmt.Println(styleCard.Render(fmt.Sprintf("Editing Vendor: %s", vendor.Name)))
+		fmt.Println(styleCard.Render(buildEditVendorTitle(vendor.Name)))
 
 		err := huh.NewSelect[string]().
 			Title("Select Branch to Manage").
@@ -138,26 +130,17 @@ func RunEditVendorWizard(mgr interface{}, vendor *types.VendorSpec) *types.Vendo
 			Run()
 		check(err)
 
-		if selection == "cancel" {
-			return nil
+		result := processEditWizardAction(selection, vendor, manager)
+		if result.ShouldExit {
+			return result.ReturnVendor
 		}
-		if selection == "save" {
-			// Show conflict warnings before saving
-			ShowConflictWarnings(manager, vendor.Name)
-			return vendor
-		}
-
-		if selection == "new" {
+		idx := result.ManageIdx
+		if result.NeedNewBranch {
 			var newRef string
 			_ = huh.NewInput().Title("New Branch/Tag Name").Value(&newRef).Run()
-			vendor.Specs = append(vendor.Specs, types.BranchSpec{Ref: newRef})
-			selection = fmt.Sprintf("%d", len(vendor.Specs)-1)
+			vendor.Specs, _ = appendNewBranch(vendor.Specs, newRef)
+			idx = len(vendor.Specs) - 1
 		}
-
-		// 2. Manage Mappings for Selected Branch
-		var idx int
-		_, _ = fmt.Sscanf(selection, "%d", &idx)
-
 		updatedBranch := runMappingManager(manager, vendor.URL, vendor.Specs[idx])
 		vendor.Specs[idx] = updatedBranch
 	}
@@ -167,16 +150,14 @@ func RunEditVendorWizard(mgr interface{}, vendor *types.VendorSpec) *types.Vendo
 // path mappings within a single BranchSpec. Returns the updated BranchSpec on exit.
 func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) types.BranchSpec {
 	for {
+		optLabels, optValues := buildMappingOptionData(branch.Mapping)
 		var opts []huh.Option[string]
-		for i, m := range branch.Mapping {
-			label := formatMappingLabel(m.From, m.To)
-			opts = append(opts, huh.NewOption(label, fmt.Sprintf("%d", i)))
+		for i := range optLabels {
+			opts = append(opts, huh.NewOption(optLabels[i], optValues[i]))
 		}
-		opts = append(opts, huh.NewOption("+ Add Path", "add"))
-		opts = append(opts, huh.NewOption("← Back", "back"))
 
 		var selection string
-		fmt.Println(styleDim.Render(fmt.Sprintf("Managing paths for %s", branch.Ref)))
+		fmt.Println(styleDim.Render(buildMappingManagerTitle(branch.Ref)))
 		_ = huh.NewSelect[string]().
 			Title("Paths").
 			Description("Use arrow keys to navigate, Enter to select").
@@ -185,11 +166,12 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 			Height(10).
 			Run()
 
-		if selection == "back" {
-			return branch
-		}
+		action, idx := classifyMappingSelection(selection)
 
-		if selection == "add" {
+		switch action {
+		case "back":
+			return branch
+		case "add":
 			newMap := runMappingCreator(mgr, url, branch.Ref)
 			if newMap != nil {
 				branch.Mapping = append(branch.Mapping, *newMap)
@@ -197,24 +179,21 @@ func runMappingManager(mgr VendorManager, url string, branch types.BranchSpec) t
 			continue
 		}
 
-		// Edit/Delete
-		var idx int
-		_, _ = fmt.Sscanf(selection, "%d", &idx)
-
-		var action string
+		// Edit/Delete selected mapping
+		var subAction string
 		_ = huh.NewSelect[string]().
-			Title(fmt.Sprintf("Path: %s", branch.Mapping[idx].From)).
+			Title(buildMappingActionTitle(branch.Mapping[idx].From)).
 			Options(
 				huh.NewOption("Edit Paths", "edit"),
 				huh.NewOption("Delete", "delete"),
 				huh.NewOption("← Back", "back"),
-			).Value(&action).Run()
+			).Value(&subAction).Run()
 
-		switch action {
+		switch subAction {
 		case "delete":
 			var confirmDelete bool
 			_ = huh.NewConfirm().
-				Title(fmt.Sprintf("Delete mapping for '%s'?", branch.Mapping[idx].From)).
+				Title(buildDeleteMappingTitle(branch.Mapping[idx].From)).
 				Description("This will remove the path mapping.").
 				Value(&confirmDelete).
 				Run()
@@ -300,28 +279,18 @@ func runMappingCreator(mgr VendorManager, url, ref string) *types.PathMapping {
 // runRemoteBrowser uses VendorManager.FetchRepoDir to list contents via git ls-tree.
 // Returns the selected file/directory path, or empty string if cancelled.
 func runRemoteBrowser(mgr VendorManager, url, ref string) string {
-	repoName := repoNameFromURL(url)
-
 	currentDir := ""
 	for {
-		items, err := mgr.FetchRepoDir(context.Background(), url, ref, currentDir)
-		if err != nil {
-			PrintError("Error", err.Error())
+		optLabels, optValues, breadcrumb, fetchErr := prepareRemoteBrowserOptions(context.Background(), mgr, url, ref, currentDir)
+		if fetchErr != nil {
+			PrintError("Error", fetchErr.Error())
 			return ""
 		}
 
 		var opts []huh.Option[string]
-		if currentDir != "" {
-			opts = append(opts, huh.NewOption(".. (Go Up)", ".."))
+		for i := range optLabels {
+			opts = append(opts, huh.NewOption(optLabels[i], optValues[i]))
 		}
-		opts = append(opts, huh.NewOption(selectCurrentLabel(currentDir), "SELECT_CURRENT"))
-
-		for _, item := range items {
-			opts = append(opts, huh.NewOption(itemLabel(item), item))
-		}
-		opts = append(opts, huh.NewOption("❌ Cancel", "CANCEL"))
-
-		breadcrumb := buildBreadcrumb(repoName, ref, currentDir)
 
 		var selection string
 		_ = huh.NewSelect[string]().
@@ -332,20 +301,9 @@ func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 			Height(15).
 			Run()
 
-		if selection == "CANCEL" {
-			return ""
-		}
-		if selection == "SELECT_CURRENT" {
-			return currentDir
-		}
-		if selection == ".." {
-			currentDir = navigateUp(currentDir)
-			continue
-		}
-
-		newDir, file, isFile := resolveRemoteSelection(selection, currentDir)
-		if isFile {
-			return file
+		result, newDir, done := processRemoteBrowserSelection(selection, currentDir)
+		if done {
+			return result
 		}
 		currentDir = newDir
 	}
@@ -357,45 +315,29 @@ func runRemoteBrowser(mgr VendorManager, url, ref string) string {
 func runLocalBrowser(mgr VendorManager) string {
 	currentDir := "."
 	for {
-		items, err := mgr.ListLocalDir(currentDir)
-		if err != nil {
-			PrintError("Error", err.Error())
+		optLabels, optValues, localTitle, listErr := prepareLocalBrowserOptions(mgr, currentDir)
+		if listErr != nil {
+			PrintError("Error", listErr.Error())
 			return ""
 		}
 
 		var opts []huh.Option[string]
-		if hasLocalParent(currentDir) {
-			opts = append(opts, huh.NewOption(".. (Go Up)", ".."))
+		for i := range optLabels {
+			opts = append(opts, huh.NewOption(optLabels[i], optValues[i]))
 		}
-		opts = append(opts, huh.NewOption(selectCurrentLabel(currentDir), "SELECT_CURRENT"))
-
-		for _, item := range items {
-			opts = append(opts, huh.NewOption(itemLabel(item), item))
-		}
-		opts = append(opts, huh.NewOption("❌ Cancel", "CANCEL"))
 
 		var selection string
 		_ = huh.NewSelect[string]().
-			Title(selectLocalLabel(currentDir)).
+			Title(localTitle).
 			Description("Navigate: ↑↓ | Select file/folder: Enter | Cancel: Ctrl+C").
 			Options(opts...).
 			Value(&selection).
 			Height(15).
 			Run()
 
-		if selection == "CANCEL" {
-			return ""
-		}
-		if selection == "SELECT_CURRENT" {
-			return currentDir
-		}
-		if selection == ".." {
-			currentDir = navigateLocalUp(currentDir)
-			continue
-		}
-		newDir, file, isFile := resolveLocalSelection(selection, currentDir)
-		if isFile {
-			return file
+		result, newDir, done := processLocalBrowserSelection(selection, currentDir)
+		if done {
+			return result
 		}
 		currentDir = newDir
 	}
@@ -475,7 +417,7 @@ func PrintComplianceSuccess(license string) {
 // AskToOverrideCompliance prompts the user to override license compliance check.
 func AskToOverrideCompliance(license string) bool {
 	var confirm bool
-	_ = huh.NewForm(huh.NewGroup(huh.NewConfirm().Title(fmt.Sprintf("Accept %s License?", license)).Value(&confirm))).Run()
+	_ = huh.NewForm(huh.NewGroup(huh.NewConfirm().Title(buildAcceptLicenseTitle(license)).Value(&confirm))).Run()
 	return confirm
 }
 
