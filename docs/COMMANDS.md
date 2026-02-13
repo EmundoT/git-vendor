@@ -185,6 +185,7 @@ git-vendor sync [options] [vendor-name]
 | `--group <name>` | Sync only vendors in the specified group                              |
 | `--parallel`     | Enable parallel processing (3-5x faster)                              |
 | `--workers <N>`  | Number of parallel workers (default: NumCPU, max 8)                   |
+| `--local`        | Allow file:// and local filesystem paths in vendor URLs               |
 | `--verbose, -v`  | Show git commands as they run (useful for debugging)                  |
 | `<vendor-name>`  | Sync only the specified vendor                                        |
 
@@ -246,6 +247,7 @@ git-vendor update [options]
 | --------------- | ---------------------------------------------------- |
 | `--parallel`    | Enable parallel processing (3-5x faster)             |
 | `--workers <N>` | Number of parallel workers (default: NumCPU, max 8)  |
+| `--local`       | Allow file:// and local filesystem paths in vendor URLs |
 | `--verbose, -v` | Show git commands as they run (useful for debugging) |
 
 **This command:**

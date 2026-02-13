@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -2089,6 +2090,112 @@ func TestSyncVendor_WithPositionMappings(t *testing.T) {
 		t.Errorf("extracted content = %q, want %q", string(got), "line2")
 	}
 }
+
+// ============================================================================
+// Local Path Tests - --local flag behavior
+// ============================================================================
+
+func TestSyncVendor_LocalPath_WithoutFlag_ReturnsError(t *testing.T) {
+	ctrl, _, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("local-vendor", "file:///home/user/repo", "main")
+
+	syncer := createMockSyncer(nil, fs, config, lock, license)
+
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{Local: false})
+	if err == nil {
+		t.Fatal("expected error for local path without --local flag, got nil")
+	}
+	if !strings.Contains(err.Error(), "--local") || !strings.Contains(err.Error(), "local path") {
+		t.Errorf("error = %q, want mention of --local and local path", err.Error())
+	}
+}
+
+func TestSyncVendor_RelativePath_WithoutFlag_ReturnsError(t *testing.T) {
+	ctrl, _, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("local-vendor", "../sibling-repo", "main")
+
+	syncer := createMockSyncer(nil, fs, config, lock, license)
+
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{Local: false})
+	if err == nil {
+		t.Fatal("expected error for relative path without --local flag, got nil")
+	}
+	if !strings.Contains(err.Error(), "--local") {
+		t.Errorf("error = %q, want mention of --local", err.Error())
+	}
+}
+
+func TestSyncVendor_LocalFlag_ResolvesURL(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	// Create a real temp directory to use as the local repo source
+	sourceRepo := t.TempDir()
+
+	vendor := createTestVendorSpec("local-vendor", sourceRepo, "main")
+
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-local", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-local").Return(nil)
+
+	git.EXPECT().Init(gomock.Any(), "/tmp/test-local").Return(nil)
+	// The resolved URL should be a file:// URL
+	git.EXPECT().AddRemote(gomock.Any(), "/tmp/test-local", "origin", gomock.Any()).DoAndReturn(
+		func(_ context.Context, _, _, url string) error {
+			if !strings.HasPrefix(url, "file://") {
+				t.Errorf("AddRemote URL = %q, want file:// prefix", url)
+			}
+			return nil
+		})
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def456", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{Local: true})
+	if err != nil {
+		t.Fatalf("SyncVendor with --local flag: unexpected error: %v", err)
+	}
+}
+
+func TestSyncVendor_RemoteURL_UnaffectedByLocalFlag(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("remote-vendor", "https://github.com/owner/repo", "main")
+
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-remote", nil)
+	fs.EXPECT().RemoveAll("/tmp/test-remote").Return(nil)
+
+	git.EXPECT().Init(gomock.Any(), "/tmp/test-remote").Return(nil)
+	// Remote URL should pass through unchanged
+	git.EXPECT().AddRemote(gomock.Any(), "/tmp/test-remote", "origin", "https://github.com/owner/repo").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def456", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{Local: true})
+	if err != nil {
+		t.Fatalf("SyncVendor with remote URL and --local flag: unexpected error: %v", err)
+	}
+}
+
 
 // ============================================================================
 // TestUpdateAll - Comprehensive tests for update orchestration

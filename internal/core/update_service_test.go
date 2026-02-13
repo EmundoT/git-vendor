@@ -710,7 +710,7 @@ func TestComputeFileHashes_LargeFileConsistency(t *testing.T) {
 // UpdateAllWithOptions (parallel) Tests
 // ============================================================================
 
-func TestUpdateAllWithParallel_SequentialFallback(t *testing.T) {
+func TestUpdateAllWithOptions_SequentialFallback(t *testing.T) {
 	ctrl, git, fs, config, lock, license := setupMocks(t)
 	defer ctrl.Finish()
 
@@ -741,13 +741,13 @@ func TestUpdateAllWithParallel_SequentialFallback(t *testing.T) {
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
-	err := syncer.UpdateAllWithParallel(context.Background(), types.ParallelOptions{Enabled: false})
+	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{Parallel: types.ParallelOptions{Enabled: false}})
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
 	}
 }
 
-func TestUpdateAllWithParallel_ParallelMultipleVendors(t *testing.T) {
+func TestUpdateAllWithOptions_ParallelMultipleVendors(t *testing.T) {
 	ctrl, git, fs, config, lock, license := setupMocks(t)
 	defer ctrl.Finish()
 
@@ -780,13 +780,13 @@ func TestUpdateAllWithParallel_ParallelMultipleVendors(t *testing.T) {
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
-	err := syncer.UpdateAllWithParallel(context.Background(), types.ParallelOptions{Enabled: true, MaxWorkers: 2})
+	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{Parallel: types.ParallelOptions{Enabled: true, MaxWorkers: 2}})
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
 	}
 }
 
-func TestUpdateAllWithParallel_ParallelPartialFailure(t *testing.T) {
+func TestUpdateAllWithOptions_ParallelPartialFailure(t *testing.T) {
 	ctrl, git, fs, config, lock, license := setupMocks(t)
 	defer ctrl.Finish()
 
@@ -827,7 +827,7 @@ func TestUpdateAllWithParallel_ParallelPartialFailure(t *testing.T) {
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
-	err := syncer.UpdateAllWithParallel(context.Background(), types.ParallelOptions{Enabled: true, MaxWorkers: 2})
+	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{Parallel: types.ParallelOptions{Enabled: true, MaxWorkers: 2}})
 	if err != nil {
 		t.Fatalf("Expected success (partial results saved), got error: %v", err)
 	}

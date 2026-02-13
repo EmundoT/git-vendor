@@ -487,6 +487,7 @@ func main() {
 		commit := false
 		internalOnly := false
 		reverse := false
+		local := false
 
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
@@ -505,6 +506,8 @@ func main() {
 				internalOnly = true
 			case arg == "--reverse":
 				reverse = true
+			case arg == "--local":
+				local = true
 			case arg == "--workers":
 				if i+1 < len(args) {
 					if _, err := fmt.Sscanf(args[i+1], "%d", &workers); err != nil {
@@ -569,41 +572,24 @@ func main() {
 				fmt.Println("Run 'git-vendor sync' to apply changes.")
 			}
 		} else {
-			// Choose sync method based on flags
-			switch {
-			case internalOnly:
-				opts := core.SyncOptions{
-					VendorName:   vendorName,
-					Force:        force,
-					NoCache:      noCache,
-					InternalOnly: true,
-					Reverse:      reverse,
-				}
-				if err := manager.SyncWithFullOptions(ctx, opts); err != nil {
-					callback.ShowError("Sync Failed", err.Error())
-					os.Exit(1)
-				}
-			case parallel:
-				parallelOpts := types.ParallelOptions{
+			opts := core.SyncOptions{
+				VendorName:   vendorName,
+				GroupName:    groupName,
+				Force:        force,
+				NoCache:      noCache,
+				InternalOnly: internalOnly,
+				Reverse:      reverse,
+				Local:        local,
+			}
+			if parallel {
+				opts.Parallel = types.ParallelOptions{
 					Enabled:    true,
 					MaxWorkers: workers,
 				}
-				if err := manager.SyncWithParallel(ctx, vendorName, force, noCache, parallelOpts); err != nil {
-					callback.ShowError("Sync Failed", err.Error())
-					os.Exit(1)
-				}
-			case groupName != "":
-				// Use group sync if group is specified
-				if err := manager.SyncWithGroup(ctx, groupName, force, noCache); err != nil {
-					callback.ShowError("Sync Failed", err.Error())
-					os.Exit(1)
-				}
-			default:
-				// Regular sync
-				if err := manager.SyncWithOptions(ctx, vendorName, force, noCache); err != nil {
-					callback.ShowError("Sync Failed", err.Error())
-					os.Exit(1)
-				}
+			}
+			if err := manager.SyncWithFullOptions(ctx, opts); err != nil {
+				callback.ShowError("Sync Failed", err.Error())
+				os.Exit(1)
 			}
 			callback.ShowSuccess("Synced.")
 
@@ -634,6 +620,7 @@ func main() {
 		parallel := false
 		workers := 0
 		commit := false
+		local := false
 
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
@@ -645,6 +632,8 @@ func main() {
 				commit = true
 			case "--parallel":
 				parallel = true
+			case "--local":
+				local = true
 			case "--workers":
 				if i+1 < len(args) {
 					if _, err := fmt.Sscanf(args[i+1], "%d", &workers); err != nil {
@@ -668,21 +657,18 @@ func main() {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 
-		// Use parallel update if requested
+		opts := core.UpdateOptions{
+			Local: local,
+		}
 		if parallel {
-			parallelOpts := types.ParallelOptions{
+			opts.Parallel = types.ParallelOptions{
 				Enabled:    true,
 				MaxWorkers: workers,
 			}
-			if err := manager.UpdateAllWithParallel(ctx, parallelOpts); err != nil {
-				callback.ShowError("Update Failed", err.Error())
-				os.Exit(1)
-			}
-		} else {
-			if err := manager.UpdateAll(ctx); err != nil {
-				callback.ShowError("Update Failed", err.Error())
-				os.Exit(1)
-			}
+		}
+		if err := manager.UpdateAllWithOptions(ctx, opts); err != nil {
+			callback.ShowError("Update Failed", err.Error())
+			os.Exit(1)
 		}
 		callback.ShowSuccess("Updated all vendors.")
 

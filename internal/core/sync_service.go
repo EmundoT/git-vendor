@@ -22,6 +22,7 @@ type SyncOptions struct {
 	Commit       bool                  // Auto-commit after sync with vendor trailers
 	InternalOnly bool                  // Only sync internal vendors (Spec 070)
 	Reverse      bool                  // Propagate dest changes back to source (Spec 070)
+	Local        bool                  // Allow file:// and local path vendor URLs
 }
 
 // RefMetadata holds per-ref metadata collected during sync
@@ -484,14 +485,27 @@ func (s *SyncService) SyncVendor(ctx context.Context, v *types.VendorSpec, locke
 		return results, totalStats, nil
 	}
 
+	// Resolve clone URL: detect local paths and apply --local gating
+	cloneURL := v.URL
+	if IsLocalPath(v.URL) {
+		if !opts.Local {
+			return nil, CopyStats{}, fmt.Errorf("vendor %s uses a local path (%s); pass --local to allow local filesystem access", v.Name, v.URL)
+		}
+		resolved, err := ResolveLocalURL(v.URL, s.rootDir)
+		if err != nil {
+			return nil, CopyStats{}, fmt.Errorf("resolve local URL for %s: %w", v.Name, err)
+		}
+		cloneURL = resolved
+	}
+
 	// Execute pre-sync hook before cloning
 	if v.Hooks != nil && v.Hooks.PreSync != "" {
-		ctx := types.HookContext{
+		hookCtx := types.HookContext{
 			VendorName: v.Name,
-			VendorURL:  v.URL,
+			VendorURL:  cloneURL,
 			RootDir:    s.rootDir,
 		}
-		if err := s.hooks.ExecutePreSync(v, &ctx); err != nil {
+		if err := s.hooks.ExecutePreSync(v, &hookCtx); err != nil {
 			return nil, CopyStats{}, fmt.Errorf("pre-sync hook failed: %w", err)
 		}
 	}
@@ -509,9 +523,9 @@ func (s *SyncService) SyncVendor(ctx context.Context, v *types.VendorSpec, locke
 	if err := s.gitClient.Init(ctx, tempDir); err != nil {
 		return nil, CopyStats{}, fmt.Errorf("failed to initialize git repository for %s: %w", v.Name, err)
 	}
-	if err := s.gitClient.AddRemote(ctx, tempDir, "origin", v.URL); err != nil {
+	if err := s.gitClient.AddRemote(ctx, tempDir, "origin", cloneURL); err != nil {
 		// SEC-013: Sanitize URL in error output to prevent credential leakage
-		return nil, CopyStats{}, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, SanitizeURL(v.URL), err)
+		return nil, CopyStats{}, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, SanitizeURL(cloneURL), err)
 	}
 
 	results := make(map[string]RefMetadata)
@@ -544,15 +558,15 @@ func (s *SyncService) SyncVendor(ctx context.Context, v *types.VendorSpec, locke
 			break
 		}
 
-		ctx := types.HookContext{
+		hookCtx := types.HookContext{
 			VendorName:  v.Name,
-			VendorURL:   v.URL,
+			VendorURL:   cloneURL,
 			Ref:         firstRef,
 			CommitHash:  firstHash,
 			RootDir:     s.rootDir,
 			FilesCopied: totalStats.FileCount,
 		}
-		if err := s.hooks.ExecutePostSync(v, &ctx); err != nil {
+		if err := s.hooks.ExecutePostSync(v, &hookCtx); err != nil {
 			return nil, CopyStats{}, fmt.Errorf("post-sync hook failed: %w", err)
 		}
 	}
