@@ -116,9 +116,17 @@ func main() {
 		defer cancel()
 		originURL := manager.GetRemoteURL(ctx, "origin")
 
+		// Detect ecosystem state for bootstrap suggestions.
+		_, hasHooks := os.Stat(".githooks")
+		_, hasPolicy := os.Stat(core.PolicyFile)
+
 		switch flags.Mode {
 		case core.OutputJSON:
-			data := map[string]interface{}{"vendor_dir": core.VendorDir}
+			data := map[string]interface{}{
+				"vendor_dir": core.VendorDir,
+				"has_hooks":  hasHooks == nil,
+				"has_policy": hasPolicy == nil,
+			}
 			if originURL != "" {
 				data["origin_url"] = originURL
 			}
@@ -132,7 +140,12 @@ func main() {
 		case core.OutputQuiet:
 			// No output
 		default:
-			tui.PrintInitSummary(tui.InitSummary{VendorDir: core.VendorDir, OriginURL: originURL})
+			tui.PrintInitSummary(tui.InitSummary{
+				VendorDir: core.VendorDir,
+				OriginURL: originURL,
+				HasHooks:  hasHooks == nil,
+				HasPolicy: hasPolicy == nil,
+			})
 		}
 
 	case "add":

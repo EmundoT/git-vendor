@@ -1137,3 +1137,165 @@ func TestNonInteractiveTUICallback_ShowError_Normal(t *testing.T) {
 		t.Errorf("ShowError normal mode missing title in stderr, got: %q", buf.String())
 	}
 }
+
+// ============================================================================
+// PrintInitSummary Tests
+// ============================================================================
+
+func TestPrintInitSummary_BasicOutput(t *testing.T) {
+	output := captureStdout(func() {
+		PrintInitSummary(InitSummary{VendorDir: ".git-vendor"})
+	})
+	if !strings.Contains(output, ".git-vendor") {
+		t.Errorf("PrintInitSummary missing vendor dir, got: %q", output)
+	}
+	if !strings.Contains(output, "Initialized") {
+		t.Errorf("PrintInitSummary missing initialized message, got: %q", output)
+	}
+	if !strings.Contains(output, "Next steps") {
+		t.Errorf("PrintInitSummary missing next steps, got: %q", output)
+	}
+	if !strings.Contains(output, "git-vendor add") {
+		t.Errorf("PrintInitSummary missing add command, got: %q", output)
+	}
+	if !strings.Contains(output, "git-vendor sync") {
+		t.Errorf("PrintInitSummary missing sync command, got: %q", output)
+	}
+	if !strings.Contains(output, "git-vendor validate") {
+		t.Errorf("PrintInitSummary missing validate command, got: %q", output)
+	}
+}
+
+func TestPrintInitSummary_WithOriginURL(t *testing.T) {
+	output := captureStdout(func() {
+		PrintInitSummary(InitSummary{
+			VendorDir: ".git-vendor",
+			OriginURL: "https://github.com/owner/repo",
+		})
+	})
+	if !strings.Contains(output, "Detected origin: https://github.com/owner/repo") {
+		t.Errorf("PrintInitSummary missing origin URL, got: %q", output)
+	}
+}
+
+func TestPrintInitSummary_WithoutOriginURL(t *testing.T) {
+	output := captureStdout(func() {
+		PrintInitSummary(InitSummary{VendorDir: ".git-vendor"})
+	})
+	if strings.Contains(output, "Detected origin") {
+		t.Errorf("PrintInitSummary should not show origin when empty, got: %q", output)
+	}
+}
+
+func TestPrintInitSummary_EcosystemBootstrap_NoHooks(t *testing.T) {
+	output := captureStdout(func() {
+		PrintInitSummary(InitSummary{
+			VendorDir: ".git-vendor",
+			HasHooks:  false,
+		})
+	})
+	if !strings.Contains(output, "No .githooks/ directory found") {
+		t.Errorf("PrintInitSummary should show bootstrap warning when no hooks, got: %q", output)
+	}
+	if !strings.Contains(output, "mkdir .githooks") {
+		t.Errorf("PrintInitSummary should show mkdir command, got: %q", output)
+	}
+	if !strings.Contains(output, "commit-schema") {
+		t.Errorf("PrintInitSummary should reference commit-schema, got: %q", output)
+	}
+}
+
+func TestPrintInitSummary_EcosystemBootstrap_HasHooks(t *testing.T) {
+	output := captureStdout(func() {
+		PrintInitSummary(InitSummary{
+			VendorDir: ".git-vendor",
+			HasHooks:  true,
+		})
+	})
+	if !strings.Contains(output, ".githooks/ detected") {
+		t.Errorf("PrintInitSummary should confirm hooks detected, got: %q", output)
+	}
+	if strings.Contains(output, "No .githooks/ directory found") {
+		t.Errorf("PrintInitSummary should not show bootstrap warning when hooks exist, got: %q", output)
+	}
+	if strings.Contains(output, "mkdir .githooks") {
+		t.Errorf("PrintInitSummary should not show mkdir when hooks exist, got: %q", output)
+	}
+}
+
+func TestPrintInitSummary_PolicyTip_NoPolicy(t *testing.T) {
+	output := captureStdout(func() {
+		PrintInitSummary(InitSummary{
+			VendorDir: ".git-vendor",
+			HasPolicy: false,
+		})
+	})
+	if !strings.Contains(output, ".git-vendor-policy.yml") {
+		t.Errorf("PrintInitSummary should show policy tip when no policy, got: %q", output)
+	}
+}
+
+func TestPrintInitSummary_PolicyTip_HasPolicy(t *testing.T) {
+	output := captureStdout(func() {
+		PrintInitSummary(InitSummary{
+			VendorDir: ".git-vendor",
+			HasPolicy: true,
+		})
+	})
+	if strings.Contains(output, ".git-vendor-policy.yml") {
+		t.Errorf("PrintInitSummary should suppress policy tip when policy exists, got: %q", output)
+	}
+}
+
+func TestPrintInitSummary_AllFieldsPopulated(t *testing.T) {
+	output := captureStdout(func() {
+		PrintInitSummary(InitSummary{
+			VendorDir: ".git-vendor",
+			OriginURL: "git@github.com:team/project.git",
+			HasHooks:  true,
+			HasPolicy: true,
+		})
+	})
+	// Should show origin
+	if !strings.Contains(output, "git@github.com:team/project.git") {
+		t.Errorf("PrintInitSummary missing origin, got: %q", output)
+	}
+	// Should show hooks detected
+	if !strings.Contains(output, ".githooks/ detected") {
+		t.Errorf("PrintInitSummary missing hooks confirmation, got: %q", output)
+	}
+	// Should NOT show policy tip (already exists)
+	if strings.Contains(output, ".git-vendor-policy.yml") {
+		t.Errorf("PrintInitSummary should hide policy tip, got: %q", output)
+	}
+	// Should NOT show bootstrap warning
+	if strings.Contains(output, "mkdir .githooks") {
+		t.Errorf("PrintInitSummary should not show bootstrap, got: %q", output)
+	}
+	// Should still show next steps
+	if !strings.Contains(output, "Next steps") {
+		t.Errorf("PrintInitSummary missing next steps, got: %q", output)
+	}
+}
+
+func TestPrintInitSummary_EmptySummary(t *testing.T) {
+	output := captureStdout(func() {
+		PrintInitSummary(InitSummary{})
+	})
+	// Empty VendorDir still produces output with ./ prefix
+	if !strings.Contains(output, "Initialized") {
+		t.Errorf("PrintInitSummary should still show initialized, got: %q", output)
+	}
+	// No origin
+	if strings.Contains(output, "Detected origin") {
+		t.Errorf("PrintInitSummary should not show origin for empty summary, got: %q", output)
+	}
+	// No hooks → bootstrap shown
+	if !strings.Contains(output, "No .githooks/ directory found") {
+		t.Errorf("PrintInitSummary should show bootstrap for empty summary, got: %q", output)
+	}
+	// No policy → tip shown
+	if !strings.Contains(output, ".git-vendor-policy.yml") {
+		t.Errorf("PrintInitSummary should show policy tip for empty summary, got: %q", output)
+	}
+}
