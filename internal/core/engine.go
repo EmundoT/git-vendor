@@ -280,6 +280,13 @@ func (m *Manager) EvaluateLicensePolicy(license, policyPath string) string {
 	return svc.Evaluate(license)
 }
 
+// Outdated checks if locked versions are behind upstream HEAD using lightweight
+// ls-remote queries (no cloning). Returns aggregated results with per-dependency detail.
+// ctx controls cancellation of ls-remote operations.
+func (m *Manager) Outdated(ctx context.Context, opts OutdatedOptions) (*types.OutdatedResult, error) {
+	return m.syncer.Outdated(ctx, opts)
+}
+
 // Drift detects drift between vendored files and their origin.
 // ctx controls cancellation of git operations (clone, fetch, checkout).
 func (m *Manager) Drift(ctx context.Context, opts DriftOptions) (*types.DriftResult, error) {

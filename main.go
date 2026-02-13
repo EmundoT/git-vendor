@@ -19,6 +19,14 @@ import (
 // Version information is managed in internal/version package
 // GoReleaser injects version info directly via ldflags
 
+// minLen returns the smaller of a and b. Used for safe hash truncation in display output.
+func minLen(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // formatShortDate formats an RFC3339 timestamp to just the date portion
 func formatShortDate(timestamp string) string {
 	if len(timestamp) >= 10 {
@@ -1224,6 +1232,73 @@ func main() {
 				fmt.Println("Run 'git-vendor update' to fetch latest versions")
 				os.Exit(1)
 			}
+		}
+
+	case "outdated":
+		// Parse flags: --json, --quiet, [vendor-name]
+		format := "table"
+		vendor := ""
+		quiet := false
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			switch {
+			case arg == "--json":
+				format = "json"
+			case arg == "--quiet" || arg == "-q":
+				quiet = true
+			case !strings.HasPrefix(arg, "--"):
+				vendor = arg
+			}
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		result, err := manager.Outdated(ctx, core.OutdatedOptions{Vendor: vendor})
+		if err != nil {
+			tui.PrintError("Outdated Check Failed", err.Error())
+			os.Exit(1)
+		}
+
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			if !quiet {
+				if result.Outdated == 0 && result.Skipped == 0 {
+					fmt.Printf("All %s up to date.\n", core.Pluralize(result.TotalChecked, "vendor", "vendors"))
+				} else {
+					if result.Outdated > 0 {
+						fmt.Printf("%s outdated:\n\n", core.Pluralize(result.Outdated, "vendor", "vendors"))
+						for _, dep := range result.Dependencies {
+							if !dep.UpToDate {
+								fmt.Printf("  %s @ %s\n", dep.VendorName, dep.Ref)
+								fmt.Printf("    locked:   %s\n", dep.CurrentHash[:minLen(len(dep.CurrentHash), 12)])
+								fmt.Printf("    upstream: %s\n", dep.LatestHash[:minLen(len(dep.LatestHash), 12)])
+								fmt.Println()
+							}
+						}
+					}
+					if result.Skipped > 0 {
+						fmt.Printf("%s skipped (network error or not yet synced)\n", core.Pluralize(result.Skipped, "vendor", "vendors"))
+					}
+					fmt.Println("\nRun 'git-vendor update' to fetch latest versions.")
+				}
+			}
+		}
+
+		if result.Outdated > 0 {
+			os.Exit(1)
 		}
 
 	case "annotate":

@@ -63,6 +63,7 @@ internal/
     cache_store.go               # Incremental sync cache
     parallel_executor.go         # Worker pool for concurrent ops
     diff_service.go / drift_service.go  # Diff and drift detection
+    outdated_service.go              # Lightweight staleness check via git ls-remote
     commit_service.go            # COMMIT-SCHEMA v1 trailers + git notes
     config_commands.go           # LLM-friendly CLI (Spec 072)
     cli_response.go              # JSON output types for Spec 072
@@ -94,6 +95,7 @@ All in `internal/core/`. Mock with gomock for tests.
 | `CacheStore` | `FileCacheStore` | cache_store.go |
 | `InternalSyncServiceInterface` | `InternalSyncService` | internal_sync_service.go |
 | `ComplianceServiceInterface` | `ComplianceService` | compliance_service.go |
+| `OutdatedServiceInterface` | `OutdatedService` | outdated_service.go |
 
 ## File System Structure
 
@@ -126,6 +128,7 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 
 - **sync**: Fetch dependencies at locked commit hashes (deterministic). Uses `--depth 1` for shallow clones. Falls back to full fetch for stale commits. With `--internal`: syncs only internal vendors (no network).
 - **update**: Fetch latest commits and regenerate entire lockfile.
+- **outdated**: Lightweight staleness check via `git ls-remote` (1 command per vendor, no temp dirs). Read-only — does not modify lockfile. Exit code 1 = stale. CI-friendly alternative to `check-updates`.
 
 ## Design Principles
 

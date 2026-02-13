@@ -91,6 +91,7 @@ type VendorSyncer struct {
 	driftService      DriftServiceInterface
 	auditService      AuditServiceInterface
 	complianceService ComplianceServiceInterface // Spec 070
+	outdatedSvc       OutdatedServiceInterface
 
 	// Infrastructure dependencies
 	configStore    ConfigStore
@@ -118,6 +119,7 @@ type ServiceOverrides struct {
 	DriftService  DriftServiceInterface
 	AuditService      AuditServiceInterface
 	ComplianceService ComplianceServiceInterface
+	OutdatedService   OutdatedServiceInterface
 }
 
 // NewVendorSyncer creates a new VendorSyncer with injected dependencies.
@@ -157,6 +159,7 @@ func NewVendorSyncer(
 	driftSvc := DriftServiceInterface(NewDriftService(configStore, lockStore, gitClient, fs, rootDir))
 	auditSvc := AuditServiceInterface(NewAuditService(verifyService, vulnScanner, driftSvc, configStore, lockStore))
 	complianceSvc := ComplianceServiceInterface(NewComplianceService(configStore, lockStore, cache, fs, rootDir))
+	outdatedSvc := OutdatedServiceInterface(NewOutdatedService(configStore, lockStore, gitClient))
 
 	// Apply overrides where provided
 	syncer := &VendorSyncer{
@@ -172,6 +175,7 @@ func NewVendorSyncer(
 		driftService:   driftSvc,
 		auditService:      auditSvc,
 		complianceService: complianceSvc,
+		outdatedSvc:       outdatedSvc,
 		configStore:       configStore,
 		lockStore:      lockStore,
 		gitClient:      gitClient,
@@ -216,6 +220,9 @@ func NewVendorSyncer(
 	}
 	if overrides.ComplianceService != nil {
 		syncer.complianceService = overrides.ComplianceService
+	}
+	if overrides.OutdatedService != nil {
+		syncer.outdatedSvc = overrides.OutdatedService
 	}
 
 	return syncer
@@ -618,6 +625,12 @@ func (s *VendorSyncer) ComplianceCheck(opts ComplianceOptions) (*types.Complianc
 // CompliancePropagate runs compliance check and propagates changes for internal vendors.
 func (s *VendorSyncer) CompliancePropagate(opts ComplianceOptions) (*types.ComplianceResult, error) {
 	return s.complianceService.Propagate(opts)
+}
+
+// Outdated checks if locked versions are behind upstream HEAD using git ls-remote.
+// ctx controls cancellation of ls-remote operations.
+func (s *VendorSyncer) Outdated(ctx context.Context, opts OutdatedOptions) (*types.OutdatedResult, error) {
+	return s.outdatedSvc.Outdated(ctx, opts)
 }
 
 // MigrateLockfile updates an existing lockfile to add missing metadata fields.

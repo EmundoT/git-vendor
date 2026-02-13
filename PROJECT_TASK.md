@@ -1,36 +1,38 @@
 ---
-status: complete
-assigned: 2026-02-12
+status: pending
+assigned: 2026-02-13
 updated: 2026-02-13
 project: git-vendor
 ---
 
 # Current Task
 
-Smoother init UX
+Local path sync (`--local` flag)
 
 ## Objective
 
-Auto-detect remote URL, suggest ecosystem bootstrap, and display next steps message after git-vendor init
+Bypass SEC-011 URL validation to allow `file://` or relative paths for local-first workflows. Unblocks private-branch workflows where remote URLs don't reflect the developer's working state. The flag is opt-in — default behavior unchanged.
 
 ## Acceptance Criteria
 
-- [x] Remote URL auto-detection implemented
-- [x] Ecosystem bootstrap suggestion added
-- [x] Next steps message displayed after init
-- [x] Existing init behavior preserved as fallback
+- [ ] `git-vendor sync --local` accepts `file://` and relative paths in vendor.yml
+- [ ] Relative paths resolved against the project root (location of vendor.yml)
+- [ ] SEC-011 validation skipped only when `--local` flag is present
+- [ ] `git-vendor update --local` also supports local paths
+- [ ] Error message when using local paths without `--local` explains the flag
+- [ ] Unit tests: relative path resolution, file:// URL handling, flag-absent rejection
+- [ ] Integration test: vendor from a sibling directory on the local filesystem
 
 ## Notes
 
-- 2026-02-13: Remote detection, next-steps, JSON/quiet output landed in 391a625.
-- 2026-02-13: Added ecosystem bootstrap suggestion — detects .githooks/ and .git-vendor-policy.yml presence. Shows actionable bootstrap commands when absent; confirms detection when present. Added HasHooks/HasPolicy to InitSummary struct, JSON output, and TUI display. 15 new tests (9 PrintInitSummary + 6 GetRemoteURL).
+- Previous task "`git-vendor outdated` command" completed 2026-02-13.
+- SEC-011 (ValidateVendorURL in internal/core/git_operations.go) currently blocks `file://`. The `--local` flag should bypass this specific check only, not other URL validation.
 
 ## Pending Tasks
 
-1. **`git-vendor outdated` command** — CLI command comparing lockfile hashes against upstream HEAD for each dependency. Exits non-zero when stale. Promotes sync-check.sh logic (currently bash in git-ecosystem) into a universal, CI-friendly feature any git-vendor consumer can use.
-2. **Local path sync (`--local` flag)** — Bypass SEC-011 URL validation to allow `file://` or relative paths for local-first workflows. Unblocks private-branch workflows where remote URLs don't reflect working state (~50-80 lines across 4 files)
-3. **Touch trailer support** — ROADMAP Task 5: emit Touch trailers on vendor sync commits listing affected code areas
-4. **vendor.update tag** — ROADMAP Task 8: structured tag for vendor update commits
-5. **Vendor diff preview before sync** — Show what files will change before committing a sync operation
-6. **Lock file conflict resolution** — Guided merge when vendor.lock has conflicts from concurrent changes
-7. **Multi-remote support** — Vendor from multiple upstream sources into the same project
+1. **Fix `update` positional vendor filter** — `git-vendor update <name>` updates ALL vendors instead of just the named one. The positional argument is accepted but ignored. Likely a bug in `main.go` or the update handler where the filter isn't passed through to the sync service.
+2. **Touch trailer support** — ROADMAP Task 5: emit Touch trailers on vendor sync commits listing affected code areas
+3. **vendor.update tag** — ROADMAP Task 8: structured tag for vendor update commits
+4. **Vendor diff preview before sync** — Show what files will change before committing a sync operation
+5. **Lock file conflict resolution** — Guided merge when vendor.lock has conflicts from concurrent changes
+6. **Multi-remote support** — Vendor from multiple upstream sources into the same project
