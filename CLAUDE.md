@@ -183,8 +183,9 @@ Detailed rules load automatically based on which files you're editing. See `.cla
 
 | Rule file | Loaded when editing | Contains |
 |-----------|-------------------|----------|
-| `architecture.md` | `internal/**/*.go` | Data model, DI pattern, service layer, context propagation |
-| `legacy-traps.md` | `internal/**/*.go` | Rejected approaches, format mismatches, known pitfalls |
+| `architecture.md` | `internal/**/*.go`, `main.go` | Data model, DI pattern, service layer, context propagation |
+| `go-atomic-edits.md` | `internal/**/*.go`, `main.go` | Cross-file interface edit safety (gopls revert prevention) |
+| `legacy-traps.md` | `internal/**/*.go` | Rejected approaches and deferred decisions only |
 | `testing.md` | `**/*_test.go` | Testing boundaries, mock gen, what's untested and why |
 | `security.md` | security-critical files | Path traversal, URL validation, hook threat model |
 | `position-extraction.md` | position/file_copy files | Syntax spec, pipeline, CRLF, column semantics |
