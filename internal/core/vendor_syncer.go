@@ -309,9 +309,9 @@ func (s *VendorSyncer) RemoveVendor(name string) error {
 	return s.update.UpdateAll(context.Background())
 }
 
-// syncWithAutoUpdate calls sync.Sync and falls back to UpdateAll on stale lockfile errors.
+// syncWithAutoUpdate calls sync.Sync and falls back to UpdateAllWithOptions on stale lockfile errors.
 // When a locked commit no longer exists in the remote (e.g., after force-push),
-// syncWithAutoUpdate regenerates the lockfile via UpdateAll, which also re-syncs files.
+// syncWithAutoUpdate regenerates the lockfile via UpdateAllWithOptions, which also re-syncs files.
 func (s *VendorSyncer) syncWithAutoUpdate(ctx context.Context, opts SyncOptions) error {
 	err := s.sync.Sync(ctx, opts)
 	if err == nil {
@@ -321,7 +321,7 @@ func (s *VendorSyncer) syncWithAutoUpdate(ctx context.Context, opts SyncOptions)
 		return err
 	}
 	fmt.Println("⚠ Stale lockfile detected — auto-updating...")
-	if updateErr := s.update.UpdateAll(ctx); updateErr != nil {
+	if updateErr := s.update.UpdateAllWithOptions(ctx, UpdateOptions{Local: opts.Local}); updateErr != nil {
 		return fmt.Errorf("auto-update after stale commit: %w", updateErr)
 	}
 	return nil
@@ -330,18 +330,7 @@ func (s *VendorSyncer) syncWithAutoUpdate(ctx context.Context, opts SyncOptions)
 // Sync performs locked synchronization.
 // ctx controls cancellation of git operations during sync.
 func (s *VendorSyncer) Sync(ctx context.Context) error {
-	// Check if lockfile exists, if not, run UpdateAll
-	lock, err := s.lockStore.Load()
-	if err != nil || len(lock.Vendors) == 0 {
-		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
-		if err := s.update.UpdateAll(ctx); err != nil {
-			return fmt.Errorf("generate lockfile: %w", err)
-		}
-		fmt.Println()
-		fmt.Println("Lockfile created. Now syncing files...")
-		return s.syncWithAutoUpdate(ctx, SyncOptions{})
-	}
-	return s.syncWithAutoUpdate(ctx, SyncOptions{})
+	return s.SyncWithFullOpts(ctx, SyncOptions{})
 }
 
 // SyncDryRun performs a dry-run sync.
@@ -359,17 +348,7 @@ func (s *VendorSyncer) SyncDryRun(ctx context.Context) error {
 // SyncWithOptions performs sync with vendor filter, force, and cache options.
 // ctx controls cancellation of git operations during sync.
 func (s *VendorSyncer) SyncWithOptions(ctx context.Context, vendorName string, force, noCache bool) error {
-	// Check if lockfile exists, if not, run UpdateAll
-	lock, err := s.lockStore.Load()
-	if err != nil || len(lock.Vendors) == 0 {
-		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
-		if err := s.update.UpdateAll(ctx); err != nil {
-			return fmt.Errorf("generate lockfile: %w", err)
-		}
-		fmt.Println()
-		fmt.Println("Lockfile created. Now syncing files...")
-	}
-	return s.syncWithAutoUpdate(ctx, SyncOptions{
+	return s.SyncWithFullOpts(ctx, SyncOptions{
 		VendorName: vendorName,
 		Force:      force,
 		NoCache:    noCache,
@@ -377,13 +356,13 @@ func (s *VendorSyncer) SyncWithOptions(ctx context.Context, vendorName string, f
 }
 
 // SyncWithFullOpts performs sync with a full SyncOptions struct.
-// Supports InternalOnly and Reverse flags for internal vendor compliance.
+// Supports InternalOnly, Reverse, and Local flags.
 func (s *VendorSyncer) SyncWithFullOpts(ctx context.Context, opts SyncOptions) error {
-	// Check if lockfile exists, if not, run UpdateAll
+	// Check if lockfile exists, if not, run UpdateAllWithOptions
 	lock, err := s.lockStore.Load()
 	if err != nil || len(lock.Vendors) == 0 {
 		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
-		if err := s.update.UpdateAll(ctx); err != nil {
+		if err := s.update.UpdateAllWithOptions(ctx, UpdateOptions{Local: opts.Local}); err != nil {
 			return fmt.Errorf("generate lockfile: %w", err)
 		}
 		fmt.Println()
@@ -395,17 +374,7 @@ func (s *VendorSyncer) SyncWithFullOpts(ctx context.Context, opts SyncOptions) e
 // SyncWithGroup performs sync for all vendors in a group.
 // ctx controls cancellation of git operations during sync.
 func (s *VendorSyncer) SyncWithGroup(ctx context.Context, groupName string, force, noCache bool) error {
-	// Check if lockfile exists, if not, run UpdateAll
-	lock, err := s.lockStore.Load()
-	if err != nil || len(lock.Vendors) == 0 {
-		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
-		if err := s.update.UpdateAll(ctx); err != nil {
-			return fmt.Errorf("generate lockfile: %w", err)
-		}
-		fmt.Println()
-		fmt.Println("Lockfile created. Now syncing files...")
-	}
-	return s.syncWithAutoUpdate(ctx, SyncOptions{
+	return s.SyncWithFullOpts(ctx, SyncOptions{
 		GroupName: groupName,
 		Force:     force,
 		NoCache:   noCache,
@@ -415,17 +384,7 @@ func (s *VendorSyncer) SyncWithGroup(ctx context.Context, groupName string, forc
 // SyncWithParallel performs sync with parallel processing.
 // ctx controls cancellation of git operations during sync.
 func (s *VendorSyncer) SyncWithParallel(ctx context.Context, vendorName string, force, noCache bool, parallelOpts types.ParallelOptions) error {
-	// Check if lockfile exists, if not, run UpdateAll
-	lock, err := s.lockStore.Load()
-	if err != nil || len(lock.Vendors) == 0 {
-		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
-		if err := s.update.UpdateAll(ctx); err != nil {
-			return fmt.Errorf("generate lockfile: %w", err)
-		}
-		fmt.Println()
-		fmt.Println("Lockfile created. Now syncing files...")
-	}
-	return s.syncWithAutoUpdate(ctx, SyncOptions{
+	return s.SyncWithFullOpts(ctx, SyncOptions{
 		VendorName: vendorName,
 		Force:      force,
 		NoCache:    noCache,
@@ -439,10 +398,10 @@ func (s *VendorSyncer) UpdateAll(ctx context.Context) error {
 	return s.update.UpdateAll(ctx)
 }
 
-// UpdateAllWithParallel updates all vendors with parallel processing.
+// UpdateAllWithOptions updates all vendors with optional parallel processing and local path support.
 // ctx controls cancellation of git operations during update.
-func (s *VendorSyncer) UpdateAllWithParallel(ctx context.Context, parallelOpts types.ParallelOptions) error {
-	return s.update.UpdateAllWithOptions(ctx, parallelOpts)
+func (s *VendorSyncer) UpdateAllWithOptions(ctx context.Context, opts UpdateOptions) error {
+	return s.update.UpdateAllWithOptions(ctx, opts)
 }
 
 // GetConfig returns the vendor configuration

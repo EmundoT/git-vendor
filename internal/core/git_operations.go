@@ -298,7 +298,7 @@ func ValidateVendorURL(rawURL string) error {
 	// Provide specific guidance for known dangerous schemes
 	switch scheme {
 	case "file":
-		return fmt.Errorf("URL scheme \"file://\" is not allowed: local filesystem access via vendor URLs is a security risk")
+		return fmt.Errorf("URL scheme \"file://\" is not allowed: local filesystem access via vendor URLs is a security risk (use --local flag to opt in)")
 	case "ftp", "ftps":
 		return fmt.Errorf("URL scheme %q is not allowed: FTP is insecure and not supported for git operations", lower[:strings.Index(lower, "://")+3])
 	default:

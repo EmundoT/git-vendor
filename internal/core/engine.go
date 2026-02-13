@@ -184,10 +184,10 @@ func (m *Manager) UpdateAll(ctx context.Context) error {
 	return m.syncer.UpdateAll(ctx)
 }
 
-// UpdateAllWithParallel updates all vendors with parallel processing.
+// UpdateAllWithOptions updates all vendors with optional parallel processing and local path support.
 // ctx controls cancellation of git operations during update.
-func (m *Manager) UpdateAllWithParallel(ctx context.Context, parallelOpts types.ParallelOptions) error {
-	return m.syncer.UpdateAllWithParallel(ctx, parallelOpts)
+func (m *Manager) UpdateAllWithOptions(ctx context.Context, opts UpdateOptions) error {
+	return m.syncer.UpdateAllWithOptions(ctx, opts)
 }
 
 // CheckGitHubLicense checks a repository's license via GitHub API

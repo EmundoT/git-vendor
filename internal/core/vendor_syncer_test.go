@@ -73,7 +73,7 @@ func (s *stubUpdateService) UpdateAll(_ context.Context) error {
 	return s.updateErr
 }
 
-func (s *stubUpdateService) UpdateAllWithOptions(_ context.Context, _ types.ParallelOptions) error {
+func (s *stubUpdateService) UpdateAllWithOptions(_ context.Context, _ UpdateOptions) error {
 	s.callCount++
 	return s.updateErr
 }
@@ -974,7 +974,7 @@ func TestVendorSyncer_MigrateLockfile_LoadError(t *testing.T) {
 }
 
 // ============================================================================
-// VendorSyncer.UpdateAll / UpdateAllWithParallel tests
+// VendorSyncer.UpdateAll / UpdateAllWithOptions tests
 // ============================================================================
 
 func TestVendorSyncer_UpdateAll(t *testing.T) {
@@ -987,13 +987,15 @@ func TestVendorSyncer_UpdateAll(t *testing.T) {
 	}
 }
 
-func TestVendorSyncer_UpdateAllWithParallel(t *testing.T) {
+func TestVendorSyncer_UpdateAllWithOptions(t *testing.T) {
 	update := &stubUpdateService{}
 	syncer := newTestSyncer(nil, nil, nil, &ServiceOverrides{Update: update})
 
-	err := syncer.UpdateAllWithParallel(context.Background(), types.ParallelOptions{Enabled: true, MaxWorkers: 2})
+	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{
+		Parallel: types.ParallelOptions{Enabled: true, MaxWorkers: 2},
+	})
 	if err != nil {
-		t.Fatalf("UpdateAllWithParallel() error = %v", err)
+		t.Fatalf("UpdateAllWithOptions() error = %v", err)
 	}
 }
 

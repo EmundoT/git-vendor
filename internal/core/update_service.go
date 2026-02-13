@@ -9,12 +9,18 @@ import (
 	"github.com/EmundoT/git-vendor/internal/types"
 )
 
+// UpdateOptions configures update operation behavior.
+type UpdateOptions struct {
+	Parallel types.ParallelOptions
+	Local    bool // Allow file:// and local path vendor URLs
+}
+
 // UpdateServiceInterface defines the contract for update operations and lockfile regeneration.
 // UpdateServiceInterface enables mocking in tests and alternative update strategies.
 // All methods accept a context.Context for cancellation support (e.g., Ctrl+C).
 type UpdateServiceInterface interface {
 	UpdateAll(ctx context.Context) error
-	UpdateAllWithOptions(ctx context.Context, parallelOpts types.ParallelOptions) error
+	UpdateAllWithOptions(ctx context.Context, opts UpdateOptions) error
 }
 
 // Compile-time interface satisfaction check.
@@ -55,27 +61,27 @@ func NewUpdateService(
 // UpdateAll updates all vendors and regenerates the lockfile.
 // ctx controls cancellation of git operations during update.
 func (s *UpdateService) UpdateAll(ctx context.Context) error {
-	return s.UpdateAllWithOptions(ctx, types.ParallelOptions{Enabled: false})
+	return s.UpdateAllWithOptions(ctx, UpdateOptions{})
 }
 
-// UpdateAllWithOptions updates all vendors with optional parallel processing.
+// UpdateAllWithOptions updates all vendors with optional parallel processing and local path support.
 // ctx controls cancellation of git operations during update.
-func (s *UpdateService) UpdateAllWithOptions(ctx context.Context, parallelOpts types.ParallelOptions) error {
+func (s *UpdateService) UpdateAllWithOptions(ctx context.Context, opts UpdateOptions) error {
 	config, err := s.configStore.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	if parallelOpts.Enabled {
-		return s.updateAllParallel(ctx, config, parallelOpts)
+	if opts.Parallel.Enabled {
+		return s.updateAllParallel(ctx, config, opts)
 	}
 
-	return s.updateAllSequential(ctx, config)
+	return s.updateAllSequential(ctx, config, opts.Local)
 }
 
 // updateAllSequential performs sequential update (original implementation).
 // ctx controls cancellation — checked at each vendor boundary.
-func (s *UpdateService) updateAllSequential(ctx context.Context, config types.VendorConfig) error {
+func (s *UpdateService) updateAllSequential(ctx context.Context, config types.VendorConfig, local bool) error {
 	// Load existing lock to preserve VendoredAt and VendoredBy
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
@@ -118,7 +124,7 @@ func (s *UpdateService) updateAllSequential(ctx context.Context, config types.Ve
 			updatedRefs = refs
 		} else {
 			// External vendor: sync via git
-			refs, _, err := s.syncService.SyncVendor(ctx, &v, nil, SyncOptions{Force: true, NoCache: true})
+			refs, _, err := s.syncService.SyncVendor(ctx, &v, nil, SyncOptions{Force: true, NoCache: true, Local: local})
 			if err != nil {
 				s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 				progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
@@ -192,7 +198,8 @@ func (s *UpdateService) updateAllSequential(ctx context.Context, config types.Ve
 
 // updateAllParallel performs parallel update using worker pool.
 // ctx controls cancellation — passed to the parallel executor and each worker.
-func (s *UpdateService) updateAllParallel(ctx context.Context, config types.VendorConfig, parallelOpts types.ParallelOptions) error {
+func (s *UpdateService) updateAllParallel(ctx context.Context, config types.VendorConfig, opts UpdateOptions) error {
+	parallelOpts := opts.Parallel
 	// Load existing lock to preserve VendoredAt and VendoredBy
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
@@ -276,8 +283,9 @@ func (s *UpdateService) updateAllParallel(ctx context.Context, config types.Vend
 
 	// Phase 2: External vendors — parallel
 	// Define update function for a single vendor
-	updateFunc := func(workerCtx context.Context, v types.VendorSpec, opts SyncOptions) (map[string]RefMetadata, error) {
-		updatedRefs, _, err := s.syncService.SyncVendor(workerCtx, &v, nil, opts)
+	updateFunc := func(workerCtx context.Context, v types.VendorSpec, syncOpts SyncOptions) (map[string]RefMetadata, error) {
+		syncOpts.Local = opts.Local
+		updatedRefs, _, err := s.syncService.SyncVendor(workerCtx, &v, nil, syncOpts)
 		if err != nil {
 			s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 			progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))

@@ -17,7 +17,7 @@ Rejected in favor of git's null-byte heuristic (scan first 8000 bytes for \x00).
 ComputeFileChecksum returns bare hex, but ExtractPosition returns "sha256:<hex>". When comparing in verifyPositions for whole-file destinations (destPos == nil), MUST normalize ComputeFileChecksum output to "sha256:" prefix. Mixing formats causes false drift detection.
 
 ### file:// URLs in vendor.yml
-MUST NOT allow file:// scheme. ValidateVendorURL() rejects file://, ftp://, javascript:, data:. Only https://, http://, ssh://, git://, git+ssh://, and SCP-style (git@host:path) accepted (SEC-011).
+ValidateVendorURL() (SEC-011) rejects file://, ftp://, javascript:, data: by default. Only https://, http://, ssh://, git://, git+ssh://, and SCP-style (git@host:path) accepted without flags. The `--local` flag on `sync` and `update` commands opts in to file:// and local filesystem paths. SyncVendor checks IsLocalPath() before git operations and resolves relative paths via ResolveLocalURL(). Without `--local`, local paths produce an error with a hint.
 
 ### Logging URLs with credentials
 MUST NOT include raw URLs in error messages when URL may contain embedded credentials. Use SanitizeURL() to strip userinfo (SEC-013).

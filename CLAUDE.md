@@ -126,8 +126,8 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 
 ## sync vs update
 
-- **sync**: Fetch dependencies at locked commit hashes (deterministic). Uses `--depth 1` for shallow clones. Falls back to full fetch for stale commits. With `--internal`: syncs only internal vendors (no network).
-- **update**: Fetch latest commits and regenerate entire lockfile.
+- **sync**: Fetch dependencies at locked commit hashes (deterministic). Uses `--depth 1` for shallow clones. Falls back to full fetch for stale commits. With `--internal`: syncs only internal vendors (no network). With `--local`: allows `file://` and local filesystem paths in vendor URLs.
+- **update**: Fetch latest commits and regenerate entire lockfile. With `--local`: allows `file://` and local filesystem paths in vendor URLs.
 - **outdated**: Lightweight staleness check via `git ls-remote` (1 command per vendor, no temp dirs). Read-only — does not modify lockfile. Exit code 1 = stale. CI-friendly alternative to `check-updates`.
 
 ## Design Principles
@@ -165,6 +165,7 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 8. **SourceFileHashes population**: Only populated during internal sync. Keyed by source file path (file-level granularity, position specs stripped before keying).
 9. **Position auto-update scope**: `updatePositionSpecs` only adjusts line-range specs (`L5-L20`). ToEOF specs auto-expand (no update). Column specs NOT auto-updated (documented limitation).
 10. **Stale `vendor/` directory**: Go's `vendor/` (gitignored) overrides `replace` directives. After adding/modifying files in `pkg/git-plumbing/`, MUST run `make vendor` (or `go mod vendor`) before build/test. Symptoms: `undefined: git.<NewSymbol>` despite the symbol existing in `pkg/git-plumbing/`.
+11. **Local paths require `--local` flag**: `file://`, relative paths (`./`, `../`), and absolute filesystem paths are blocked by default in vendor URLs (SEC-011). Pass `--local` to `sync`/`update` to opt in. `IsLocalPath()` detects local URLs; `ResolveLocalURL()` resolves relative paths against the project root. Without `--local`, SyncVendor returns an error with a hint.
 
 ## Common Patterns
 
