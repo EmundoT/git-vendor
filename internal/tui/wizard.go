@@ -533,11 +533,14 @@ func PrintHelp() {
 type InitSummary struct {
 	VendorDir string // Relative path to the vendor directory (e.g. ".git-vendor")
 	OriginURL string // Detected origin remote URL, empty if unavailable
+	HasHooks  bool   // True when .githooks/ directory exists (ecosystem hooks detected)
+	HasPolicy bool   // True when .git-vendor-policy.yml already exists
 }
 
-// PrintInitSummary displays a rich post-init summary with detected origin
-// and actionable next steps. Omits origin line when OriginURL is empty
-// (not a git repo or no origin remote configured).
+// PrintInitSummary displays a rich post-init summary with detected origin,
+// ecosystem bootstrap suggestions, and actionable next steps. Omits origin
+// line when OriginURL is empty (not a git repo or no origin remote configured).
+// Shows ecosystem bootstrap hint when .githooks/ is absent.
 func PrintInitSummary(summary InitSummary) {
 	PrintSuccess("Initialized in ./" + summary.VendorDir + "/")
 	fmt.Println()
@@ -547,8 +550,24 @@ func PrintInitSummary(summary InitSummary) {
 		fmt.Println()
 	}
 
-	PrintInfo("Tip: Create .git-vendor-policy.yml for license compliance enforcement")
-	fmt.Println()
+	// Ecosystem bootstrap suggestion: show when .githooks/ is absent.
+	// Projects with .githooks/ already have commit-schema hooks configured.
+	if summary.HasHooks {
+		PrintInfo("  Ecosystem hooks: .githooks/ detected")
+		fmt.Println()
+	} else {
+		PrintWarning("Ecosystem", "No .githooks/ directory found")
+		fmt.Println("  Bootstrap commit-schema hooks for automated commit enrichment:")
+		fmt.Println("    mkdir .githooks && git config core.hooksPath .githooks")
+		fmt.Println("  See: git-ecosystem/rules/commit-schema-tags.md")
+		fmt.Println()
+	}
+
+	if !summary.HasPolicy {
+		PrintInfo("Tip: Create .git-vendor-policy.yml for license compliance enforcement")
+		fmt.Println()
+	}
+
 	fmt.Println("Next steps:")
 	fmt.Println("  git-vendor add       # Add your first dependency (interactive)")
 	fmt.Println("  git-vendor sync      # Download files at locked versions")

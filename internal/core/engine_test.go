@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -303,5 +305,122 @@ func TestNewVendorSyncer_NilOverrides(t *testing.T) {
 	}
 	if syncer.vulnScanner == nil {
 		t.Error("Expected default VulnScanner")
+	}
+}
+
+// ============================================================================
+// GetRemoteURL Tests
+// ============================================================================
+
+func TestManager_GetRemoteURL_ReturnsOrigin(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockGit := NewMockGitClient(ctrl)
+	syncer := createMockSyncer(mockGit, NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	manager := NewManagerWithSyncer(syncer)
+
+	mockGit.EXPECT().ConfigGet(gomock.Any(), ".", "remote.origin.url").Return("https://github.com/owner/repo.git", nil)
+
+	ctx := context.Background()
+	url := manager.GetRemoteURL(ctx, "origin")
+	if url != "https://github.com/owner/repo.git" {
+		t.Errorf("GetRemoteURL() = %q, want %q", url, "https://github.com/owner/repo.git")
+	}
+}
+
+func TestManager_GetRemoteURL_SanitizesCredentials(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockGit := NewMockGitClient(ctrl)
+	syncer := createMockSyncer(mockGit, NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	manager := NewManagerWithSyncer(syncer)
+
+	// SEC-013: embedded credentials must be stripped
+	mockGit.EXPECT().ConfigGet(gomock.Any(), ".", "remote.origin.url").Return("https://user:secret@github.com/owner/repo.git", nil)
+
+	ctx := context.Background()
+	url := manager.GetRemoteURL(ctx, "origin")
+	if url == "" {
+		t.Fatal("GetRemoteURL() returned empty, expected sanitized URL")
+	}
+	if contains(url, "secret") {
+		t.Errorf("GetRemoteURL() = %q, credentials not sanitized", url)
+	}
+	if contains(url, "user:") {
+		t.Errorf("GetRemoteURL() = %q, userinfo not stripped", url)
+	}
+}
+
+func TestManager_GetRemoteURL_EmptyOnError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockGit := NewMockGitClient(ctrl)
+	syncer := createMockSyncer(mockGit, NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	manager := NewManagerWithSyncer(syncer)
+
+	// Not a git repo or no remote configured
+	mockGit.EXPECT().ConfigGet(gomock.Any(), ".", "remote.origin.url").Return("", errors.New("not a git repository"))
+
+	ctx := context.Background()
+	url := manager.GetRemoteURL(ctx, "origin")
+	if url != "" {
+		t.Errorf("GetRemoteURL() = %q, want empty on error", url)
+	}
+}
+
+func TestManager_GetRemoteURL_EmptyOnEmptyValue(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockGit := NewMockGitClient(ctrl)
+	syncer := createMockSyncer(mockGit, NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	manager := NewManagerWithSyncer(syncer)
+
+	// ConfigGet returns empty string (no remote.origin.url set)
+	mockGit.EXPECT().ConfigGet(gomock.Any(), ".", "remote.origin.url").Return("", nil)
+
+	ctx := context.Background()
+	url := manager.GetRemoteURL(ctx, "origin")
+	if url != "" {
+		t.Errorf("GetRemoteURL() = %q, want empty when config value empty", url)
+	}
+}
+
+func TestManager_GetRemoteURL_OtherRemote(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockGit := NewMockGitClient(ctrl)
+	syncer := createMockSyncer(mockGit, NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	manager := NewManagerWithSyncer(syncer)
+
+	// GetRemoteURL should work with any remote name, not just "origin"
+	mockGit.EXPECT().ConfigGet(gomock.Any(), ".", "remote.upstream.url").Return("https://github.com/upstream/repo.git", nil)
+
+	ctx := context.Background()
+	url := manager.GetRemoteURL(ctx, "upstream")
+	if url != "https://github.com/upstream/repo.git" {
+		t.Errorf("GetRemoteURL('upstream') = %q, want upstream URL", url)
+	}
+}
+
+func TestManager_GetRemoteURL_SCPStyle(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockGit := NewMockGitClient(ctrl)
+	syncer := createMockSyncer(mockGit, NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	manager := NewManagerWithSyncer(syncer)
+
+	// SCP-style URLs should pass through SanitizeURL without error
+	mockGit.EXPECT().ConfigGet(gomock.Any(), ".", "remote.origin.url").Return("git@github.com:owner/repo.git", nil)
+
+	ctx := context.Background()
+	url := manager.GetRemoteURL(ctx, "origin")
+	if url != "git@github.com:owner/repo.git" {
+		t.Errorf("GetRemoteURL() = %q, want SCP-style URL preserved", url)
 	}
 }
