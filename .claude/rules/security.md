@@ -2,6 +2,7 @@
 paths:
   - "internal/core/filesystem.go"
   - "internal/core/git_operations.go"
+  - "internal/core/local_path.go"
   - "internal/core/hook_service.go"
   - "internal/core/position_extract.go"
   - "internal/core/github_client.go"
@@ -20,9 +21,9 @@ ValidateDestPath (filesystem.go) is the security boundary:
 
 ## URL Scheme Validation (SEC-011)
 
-ValidateVendorURL() rejects dangerous schemes: file://, ftp://, javascript:, data:
+ValidateVendorURL() rejects dangerous schemes: file://, ftp://, javascript:, data:.
 Allowed: https://, http://, ssh://, git://, git+ssh://, SCP-style (git@host:path), bare hostnames.
-Called during config validation.
+Called during config validation. The `--local` flag on sync/update bypasses file:// rejection at the SyncVendor level (ValidateVendorURL still rejects — the bypass is in SyncVendor via IsLocalPath/ResolveLocalURL).
 
 ## Credential Sanitization (SEC-013)
 
