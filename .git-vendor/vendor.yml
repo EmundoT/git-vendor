@@ -76,6 +76,9 @@ vendors:
             to: .githooks/commit-msg
           - from: hooks/pre-commit
             to: .githooks/pre-commit
+          # CI workflows (vendored to .github/workflows/)
+          - from: workflows/commit-schema-validate.yml
+            to: .github/workflows/commit-schema-validate.yml
           # Docs (canonical copies — kept in sync via vendor)
           - from: COMMIT-SCHEMA.md
             to: docs/COMMIT-SCHEMA.md
