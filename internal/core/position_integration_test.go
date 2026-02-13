@@ -73,6 +73,9 @@ func (s *stubGitClient) GetNote(_ context.Context, _, _, _ string) (string, erro
 	return "", nil
 }
 func (s *stubGitClient) ConfigSet(_ context.Context, _, _, _ string) error { return nil }
+func (s *stubGitClient) ConfigGet(_ context.Context, _, _ string) (string, error) {
+	return "", nil
+}
 
 // stubLicenseService and stubHookExecutor are defined in testhelpers_gomock_test.go.
 

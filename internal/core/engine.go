@@ -100,6 +100,17 @@ func (m *Manager) Init() error {
 	return m.syncer.Init()
 }
 
+// GetRemoteURL returns the sanitized URL for a git remote (e.g. "origin").
+// Returns empty string on any error — not a git repo, no remote configured, etc.
+// SEC-013: Output is sanitized via SanitizeURL to strip embedded credentials.
+func (m *Manager) GetRemoteURL(ctx context.Context, remoteName string) string {
+	val, err := m.syncer.gitClient.ConfigGet(ctx, ".", "remote."+remoteName+".url")
+	if err != nil || val == "" {
+		return ""
+	}
+	return SanitizeURL(val)
+}
+
 // ParseSmartURL extracts repository, ref, and path from URLs
 func (m *Manager) ParseSmartURL(rawURL string) (string, string, string) {
 	return m.syncer.ParseSmartURL(rawURL)

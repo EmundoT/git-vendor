@@ -26,7 +26,8 @@ make vendor
 
 # Generate mocks (required before first test run or after interface changes)
 # Automatically runs `make vendor` first
-make mocks
+make mocks                    # Unix (requires make)
+powershell scripts/mocks.ps1  # Windows (no make required)
 
 # Tests
 go test ./...

@@ -96,11 +96,44 @@ func main() {
 
 	switch command {
 	case "init":
+		flags, _ := parseCommonFlags(os.Args[2:])
+
 		if err := manager.Init(); err != nil {
-			tui.PrintError("Initialization Failed", err.Error())
+			if flags.Mode == core.OutputJSON {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				_ = enc.Encode(core.JSONOutput{
+					Status: "error",
+					Error:  &core.JSONError{Title: "Initialization Failed", Message: err.Error()},
+				})
+			} else {
+				tui.PrintError("Initialization Failed", err.Error())
+			}
 			os.Exit(1)
 		}
-		tui.PrintSuccess("Initialized in ./" + core.VendorDir + "/")
+
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer cancel()
+		originURL := manager.GetRemoteURL(ctx, "origin")
+
+		switch flags.Mode {
+		case core.OutputJSON:
+			data := map[string]interface{}{"vendor_dir": core.VendorDir}
+			if originURL != "" {
+				data["origin_url"] = originURL
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(core.JSONOutput{
+				Status:  "success",
+				Message: "Initialized in ./" + core.VendorDir + "/",
+				Data:    data,
+			})
+		case core.OutputQuiet:
+			// No output
+		default:
+			tui.PrintInitSummary(tui.InitSummary{VendorDir: core.VendorDir, OriginURL: originURL})
+		}
 
 	case "add":
 		if !core.IsVendorInitialized() {

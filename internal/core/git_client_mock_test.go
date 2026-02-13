@@ -124,6 +124,21 @@ func (mr *MockGitClientMockRecorder) Commit(ctx, dir, opts interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockGitClient)(nil).Commit), ctx, dir, opts)
 }
 
+// ConfigGet mocks base method.
+func (m *MockGitClient) ConfigGet(ctx context.Context, dir, key string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConfigGet", ctx, dir, key)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ConfigGet indicates an expected call of ConfigGet.
+func (mr *MockGitClientMockRecorder) ConfigGet(ctx, dir, key interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfigGet", reflect.TypeOf((*MockGitClient)(nil).ConfigGet), ctx, dir, key)
+}
+
 // ConfigSet mocks base method.
 func (m *MockGitClient) ConfigSet(ctx context.Context, dir, key, value string) error {
 	m.ctrl.T.Helper()

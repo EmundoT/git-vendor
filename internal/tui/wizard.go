@@ -529,6 +529,32 @@ func PrintHelp() {
 	fmt.Println("  Press Ctrl+C to cancel at any time")
 }
 
+// InitSummary holds data for the post-init output display.
+type InitSummary struct {
+	VendorDir string // Relative path to the vendor directory (e.g. ".git-vendor")
+	OriginURL string // Detected origin remote URL, empty if unavailable
+}
+
+// PrintInitSummary displays a rich post-init summary with detected origin
+// and actionable next steps. Omits origin line when OriginURL is empty
+// (not a git repo or no origin remote configured).
+func PrintInitSummary(summary InitSummary) {
+	PrintSuccess("Initialized in ./" + summary.VendorDir + "/")
+	fmt.Println()
+
+	if summary.OriginURL != "" {
+		PrintInfo("  Detected origin: " + summary.OriginURL)
+		fmt.Println()
+	}
+
+	PrintInfo("Tip: Create .git-vendor-policy.yml for license compliance enforcement")
+	fmt.Println()
+	fmt.Println("Next steps:")
+	fmt.Println("  git-vendor add       # Add your first dependency (interactive)")
+	fmt.Println("  git-vendor sync      # Download files at locked versions")
+	fmt.Println("  git-vendor validate  # Check configuration integrity")
+}
+
 // ShowConflictWarnings displays any path conflicts involving the given vendor
 func ShowConflictWarnings(mgr VendorManager, vendorName string) {
 	conflicts, err := mgr.DetectConflicts()
