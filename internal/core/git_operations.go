@@ -32,6 +32,7 @@ type GitClient interface {
 	AddNote(ctx context.Context, dir, noteRef, commitHash, content string) error
 	GetNote(ctx context.Context, dir, noteRef, commitHash string) (string, error)
 	ConfigSet(ctx context.Context, dir, key, value string) error
+	ConfigGet(ctx context.Context, dir, key string) (string, error)
 }
 
 // SystemGitClient implements GitClient using system git commands
@@ -196,6 +197,12 @@ func (g *SystemGitClient) GetNote(ctx context.Context, dir, noteRef, commitHash 
 // ConfigSet delegates to git-plumbing's ConfigSet for the given directory.
 func (g *SystemGitClient) ConfigSet(ctx context.Context, dir, key, value string) error {
 	return g.gitFor(dir).ConfigSet(ctx, key, value)
+}
+
+// ConfigGet reads a git config value by key.
+// ConfigGet delegates to git-plumbing's ConfigGet for the given directory.
+func (g *SystemGitClient) ConfigGet(ctx context.Context, dir, key string) (string, error) {
+	return g.gitFor(dir).ConfigGet(ctx, key)
 }
 
 // GetGitUserIdentity returns the git user identity in "Name <email>" format.
