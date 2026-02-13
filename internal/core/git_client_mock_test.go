@@ -269,3 +269,18 @@ func (mr *MockGitClientMockRecorder) ListTree(ctx, dir, ref, subdir interface{})
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTree", reflect.TypeOf((*MockGitClient)(nil).ListTree), ctx, dir, ref, subdir)
 }
+
+// LsRemote mocks base method.
+func (m *MockGitClient) LsRemote(ctx context.Context, url, ref string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LsRemote", ctx, url, ref)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LsRemote indicates an expected call of LsRemote.
+func (mr *MockGitClientMockRecorder) LsRemote(ctx, url, ref interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LsRemote", reflect.TypeOf((*MockGitClient)(nil).LsRemote), ctx, url, ref)
+}

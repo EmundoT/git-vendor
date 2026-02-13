@@ -33,6 +33,7 @@ type GitClient interface {
 	GetNote(ctx context.Context, dir, noteRef, commitHash string) (string, error)
 	ConfigSet(ctx context.Context, dir, key, value string) error
 	ConfigGet(ctx context.Context, dir, key string) (string, error)
+	LsRemote(ctx context.Context, url, ref string) (string, error)
 }
 
 // SystemGitClient implements GitClient using system git commands
@@ -203,6 +204,13 @@ func (g *SystemGitClient) ConfigSet(ctx context.Context, dir, key, value string)
 // ConfigGet delegates to git-plumbing's ConfigGet for the given directory.
 func (g *SystemGitClient) ConfigGet(ctx context.Context, dir, key string) (string, error) {
 	return g.gitFor(dir).ConfigGet(ctx, key)
+}
+
+// LsRemote queries a remote repository for the commit hash of a ref without cloning.
+// LsRemote delegates to git-plumbing's LsRemote. Dir is not needed since ls-remote
+// operates on the remote URL, but git-plumbing requires a Git instance; "." is used.
+func (g *SystemGitClient) LsRemote(ctx context.Context, url, ref string) (string, error) {
+	return g.gitFor(".").LsRemote(ctx, url, ref)
 }
 
 // GetGitUserIdentity returns the git user identity in "Name <email>" format.

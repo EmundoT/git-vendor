@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // CloneOpts configures a clone operation.
@@ -58,4 +59,49 @@ func (g *Git) FetchAll(ctx context.Context, remote string) error {
 // Checkout checks out a ref (branch, tag, or commit hash).
 func (g *Git) Checkout(ctx context.Context, ref string) error {
 	return g.RunSilent(ctx, "checkout", ref)
+}
+
+// LsRemote queries a remote for the commit hash of a ref without cloning.
+// LsRemote handles branches (refs/heads/*) and tags (refs/tags/*^{} preferred
+// over lightweight refs/tags/*). Returns the resolved commit SHA.
+func (g *Git) LsRemote(ctx context.Context, url, ref string) (string, error) {
+	out, err := g.Run(ctx, "ls-remote", url, ref)
+	if err != nil {
+		return "", fmt.Errorf("ls-remote %s %s: %w", url, ref, err)
+	}
+	return ParseLsRemoteOutput(out, ref)
+}
+
+// ParseLsRemoteOutput extracts the commit hash from git ls-remote output.
+// When multiple lines match (e.g., annotated tags), ParseLsRemoteOutput prefers
+// the dereferenced entry (^{}) which points to the underlying commit.
+func ParseLsRemoteOutput(output, ref string) (string, error) {
+	if strings.TrimSpace(output) == "" {
+		return "", fmt.Errorf("no matching ref %q in ls-remote output", ref)
+	}
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	var bestHash string
+	for _, line := range lines {
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		hash := parts[0]
+		refName := parts[1]
+
+		// Prefer ^{} (dereferenced annotated tag → commit)
+		if strings.HasSuffix(refName, "^{}") {
+			return hash, nil
+		}
+		// Keep first match as fallback
+		if bestHash == "" {
+			bestHash = hash
+		}
+	}
+
+	if bestHash == "" {
+		return "", fmt.Errorf("no matching ref %q in ls-remote output", ref)
+	}
+	return bestHash, nil
 }

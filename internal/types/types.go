@@ -162,12 +162,23 @@ type ProgressTracker interface {
 
 // UpdateCheckResult represents an available update for a vendor
 type UpdateCheckResult struct {
-	VendorName  string
-	Ref         string
-	CurrentHash string
-	LatestHash  string
-	LastUpdated string
-	UpToDate    bool
+	VendorName  string `json:"vendor_name"`
+	Ref         string `json:"ref"`
+	CurrentHash string `json:"current_hash"`
+	LatestHash  string `json:"latest_hash"`
+	LastUpdated string `json:"last_updated"`
+	UpToDate    bool   `json:"up_to_date"`
+}
+
+// OutdatedResult aggregates the results of checking all vendors for staleness.
+// OutdatedResult is returned by OutdatedService.Outdated and consumed by the
+// "outdated" CLI command for both human-readable and JSON output.
+type OutdatedResult struct {
+	Dependencies []UpdateCheckResult `json:"dependencies"`
+	TotalChecked int                 `json:"total_checked"`
+	Outdated     int                 `json:"outdated"`
+	UpToDate     int                 `json:"up_to_date"`
+	Skipped      int                 `json:"skipped"`
 }
 
 // CommitInfo represents a single git commit
