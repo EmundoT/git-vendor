@@ -109,7 +109,7 @@ func HookCommitMsg(_ context.Context, msg string) (string, []string, error) {
 			}
 			// Validate each tag in the list
 			for _, tag := range ParseTagList(lower) {
-				if !isValidTag(tag) {
+				if !IsValidTag(tag) {
 					warnings = append(warnings, fmt.Sprintf("invalid tag syntax in %s: %q", key, tag))
 				}
 			}
@@ -142,10 +142,10 @@ func HookCommitMsg(_ context.Context, msg string) (string, []string, error) {
 	return joined, warnings, nil
 }
 
-// isValidTag reports whether tag matches the canonical tag regex pattern:
+// IsValidTag reports whether tag matches the canonical tag regex pattern:
 // starts with lowercase letter, contains only lowercase letters, digits,
 // dots, and hyphens, and is at most maxTagLen characters.
-func isValidTag(tag string) bool {
+func IsValidTag(tag string) bool {
 	if tag == "" || len(tag) > maxTagLen {
 		return false
 	}

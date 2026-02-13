@@ -2,9 +2,9 @@ schema_version: "1.2"
 vendors:
     - name: git-plumbing
       ref: main
-      commit_hash: 4152629f59412164ee6af3e2bfa6e83d2c7f5e72
+      commit_hash: 7b8bfc212dfb0d89a891665e33d4681ebf5c4442
       license_path: .git-vendor\licenses\git-plumbing.txt
-      updated: "2026-02-12T06:42:27Z"
+      updated: "2026-02-13T08:12:14Z"
       file_hashes:
         pkg/git-plumbing/branch.go: 4f7989bd438e932204d0c39ce8b8ed59c3734c5d6058a09f574caea8baa635be
         pkg/git-plumbing/commit.go: ed816f4b7a18210afb8cbe6b44df30954cb060bfeac1393e429ac9452fd7ec74
@@ -14,7 +14,7 @@ vendors:
         pkg/git-plumbing/errors.go: 170ae008ffd450fdc0eef6f42afa525492afa0e5073ca2071e80793592e30482
         pkg/git-plumbing/git.go: 9356d1a8bfb86666b85515c4497540084c9e7af6d059782445f87f0be32485ea
         pkg/git-plumbing/go.mod: fc7e17da6efea393520179ae5d4b63a2e5c4f30cf60222435ad8d58358907d13
-        pkg/git-plumbing/hook.go: bd1a1b629896c3a7b1e53becb549bfe22ebc6f29793f2850aa604346670881e0
+        pkg/git-plumbing/hook.go: fb057518a3e5f769fedc3279c9f872f0ab21820e78dbbf376f16d4079e388edf
         pkg/git-plumbing/log.go: 4b6075023fb8bd9ba13c29861863caa863ac12b8c12158d0940706ac6e5fcae1
         pkg/git-plumbing/notes.go: 8ba85c12962abde0140fa4ff07b0e1f4f7444a646768a8010038229df0fc9228
         pkg/git-plumbing/refs.go: d91b86ed288f76517cebba0b92280301b3cba1d9e3fe436de7fbef52e0eaec2d
@@ -31,24 +31,25 @@ vendors:
       license_spdx: MIT
       vendored_at: "2026-02-09T12:00:00Z"
       vendored_by: Claude <noreply@anthropic.com>
-      last_synced_at: "2026-02-12T06:42:27Z"
+      last_synced_at: "2026-02-13T08:12:14Z"
     - name: git-ecosystem
       ref: main
-      commit_hash: f1155137713124b2d81886d52a365d979fce9e36
+      commit_hash: 61540b9520f603a3f6968ade8d83dca92e543b92
       license_path: .git-vendor\licenses\git-ecosystem.txt
-      updated: "2026-02-12T06:42:27Z"
+      updated: "2026-02-13T08:12:14Z"
       file_hashes:
-        .claude/hooks/env.sh: 430c9860a3fd6fc44a141304fe5c868ba5c2215931fec7a63ee44ceb5b928f5f
-        .claude/hooks/go-format.sh: 02ea7ddd2b063f5e9ecf071c0c78a7cc85f5e41e98a3142f0d45979814d74998
-        .claude/hooks/go-verify.sh: e15d9d8cc6b4533f3103fca7782e2e887c6056929fb0477ccb95cb163bbd3a56
-        .claude/rules/commit-schema-tags.md: 7a8bf78b4113e8dcd0141dc845e028b361667786aab42bdc7dc1a1cdf46f22ac
-        .claude/rules/ecosystem-protocol.md: 75de7b6c60d9a4415b2bed00c592d627faa8f0b83b3b68df12dee261e6508769
+        .claude/hooks/env.sh: e7d5524e4d4540ac4d5844a88c8e0d15d75e6fabdbdba225fe2f5ad0429d48f2
+        .claude/hooks/go-format.sh: 73020d916c670d2cb77088f3be4a502e040fb93cffaafec7672de0a593db0304
+        .claude/hooks/go-verify.sh: c229b4c87b696897dacd825cfd1c2af150970b6f27b1f6abc0ba13632927950a
+        .claude/rules/commit-schema-tags.md: 7e39ab9f808f4c31d1dce9e4b096dd49e7c47280bd2888a30377e4b3e77c85bf
+        .claude/rules/ecosystem-protocol.md: 0e30a97cc77584dbf13f4861b0099994e1ee3cb2853aaa0f73aca79f52e6986c
+        .claude/rules/project-task.md: 8d73467c517b6e471d327e12b599309abb61caebb9f9b8c5f44044d69ae057cf
         .claude/skills/commit-schema/SKILL.md: 1480e2526a3fd5d02d4ae1510814f78c94d6aa460b376db9957cc8769758da9c
-        .githooks/commit-msg: 88e7d7ad82d167127aa4bfaae0914d88090f688a406410c84190b62936059fb8
-        .githooks/pre-commit: f031345894d090a1f4a105114bd6208f8edda5f55829f0bea5aa365315dd8050
-        .githooks/prepare-commit-msg: 603e5b5cb78f2b7d03450411de9cb0652275b7ee814e20728c4a07c1207c4a8a
+        .githooks/commit-msg: d7e7569973647d1824e29f6eddb6c6c1e387e9769314e7d874fa320c1256a6a6
+        .githooks/pre-commit: 8777807936321a2ccbff55c5de11638a4049688741422fada8da6a53b101a728
+        .githooks/prepare-commit-msg: 852bd74814260542cd3db2e1db4fdb119b32bd9c3751b8e9cb5125d27125b9be
         docs/COMMIT-COOKBOOK.md: e954cc547f0d2e61867983eadd6d949c7ddc1f148465025586610e53f50000c1
         docs/COMMIT-SCHEMA.md: 313ec2bb5f6868382f4133fc17977a6a456dac644f19c5c6dcd6daba74c615b2
       vendored_at: "2026-02-11T19:49:11Z"
       vendored_by: EmundoT <emtheredia@gmail.com>
-      last_synced_at: "2026-02-12T06:42:27Z"
+      last_synced_at: "2026-02-13T08:12:14Z"
