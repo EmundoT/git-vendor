@@ -76,7 +76,7 @@ internal/
   version/                       # Build version injection via ldflags
 docs/                            # Human-facing documentation
 .claude/
-  commands/                      # Workflow skills (code review, security audit, etc.)
+  skills/                        # Project-specific skills (migration-planner, grc-auditor)
   rules/                         # Contextual rules (loaded by file path)
 ```
 
@@ -198,4 +198,3 @@ Detailed rules load automatically based on which files you're editing. See `.cla
 - `docs/CONFIGURATION.md` — vendor.yml and policy file format
 - `docs/ROADMAP.md` — Development roadmap and phases
 - `docs/TROUBLESHOOTING.md` — Common issues and solutions
-- `.claude/commands/PROJECT_PRIMER.md` — Onboarding skill (`/PROJECT_PRIMER`)

@@ -1,5 +1,6 @@
 ---
-disable-model-invocation: true
+description: Plan and verify vendor.lock schema migrations with backward compatibility analysis, drift classification, and migration prompt generation
+allowed-tools: Bash, Read, Glob, Grep, Write, Edit, Task
 ---
 
 # Migration Planner Workflow
@@ -134,7 +135,7 @@ For each migration, document:
 
 ### Prompt Template
 
-```
+```text
 TASK: Implement lockfile schema change for [Feature ID]
 
 SCHEMA CHANGE:
@@ -201,9 +202,9 @@ Check `docs/ROADMAP.md` Section 12 (Dependency Map):
 
 | Scenario | Test |
 |----------|------|
-| Old lockfile → New CLI | Parse succeeds, migration applied |
-| New lockfile → Old CLI | Parse succeeds (unknown fields ignored) |
-| Round-trip | Read → Write → Read preserves data |
+| Old lockfile -> New CLI | Parse succeeds, migration applied |
+| New lockfile -> Old CLI | Parse succeeds (unknown fields ignored) |
+| Round-trip | Read -> Write -> Read preserves data |
 | Missing optional fields | Defaults applied correctly |
 
 ### Prompts Generated
@@ -344,7 +345,7 @@ OldField string `yaml:"old_field,omitempty"` // Deprecated: use NewField
 ### Test Fixtures
 
 Create test lockfiles in `testdata/`:
-```
+```text
 testdata/
 ├── lockfile-v1.0.yml     # Minimal v1.0 lockfile
 ├── lockfile-v1.1.yml     # With new fields
