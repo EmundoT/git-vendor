@@ -109,12 +109,12 @@ func (s *VendorSyncer) DiffVendorWithOptions(opts DiffOptions) ([]types.VendorDi
 					return fmt.Errorf("failed to add remote: %w", err)
 				}
 
-				// Fetch the ref (full fetch to get all commits for diff)
-				if err := s.gitClient.FetchAll(ctx, tempDir); err != nil {
-					// Try fetching just the ref
-					if err := s.gitClient.Fetch(ctx, tempDir, 0, spec.Ref); err != nil {
-						return fmt.Errorf("failed to fetch ref '%s': %w", spec.Ref, err)
-					}
+				// Shallow fetch the target ref first (depth 20 covers the 10-commit
+				// log limit plus margin). Only deepen if the locked commit is not
+				// reachable in the shallow history.
+				const shallowDepth = 20
+				if err := s.gitClient.Fetch(ctx, tempDir, shallowDepth, spec.Ref); err != nil {
+					return fmt.Errorf("failed to fetch ref '%s': %w", spec.Ref, err)
 				}
 
 				// Get latest commit hash
@@ -128,10 +128,15 @@ func (s *VendorSyncer) DiffVendorWithOptions(opts DiffOptions) ([]types.VendorDi
 				}
 
 				// Get commit log between locked and latest
-				commits, err := s.gitClient.GetCommitLog(ctx, tempDir, lockedHash, latestHash, 10) // Limit to 10 commits
+				commits, err := s.gitClient.GetCommitLog(ctx, tempDir, lockedHash, latestHash, 10)
 				if err != nil {
-					// If the locked commit is not in history, it might be ahead or diverged
-					commits = []types.CommitInfo{}
+					// Locked commit not in shallow history — deepen and retry
+					if deepErr := s.gitClient.Fetch(ctx, tempDir, 0, spec.Ref); deepErr != nil {
+						// Full fetch also failed; return empty log (diverged or force-pushed)
+						commits = []types.CommitInfo{}
+					} else {
+						commits, _ = s.gitClient.GetCommitLog(ctx, tempDir, lockedHash, latestHash, 10)
+					}
 				}
 
 				// Get timestamp for latest commit if different

@@ -58,11 +58,11 @@ internal/
     position_extract.go          # Line/column extraction and placement
     git_operations.go            # GitClient interface + SystemGitClient
     filesystem.go                # FileSystem interface (I/O, path validation)
-    config_store.go / lock_store.go  # YAML I/O interfaces
+    config_store.go / lock_store.go  # YAML I/O interfaces + lock conflict detection/merge
     hook_service.go              # Pre/post sync shell hooks
     cache_store.go               # Incremental sync cache
     parallel_executor.go         # Worker pool for concurrent ops
-    diff_service.go / drift_service.go  # Diff and drift detection
+    diff_service.go / drift_service.go  # Diff (with DiffOptions filtering) and drift detection
     outdated_service.go              # Lightweight staleness check via git ls-remote
     commit_service.go            # COMMIT-SCHEMA v1 trailers + git notes
     config_commands.go           # LLM-friendly CLI (Spec 072)
@@ -127,8 +127,15 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 ## sync vs update
 
 - **sync**: Fetch dependencies at locked commit hashes (deterministic). Uses `--depth 1` for shallow clones. Falls back to full fetch for stale commits. With `--internal`: syncs only internal vendors (no network). With `--local`: allows `file://` and local filesystem paths in vendor URLs.
-- **update**: Fetch latest commits and regenerate entire lockfile. With `--local`: allows `file://` and local filesystem paths in vendor URLs.
+- **update**: Fetch latest commits and regenerate lockfile. Supports `<vendor-name>` positional arg and `--group <name>` for selective updates (non-targeted vendors retain existing lock entries). With `--local`: allows `file://` and local filesystem paths in vendor URLs.
+- **diff**: Compare locked vs latest commit per vendor. Supports `<vendor-name>`, `--ref <ref>`, `--group <name>` filters. `DiffVendorWithOptions(DiffOptions)` is the primary API; `DiffVendor(name)` is a backward-compatible wrapper.
 - **outdated**: Lightweight staleness check via `git ls-remote` (1 command per vendor, no temp dirs). Read-only — does not modify lockfile. Exit code 1 = stale. CI-friendly alternative to `check-updates`.
+
+## Lock Conflict Detection
+
+`FileLockStore.Load()` scans for git merge conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) before YAML parsing. Returns `LockConflictError` (wraps `ErrLockConflict` sentinel) with structured `LockConflict` entries (line number, ours/theirs raw content). `MergeLockEntries(ours, theirs)` performs programmatic three-way merge: later timestamp wins, lexicographic commit hash tiebreaker, unresolvable entries flagged in `LockMergeResult.Conflicts`.
+
+Key types in `internal/types/types.go`: `LockConflict`, `LockMergeConflict`, `LockMergeResult`.
 
 ## Design Principles
 
@@ -170,7 +177,7 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 ## Common Patterns
 
 - **Multi-ref tracking**: Multiple `specs` entries per vendor target different refs to different local paths
-- **Vendor groups**: `groups: ["frontend"]` on vendor specs enables `--group frontend` for batch operations
+- **Vendor groups**: `groups: ["frontend"]` on vendor specs enables `--group frontend` for batch operations on `sync`, `update`, and `diff`
 - **Custom hooks**: `hooks.pre_sync` / `hooks.post_sync` run shell commands; env vars `GIT_VENDOR_NAME`, `GIT_VENDOR_URL`, `GIT_VENDOR_REF`, `GIT_VENDOR_COMMIT`, `GIT_VENDOR_ROOT`, `GIT_VENDOR_FILES_COPIED` are injected
 - **Incremental cache**: SHA-256 checksums in `.git-vendor/.cache/` skip re-downloading unchanged files. Bypass with `--no-cache` or `--force`
 - **Parallel processing**: `--parallel [--workers N]` uses a worker pool for concurrent vendor operations (default workers: NumCPU, max 8)
