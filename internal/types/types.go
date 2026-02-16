@@ -12,6 +12,7 @@ type VendorConfig struct {
 type VendorSpec struct {
 	Name       string       `yaml:"name"`
 	URL        string       `yaml:"url"`
+	Mirrors    []string     `yaml:"mirrors,omitempty"`    // Fallback URLs, tried in declaration order after URL
 	License    string       `yaml:"license"`
 	Groups     []string     `yaml:"groups,omitempty"`     // Optional groups for batch operations
 	Hooks      *HookConfig  `yaml:"hooks,omitempty"`      // Optional pre/post sync hooks
@@ -69,6 +70,9 @@ type LockDetails struct {
 
 	// Position extraction metadata (spec 071)
 	Positions []PositionLock `yaml:"positions,omitempty"` // Position-extracted mappings with source hashes
+
+	// Multi-remote provenance (schema v1.3)
+	SourceURL string `yaml:"source_url,omitempty"` // Which URL actually served the content (empty = primary URL)
 
 	// Internal vendor metadata (spec 070)
 	Source           string            `yaml:"source,omitempty"`              // "internal" for internal vendors
