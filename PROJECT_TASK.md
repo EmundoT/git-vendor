@@ -1,32 +1,17 @@
 ---
-status: pending
+status: complete
 assigned: 2026-02-13
-updated: 2026-02-13
+updated: 2026-02-15
 project: git-vendor
 ---
 
 # Current Task
 
-Local path sync (`--local` flag)
+None — select from Pending Tasks below.
 
-## Objective
+## Completed
 
-Bypass SEC-011 URL validation to allow `file://` or relative paths for local-first workflows. Unblocks private-branch workflows where remote URLs don't reflect the developer's working state. The flag is opt-in — default behavior unchanged.
-
-## Acceptance Criteria
-
-- [ ] `git-vendor sync --local` accepts `file://` and relative paths in vendor.yml
-- [ ] Relative paths resolved against the project root (location of vendor.yml)
-- [ ] SEC-011 validation skipped only when `--local` flag is present
-- [ ] `git-vendor update --local` also supports local paths
-- [ ] Error message when using local paths without `--local` explains the flag
-- [ ] Unit tests: relative path resolution, file:// URL handling, flag-absent rejection
-- [ ] Integration test: vendor from a sibling directory on the local filesystem
-
-## Notes
-
-- Previous task "`git-vendor outdated` command" completed 2026-02-13.
-- SEC-011 (ValidateVendorURL in internal/core/git_operations.go) currently blocks `file://`. The `--local` flag should bypass this specific check only, not other URL validation.
+- **Local path sync (`--local` flag)** — completed 2026-02-13 (commit `73e1dd6`). `sync --local` and `update --local` accept `file://`, relative, and absolute filesystem paths. `IsLocalPath()` detects local URLs; `ResolveLocalURL()` resolves relative paths against project root. Without `--local`, returns error with hint.
 
 ## Pending Tasks
 
