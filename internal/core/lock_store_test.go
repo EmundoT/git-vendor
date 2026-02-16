@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -559,6 +560,286 @@ func TestFileLockStore_Save_SetsSchemaVersion(t *testing.T) {
 	}
 	if loaded.SchemaVersion != CurrentSchemaVersion {
 		t.Errorf("Loaded SchemaVersion = %q, want %q", loaded.SchemaVersion, CurrentSchemaVersion)
+	}
+}
+
+// ============================================================================
+// Merge Conflict Detection Tests
+// ============================================================================
+
+func TestDetectConflictsInData_NoConflicts(t *testing.T) {
+	data := []byte(`schema_version: "1.2"
+vendors:
+  - name: test
+    ref: main
+    commit_hash: abc123
+`)
+	err := detectConflictsInData(data)
+	if err != nil {
+		t.Errorf("detectConflictsInData() = %v, want nil", err)
+	}
+}
+
+func TestDetectConflictsInData_WithConflicts(t *testing.T) {
+	data := []byte(`schema_version: "1.2"
+vendors:
+<<<<<<< HEAD
+  - name: vendor-a
+    ref: main
+    commit_hash: abc123
+=======
+  - name: vendor-a
+    ref: main
+    commit_hash: def456
+>>>>>>> feature-branch
+`)
+	err := detectConflictsInData(data)
+	if err == nil {
+		t.Fatal("Expected error for conflict markers, got nil")
+	}
+
+	var conflictErr *LockConflictError
+	if !errors.As(err, &conflictErr) {
+		t.Fatalf("Expected LockConflictError, got %T", err)
+	}
+
+	if len(conflictErr.Conflicts) != 1 {
+		t.Fatalf("Expected 1 conflict, got %d", len(conflictErr.Conflicts))
+	}
+
+	c := conflictErr.Conflicts[0]
+	if c.LineNumber != 3 {
+		t.Errorf("Expected conflict at line 3, got %d", c.LineNumber)
+	}
+	if !strings.Contains(c.OursRaw, "abc123") {
+		t.Errorf("Ours should contain 'abc123', got: %s", c.OursRaw)
+	}
+	if !strings.Contains(c.TheirsRaw, "def456") {
+		t.Errorf("Theirs should contain 'def456', got: %s", c.TheirsRaw)
+	}
+
+	// Verify errors.Is works
+	if !errors.Is(err, ErrLockConflict) {
+		t.Error("Expected errors.Is(err, ErrLockConflict) to be true")
+	}
+}
+
+func TestDetectConflictsInData_MultipleConflicts(t *testing.T) {
+	data := []byte(`<<<<<<< HEAD
+line1
+=======
+line2
+>>>>>>> branch
+normal line
+<<<<<<< HEAD
+line3
+=======
+line4
+>>>>>>> branch
+`)
+	err := detectConflictsInData(data)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	var conflictErr *LockConflictError
+	if !errors.As(err, &conflictErr) {
+		t.Fatalf("Expected LockConflictError, got %T", err)
+	}
+	if len(conflictErr.Conflicts) != 2 {
+		t.Fatalf("Expected 2 conflicts, got %d", len(conflictErr.Conflicts))
+	}
+}
+
+func TestFileLockStore_Load_WithMergeConflicts(t *testing.T) {
+	tempDir := t.TempDir()
+	vendorDir := filepath.Join(tempDir, VendorDir)
+	_ = os.MkdirAll(vendorDir, 0755)
+
+	// Write a lockfile with merge conflict markers
+	content := `schema_version: "1.2"
+vendors:
+<<<<<<< HEAD
+  - name: vendor-a
+    ref: main
+    commit_hash: abc123
+    updated: "2024-01-01T00:00:00Z"
+=======
+  - name: vendor-a
+    ref: main
+    commit_hash: def456
+    updated: "2024-01-02T00:00:00Z"
+>>>>>>> feature-branch
+`
+	lockPath := filepath.Join(vendorDir, "vendor.lock")
+	if err := os.WriteFile(lockPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test lockfile: %v", err)
+	}
+
+	store := NewFileLockStore(vendorDir)
+	_, err := store.Load()
+	if err == nil {
+		t.Fatal("Expected error when loading lockfile with merge conflicts")
+	}
+
+	if !errors.Is(err, ErrLockConflict) {
+		t.Errorf("Expected ErrLockConflict, got: %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "merge conflict") {
+		t.Errorf("Error message should mention merge conflict, got: %s", err.Error())
+	}
+}
+
+func TestLockConflictError_ErrorMessage(t *testing.T) {
+	err := &LockConflictError{
+		Conflicts: []types.LockConflict{
+			{LineNumber: 5},
+			{LineNumber: 20},
+		},
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "2 conflict region(s)") {
+		t.Errorf("Error should mention 2 conflict regions, got: %s", msg)
+	}
+	if !strings.Contains(msg, "line 5") {
+		t.Errorf("Error should mention line 5, got: %s", msg)
+	}
+	if !strings.Contains(msg, "line 20") {
+		t.Errorf("Error should mention line 20, got: %s", msg)
+	}
+}
+
+// ============================================================================
+// MergeLockEntries Tests
+// ============================================================================
+
+func TestMergeLockEntries_NonOverlapping(t *testing.T) {
+	ours := types.VendorLock{
+		SchemaVersion: "1.2",
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "aaa111", Updated: "2024-01-01T00:00:00Z"},
+		},
+	}
+	theirs := types.VendorLock{
+		SchemaVersion: "1.2",
+		Vendors: []types.LockDetails{
+			{Name: "vendor-b", Ref: "main", CommitHash: "bbb222", Updated: "2024-01-01T00:00:00Z"},
+		},
+	}
+
+	result := MergeLockEntries(ours, theirs)
+
+	if len(result.Conflicts) != 0 {
+		t.Errorf("Expected 0 conflicts, got %d", len(result.Conflicts))
+	}
+	if len(result.Merged.Vendors) != 2 {
+		t.Fatalf("Expected 2 vendors in merged result, got %d", len(result.Merged.Vendors))
+	}
+
+	// Verify both vendors are present
+	names := map[string]bool{}
+	for _, v := range result.Merged.Vendors {
+		names[v.Name] = true
+	}
+	if !names["vendor-a"] || !names["vendor-b"] {
+		t.Errorf("Expected both vendor-a and vendor-b, got: %v", names)
+	}
+}
+
+func TestMergeLockEntries_SameVendorDifferentCommits_TimestampWins(t *testing.T) {
+	ours := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "old111", Updated: "2024-01-01T00:00:00Z"},
+		},
+	}
+	theirs := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "new222", Updated: "2024-01-02T00:00:00Z"},
+		},
+	}
+
+	result := MergeLockEntries(ours, theirs)
+
+	if len(result.Conflicts) != 0 {
+		t.Errorf("Expected 0 conflicts (timestamp resolves), got %d", len(result.Conflicts))
+	}
+	if len(result.Merged.Vendors) != 1 {
+		t.Fatalf("Expected 1 vendor, got %d", len(result.Merged.Vendors))
+	}
+	// Theirs has later timestamp, should win
+	if result.Merged.Vendors[0].CommitHash != "new222" {
+		t.Errorf("Expected theirs commit 'new222' to win, got '%s'", result.Merged.Vendors[0].CommitHash)
+	}
+}
+
+func TestMergeLockEntries_SameVendorSameCommit(t *testing.T) {
+	ours := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "same123", Updated: "2024-01-01T00:00:00Z"},
+		},
+	}
+	theirs := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "same123", Updated: "2024-01-02T00:00:00Z"},
+		},
+	}
+
+	result := MergeLockEntries(ours, theirs)
+
+	if len(result.Conflicts) != 0 {
+		t.Errorf("Expected 0 conflicts (same commit), got %d", len(result.Conflicts))
+	}
+	if len(result.Merged.Vendors) != 1 {
+		t.Fatalf("Expected 1 vendor, got %d", len(result.Merged.Vendors))
+	}
+	// Theirs has later Updated timestamp, so theirs metadata should win
+	if result.Merged.Vendors[0].Updated != "2024-01-02T00:00:00Z" {
+		t.Errorf("Expected later timestamp '2024-01-02T00:00:00Z', got '%s'", result.Merged.Vendors[0].Updated)
+	}
+}
+
+func TestMergeLockEntries_SameTimestampDifferentCommits_LexicographicTiebreaker(t *testing.T) {
+	ours := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "aaa111", Updated: "2024-01-01T00:00:00Z"},
+		},
+	}
+	theirs := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "zzz999", Updated: "2024-01-01T00:00:00Z"},
+		},
+	}
+
+	result := MergeLockEntries(ours, theirs)
+
+	if len(result.Conflicts) != 0 {
+		t.Errorf("Expected 0 conflicts (lexicographic resolves), got %d", len(result.Conflicts))
+	}
+	// Higher hash (zzz999) should win
+	if result.Merged.Vendors[0].CommitHash != "zzz999" {
+		t.Errorf("Expected 'zzz999' to win lexicographically, got '%s'", result.Merged.Vendors[0].CommitHash)
+	}
+}
+
+func TestMergeLockEntries_SchemaVersionPicksNewer(t *testing.T) {
+	ours := types.VendorLock{SchemaVersion: "1.1"}
+	theirs := types.VendorLock{SchemaVersion: "1.2"}
+
+	result := MergeLockEntries(ours, theirs)
+
+	if result.Merged.SchemaVersion != "1.2" {
+		t.Errorf("Expected schema version '1.2', got '%s'", result.Merged.SchemaVersion)
+	}
+}
+
+func TestIsLockConflictError(t *testing.T) {
+	err := &LockConflictError{Conflicts: []types.LockConflict{{LineNumber: 1}}}
+	if !IsLockConflictError(err) {
+		t.Error("IsLockConflictError should return true for LockConflictError")
+	}
+	if IsLockConflictError(errors.New("other error")) {
+		t.Error("IsLockConflictError should return false for non-LockConflictError")
 	}
 }
 

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -105,10 +107,111 @@ func (s *FileLockStore) Path() string {
 	return s.store.Path()
 }
 
+// ErrLockConflict indicates git merge conflict markers were detected in vendor.lock.
+var ErrLockConflict = errors.New("git merge conflict detected in vendor.lock")
+
+// LockConflictError provides structured details about merge conflicts in vendor.lock.
+// LockConflictError wraps ErrLockConflict so callers can use errors.Is for detection.
+type LockConflictError struct {
+	Conflicts []types.LockConflict
+}
+
+func (e *LockConflictError) Error() string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Error: Git merge conflict detected in vendor.lock (%d conflict region(s))", len(e.Conflicts)))
+	for i, c := range e.Conflicts {
+		b.WriteString(fmt.Sprintf("\n  Conflict %d at line %d", i+1, c.LineNumber))
+	}
+	b.WriteString("\n  Fix: Resolve merge conflicts in vendor.lock, then run 'git-vendor update' or manually edit the file")
+	return b.String()
+}
+
+func (e *LockConflictError) Unwrap() error {
+	return ErrLockConflict
+}
+
+// IsLockConflictError returns true if err is a LockConflictError.
+func IsLockConflictError(err error) bool {
+	var e *LockConflictError
+	return errors.As(err, &e)
+}
+
+// DetectConflicts scans the raw lock file for git merge conflict markers
+// (<<<<<<<, =======, >>>>>>>) and returns a LockConflictError if any are found.
+// DetectConflicts is called before YAML parsing to provide a clear error
+// instead of a cryptic parse failure.
+func (s *FileLockStore) DetectConflicts() error {
+	data, err := os.ReadFile(s.store.Path())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil // No file = no conflicts
+		}
+		return err
+	}
+
+	return detectConflictsInData(data)
+}
+
+// detectConflictsInData scans raw bytes for git merge conflict markers.
+// Extracted as a standalone function for testability without filesystem.
+func detectConflictsInData(data []byte) error {
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	var conflicts []types.LockConflict
+	lineNum := 0
+	inConflict := false
+	var oursLines []string
+	var theirsLines []string
+	conflictStart := 0
+	pastSeparator := false
+
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+
+		switch {
+		case strings.HasPrefix(line, "<<<<<<<"):
+			inConflict = true
+			conflictStart = lineNum
+			oursLines = nil
+			theirsLines = nil
+			pastSeparator = false
+		case strings.HasPrefix(line, "=======") && inConflict:
+			pastSeparator = true
+		case strings.HasPrefix(line, ">>>>>>>") && inConflict:
+			conflicts = append(conflicts, types.LockConflict{
+				LineNumber: conflictStart,
+				OursRaw:    strings.Join(oursLines, "\n"),
+				TheirsRaw:  strings.Join(theirsLines, "\n"),
+			})
+			inConflict = false
+		default:
+			if inConflict {
+				if pastSeparator {
+					theirsLines = append(theirsLines, line)
+				} else {
+					oursLines = append(oursLines, line)
+				}
+			}
+		}
+	}
+
+	if len(conflicts) > 0 {
+		return &LockConflictError{Conflicts: conflicts}
+	}
+	return nil
+}
+
 // Load reads and parses vendor.lock, validating schema version compatibility.
+// Load first checks for git merge conflict markers — returns a LockConflictError
+// if found, providing a clear error instead of a cryptic YAML parse failure.
 // Returns an error if the major version is unsupported.
 // Writes a warning to stderr if minor version is newer than expected.
 func (s *FileLockStore) Load() (types.VendorLock, error) {
+	// Check for merge conflicts before attempting YAML parse
+	if err := s.DetectConflicts(); err != nil {
+		return types.VendorLock{}, err
+	}
+
 	lock, err := s.store.Load()
 	if err != nil {
 		return lock, err
@@ -126,6 +229,114 @@ func (s *FileLockStore) Load() (types.VendorLock, error) {
 func (s *FileLockStore) Save(lock types.VendorLock) error {
 	lock.SchemaVersion = CurrentSchemaVersion
 	return s.store.Save(lock)
+}
+
+// MergeLockEntries merges two VendorLock structs into one.
+// Non-overlapping vendors are combined directly. For overlapping entries
+// (same vendor name + ref), the entry with the later Updated timestamp wins.
+// If timestamps are equal, the higher CommitHash (lexicographic) wins.
+// If neither heuristic resolves the conflict, it is flagged in
+// LockMergeResult.Conflicts for manual resolution.
+func MergeLockEntries(ours, theirs types.VendorLock) types.LockMergeResult {
+	type key struct {
+		Name string
+		Ref  string
+	}
+
+	oursMap := make(map[key]types.LockDetails, len(ours.Vendors))
+	for _, e := range ours.Vendors {
+		oursMap[key{e.Name, e.Ref}] = e
+	}
+
+	theirsMap := make(map[key]types.LockDetails, len(theirs.Vendors))
+	for _, e := range theirs.Vendors {
+		theirsMap[key{e.Name, e.Ref}] = e
+	}
+
+	result := types.LockMergeResult{}
+	// Use the newer schema version
+	result.Merged.SchemaVersion = ours.SchemaVersion
+	if theirs.SchemaVersion > ours.SchemaVersion {
+		result.Merged.SchemaVersion = theirs.SchemaVersion
+	}
+
+	seen := make(map[key]bool)
+
+	// Process all entries from ours
+	for _, e := range ours.Vendors {
+		k := key{e.Name, e.Ref}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+
+		if theirs, ok := theirsMap[k]; ok {
+			// Both sides have this entry — pick winner or flag conflict
+			winner, conflict := resolveLockEntry(e, theirs)
+			if conflict != nil {
+				result.Conflicts = append(result.Conflicts, *conflict)
+				// Still include ours as the default in merged output
+				result.Merged.Vendors = append(result.Merged.Vendors, e)
+			} else {
+				result.Merged.Vendors = append(result.Merged.Vendors, winner)
+			}
+		} else {
+			result.Merged.Vendors = append(result.Merged.Vendors, e)
+		}
+	}
+
+	// Add entries only in theirs
+	for _, e := range theirs.Vendors {
+		k := key{e.Name, e.Ref}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		result.Merged.Vendors = append(result.Merged.Vendors, e)
+	}
+
+	return result
+}
+
+// resolveLockEntry picks a winner between two LockDetails for the same vendor+ref.
+// Returns the winner and nil conflict if resolution succeeds, or zero-value and
+// a LockMergeConflict if manual resolution is required.
+func resolveLockEntry(ours, theirs types.LockDetails) (types.LockDetails, *types.LockMergeConflict) {
+	// Same commit = no conflict
+	if ours.CommitHash == theirs.CommitHash {
+		// Pick the one with the later timestamp for metadata freshness
+		if theirs.Updated > ours.Updated {
+			return theirs, nil
+		}
+		return ours, nil
+	}
+
+	// Different commits: later timestamp wins
+	if ours.Updated != theirs.Updated {
+		if theirs.Updated > ours.Updated {
+			return theirs, nil
+		}
+		return ours, nil
+	}
+
+	// Same timestamp, different commits: lexicographic tiebreaker
+	if ours.CommitHash != theirs.CommitHash {
+		if theirs.CommitHash > ours.CommitHash {
+			return theirs, nil
+		}
+		if ours.CommitHash > theirs.CommitHash {
+			return ours, nil
+		}
+	}
+
+	// Truly unresolvable (should not reach here with different commit hashes,
+	// but guard against edge cases)
+	return types.LockDetails{}, &types.LockMergeConflict{
+		VendorName: ours.Name,
+		Ref:        ours.Ref,
+		Ours:       ours,
+		Theirs:     theirs,
+	}
 }
 
 // GetHash retrieves the locked commit hash for a vendor@ref

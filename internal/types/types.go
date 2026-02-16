@@ -91,6 +91,30 @@ type PathConflict struct {
 	Mapping2 PathMapping
 }
 
+// LockConflict represents a merge conflict detected in a vendor.lock file.
+// LockConflict is returned when git merge markers are found, providing
+// structured context for error reporting instead of a cryptic YAML parse failure.
+type LockConflict struct {
+	LineNumber int    // Line where the conflict marker starts
+	OursRaw    string // Content from the "ours" side (between <<<<<<< and =======)
+	TheirsRaw  string // Content from the "theirs" side (between ======= and >>>>>>>)
+}
+
+// LockMergeConflict represents a vendor entry that could not be auto-merged
+// because both sides modified the same vendor with no clear resolution strategy.
+type LockMergeConflict struct {
+	VendorName string      // Vendor name in conflict
+	Ref        string      // Ref in conflict
+	Ours       LockDetails // Lock entry from "ours" side
+	Theirs     LockDetails // Lock entry from "theirs" side
+}
+
+// LockMergeResult holds the outcome of merging two VendorLock structs.
+type LockMergeResult struct {
+	Merged    VendorLock          // Successfully merged lock
+	Conflicts []LockMergeConflict // Entries requiring manual resolution
+}
+
 // CloneOptions holds options for git clone operations
 type CloneOptions struct {
 	Filter     string // e.g., "blob:none"
