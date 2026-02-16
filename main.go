@@ -2748,6 +2748,9 @@ func main() {
 						"url":     v.URL,
 						"license": v.License,
 					}
+					if len(v.Mirrors) > 0 {
+						vd["mirrors"] = v.Mirrors
+					}
 					if len(v.Groups) > 0 {
 						vd["groups"] = v.Groups
 					}
@@ -2848,11 +2851,106 @@ func main() {
 				tui.PrintSuccess(fmt.Sprintf("Set %s = %s", key, value))
 			}
 
+		case "add-mirror":
+			if len(subArgs) < 2 {
+				if jsonMode {
+					os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor config add-mirror <vendor-name> <mirror-url>", core.ExitInvalidArguments))
+				}
+				tui.PrintError("Usage", "git-vendor config add-mirror <vendor-name> <mirror-url>")
+				os.Exit(core.ExitInvalidArguments)
+			}
+
+			vendorName := subArgs[0]
+			mirrorURL := subArgs[1]
+
+			if err := manager.AddMirror(vendorName, mirrorURL); err != nil {
+				if jsonMode {
+					code := core.CLIErrorCodeForError(err)
+					os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+				}
+				tui.PrintError("Failed", err.Error())
+				os.Exit(core.CLIExitCodeForError(err))
+			}
+
+			if jsonMode {
+				core.EmitCLISuccess(map[string]interface{}{
+					"vendor":     vendorName,
+					"mirror_url": mirrorURL,
+				})
+			} else {
+				tui.PrintSuccess(fmt.Sprintf("Added mirror %s to vendor '%s'", mirrorURL, vendorName))
+			}
+
+		case "remove-mirror":
+			if len(subArgs) < 2 {
+				if jsonMode {
+					os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor config remove-mirror <vendor-name> <mirror-url>", core.ExitInvalidArguments))
+				}
+				tui.PrintError("Usage", "git-vendor config remove-mirror <vendor-name> <mirror-url>")
+				os.Exit(core.ExitInvalidArguments)
+			}
+
+			vendorName := subArgs[0]
+			mirrorURL := subArgs[1]
+
+			if err := manager.RemoveMirror(vendorName, mirrorURL); err != nil {
+				if jsonMode {
+					code := core.CLIErrorCodeForError(err)
+					os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+				}
+				tui.PrintError("Failed", err.Error())
+				os.Exit(core.CLIExitCodeForError(err))
+			}
+
+			if jsonMode {
+				core.EmitCLISuccess(map[string]interface{}{
+					"vendor":     vendorName,
+					"mirror_url": mirrorURL,
+				})
+			} else {
+				tui.PrintSuccess(fmt.Sprintf("Removed mirror %s from vendor '%s'", mirrorURL, vendorName))
+			}
+
+		case "list-mirrors":
+			if len(subArgs) < 1 {
+				if jsonMode {
+					os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, "usage: git-vendor config list-mirrors <vendor-name>", core.ExitInvalidArguments))
+				}
+				tui.PrintError("Usage", "git-vendor config list-mirrors <vendor-name>")
+				os.Exit(core.ExitInvalidArguments)
+			}
+
+			vendorName := subArgs[0]
+			data, err := manager.ListMirrors(vendorName)
+			if err != nil {
+				if jsonMode {
+					code := core.CLIErrorCodeForError(err)
+					os.Exit(core.EmitCLIError(code, err.Error(), core.CLIExitCodeForError(err)))
+				}
+				tui.PrintError("Failed", err.Error())
+				os.Exit(core.CLIExitCodeForError(err))
+			}
+
+			if jsonMode {
+				core.EmitCLISuccess(data)
+			} else {
+				fmt.Printf("Primary: %s\n", data["primary"])
+				mirrors, _ := data["mirrors"].([]string)
+				if len(mirrors) == 0 {
+					fmt.Println("Mirrors: (none)")
+				} else {
+					fmt.Println("Mirrors:")
+					for _, m := range mirrors {
+						fmt.Printf("  - %s\n", m)
+					}
+				}
+			}
+
 		default:
 			if jsonMode {
-				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, fmt.Sprintf("unknown config subcommand: %s (use get, set, or list)", subCmd), core.ExitInvalidArguments))
+				os.Exit(core.EmitCLIError(core.ErrCodeInvalidArguments, fmt.Sprintf("unknown config subcommand: %s (use get, set, list, add-mirror, remove-mirror, or list-mirrors)", subCmd), core.ExitInvalidArguments))
 			}
-			tui.PrintError("Usage", fmt.Sprintf("unknown config subcommand: %s\nUsage: git-vendor config <get|set|list>", subCmd))
+			tui.PrintError("Usage", fmt.Sprintf("unknown config subcommand: %s\nUsage: git-vendor config <get|set|list|add-mirror|remove-mirror|list-mirrors>", subCmd))
 			os.Exit(core.ExitInvalidArguments)
 		}
 

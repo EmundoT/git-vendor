@@ -100,6 +100,9 @@ func RunAddWizard(mgr interface{}, existingVendors map[string]types.VendorSpec) 
 		}
 	}
 
+	// TODO: Add mirror URL input field (comma-separated) for multi-remote support.
+	// Mirror URLs are currently managed via `config add-mirror` / `config remove-mirror`.
+
 	// Enter Edit Loop immediately for the new vendor
 	return RunEditVendorWizard(mgr, &spec)
 }
@@ -498,6 +501,12 @@ func PrintHelp() {
 	fmt.Println("  config get <key>    Get a config value (e.g., vendors.mylib.url)")
 	fmt.Println("  config set <key> <value>")
 	fmt.Println("                      Set a config value")
+	fmt.Println("  config add-mirror <vendor> <url>")
+	fmt.Println("                      Add a mirror URL to a vendor")
+	fmt.Println("  config remove-mirror <vendor> <url>")
+	fmt.Println("                      Remove a mirror URL from a vendor")
+	fmt.Println("  config list-mirrors <vendor>")
+	fmt.Println("                      List primary URL and mirrors for a vendor")
 	fmt.Println("  All LLM commands support --json for structured JSON output.")
 	fmt.Println("\nExamples:")
 	fmt.Println("  git-vendor init")

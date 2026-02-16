@@ -398,6 +398,21 @@ func (m *Manager) AnnotateVendorCommit(commitHash, vendorFilter string) error {
 		m.syncer.configStore, m.syncer.lockStore, ".", commitHash, vendorFilter)
 }
 
+// AddMirror appends a mirror URL to a vendor's Mirrors slice.
+func (m *Manager) AddMirror(vendorName, mirrorURL string) error {
+	return m.syncer.AddMirror(vendorName, mirrorURL)
+}
+
+// RemoveMirror removes a mirror URL from a vendor's Mirrors slice.
+func (m *Manager) RemoveMirror(vendorName, mirrorURL string) error {
+	return m.syncer.RemoveMirror(vendorName, mirrorURL)
+}
+
+// ListMirrors returns the primary URL and all mirrors for a vendor.
+func (m *Manager) ListMirrors(vendorName string) (map[string]interface{}, error) {
+	return m.syncer.ListMirrors(vendorName)
+}
+
 // UpdateVerboseMode updates the verbose flag for git operations
 func (m *Manager) UpdateVerboseMode(verbose bool) {
 	// Update the global git client

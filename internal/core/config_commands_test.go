@@ -1022,3 +1022,245 @@ func TestCLIErrorCodeForError(t *testing.T) {
 		})
 	}
 }
+
+// ============================================================================
+// AddMirror Tests
+// ============================================================================
+
+func TestAddMirror_HappyPath(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	existing := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	cfg := createTestConfig(existing)
+
+	config.EXPECT().Load().Return(cfg, nil)
+	config.EXPECT().Save(gomock.Any()).DoAndReturn(func(cfg types.VendorConfig) error {
+		if len(cfg.Vendors[0].Mirrors) != 1 {
+			t.Errorf("expected 1 mirror, got %d", len(cfg.Vendors[0].Mirrors))
+		}
+		if cfg.Vendors[0].Mirrors[0] != "https://gitlab.com/org/lib" {
+			t.Errorf("expected mirror URL 'https://gitlab.com/org/lib', got %q", cfg.Vendors[0].Mirrors[0])
+		}
+		return nil
+	})
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.AddMirror("mylib", "https://gitlab.com/org/lib")
+	assertNoError(t, err, "AddMirror")
+}
+
+func TestAddMirror_DuplicatePrimary(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	existing := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	cfg := createTestConfig(existing)
+
+	config.EXPECT().Load().Return(cfg, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.AddMirror("mylib", "https://github.com/org/lib")
+	assertError(t, err, "AddMirror duplicate primary")
+	if !strings.Contains(err.Error(), "same as the primary URL") {
+		t.Errorf("expected 'same as the primary URL' error, got: %v", err)
+	}
+}
+
+func TestAddMirror_DuplicateMirror(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	existing := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	existing.Mirrors = []string{"https://gitlab.com/org/lib"}
+	cfg := createTestConfig(existing)
+
+	config.EXPECT().Load().Return(cfg, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.AddMirror("mylib", "https://gitlab.com/org/lib")
+	assertError(t, err, "AddMirror duplicate mirror")
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("expected 'already exists' error, got: %v", err)
+	}
+}
+
+func TestAddMirror_VendorNotFound(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	config.EXPECT().Load().Return(types.VendorConfig{}, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.AddMirror("nonexistent", "https://gitlab.com/org/lib")
+	assertError(t, err, "AddMirror vendor not found")
+	if !IsVendorNotFound(err) {
+		t.Errorf("expected VendorNotFoundError, got: %v", err)
+	}
+}
+
+func TestAddMirror_InvalidURL(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.AddMirror("mylib", "")
+	assertError(t, err, "AddMirror empty URL")
+}
+
+func TestAddMirror_EmptyArgs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.AddMirror("", "https://gitlab.com/org/lib")
+	assertError(t, err, "AddMirror empty vendor name")
+}
+
+// ============================================================================
+// RemoveMirror Tests
+// ============================================================================
+
+func TestRemoveMirror_HappyPath(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	existing := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	existing.Mirrors = []string{"https://gitlab.com/org/lib", "https://bitbucket.org/org/lib"}
+	cfg := createTestConfig(existing)
+
+	config.EXPECT().Load().Return(cfg, nil)
+	config.EXPECT().Save(gomock.Any()).DoAndReturn(func(cfg types.VendorConfig) error {
+		if len(cfg.Vendors[0].Mirrors) != 1 {
+			t.Errorf("expected 1 mirror remaining, got %d", len(cfg.Vendors[0].Mirrors))
+		}
+		if cfg.Vendors[0].Mirrors[0] != "https://bitbucket.org/org/lib" {
+			t.Errorf("expected remaining mirror 'https://bitbucket.org/org/lib', got %q", cfg.Vendors[0].Mirrors[0])
+		}
+		return nil
+	})
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.RemoveMirror("mylib", "https://gitlab.com/org/lib")
+	assertNoError(t, err, "RemoveMirror")
+}
+
+func TestRemoveMirror_NotFound(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	existing := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	cfg := createTestConfig(existing)
+
+	config.EXPECT().Load().Return(cfg, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.RemoveMirror("mylib", "https://gitlab.com/org/lib")
+	assertError(t, err, "RemoveMirror not found")
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestRemoveMirror_VendorNotFound(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	config.EXPECT().Load().Return(types.VendorConfig{}, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.RemoveMirror("nonexistent", "https://gitlab.com/org/lib")
+	assertError(t, err, "RemoveMirror vendor not found")
+	if !IsVendorNotFound(err) {
+		t.Errorf("expected VendorNotFoundError, got: %v", err)
+	}
+}
+
+func TestRemoveMirror_EmptyArgs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	err := syncer.RemoveMirror("mylib", "")
+	assertError(t, err, "RemoveMirror empty URL")
+}
+
+// ============================================================================
+// ListMirrors Tests
+// ============================================================================
+
+func TestListMirrors_WithMirrors(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	existing := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	existing.Mirrors = []string{"https://gitlab.com/org/lib"}
+	cfg := createTestConfig(existing)
+
+	config.EXPECT().Load().Return(cfg, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	data, err := syncer.ListMirrors("mylib")
+	assertNoError(t, err, "ListMirrors")
+
+	if data["primary"] != "https://github.com/org/lib" {
+		t.Errorf("expected primary URL 'https://github.com/org/lib', got %v", data["primary"])
+	}
+	mirrors, ok := data["mirrors"].([]string)
+	if !ok || len(mirrors) != 1 {
+		t.Fatalf("expected 1 mirror, got %v", data["mirrors"])
+	}
+	if mirrors[0] != "https://gitlab.com/org/lib" {
+		t.Errorf("expected mirror 'https://gitlab.com/org/lib', got %q", mirrors[0])
+	}
+}
+
+func TestListMirrors_NoMirrors(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	existing := createTestVendorSpec("mylib", "https://github.com/org/lib", "main")
+	cfg := createTestConfig(existing)
+
+	config.EXPECT().Load().Return(cfg, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	data, err := syncer.ListMirrors("mylib")
+	assertNoError(t, err, "ListMirrors no mirrors")
+
+	if data["primary"] != "https://github.com/org/lib" {
+		t.Errorf("expected primary URL, got %v", data["primary"])
+	}
+	mirrors, ok := data["mirrors"].([]string)
+	if !ok {
+		// nil mirrors are expected when none configured
+		if data["mirrors"] != nil {
+			t.Errorf("expected nil mirrors, got %v", data["mirrors"])
+		}
+	} else if len(mirrors) != 0 {
+		t.Errorf("expected 0 mirrors, got %d", len(mirrors))
+	}
+}
+
+func TestListMirrors_VendorNotFound(t *testing.T) {
+	ctrl, _, _, config, _, _ := setupMocks(t)
+	defer ctrl.Finish()
+
+	config.EXPECT().Load().Return(types.VendorConfig{}, nil)
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), config, NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	_, err := syncer.ListMirrors("nonexistent")
+	assertError(t, err, "ListMirrors vendor not found")
+	if !IsVendorNotFound(err) {
+		t.Errorf("expected VendorNotFoundError, got: %v", err)
+	}
+}
+
+func TestListMirrors_EmptyName(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	syncer := createMockSyncer(NewMockGitClient(ctrl), NewMockFileSystem(ctrl), NewMockConfigStore(ctrl), NewMockLockStore(ctrl), NewMockLicenseChecker(ctrl))
+	_, err := syncer.ListMirrors("")
+	assertError(t, err, "ListMirrors empty name")
+}
