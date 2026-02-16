@@ -49,11 +49,11 @@ func TestDiffVendor_Success(t *testing.T) {
 		},
 	}, nil)
 
-	// Setup git operations for diff
+	// Setup git operations for diff (shallow fetch path)
 	mockFS.EXPECT().CreateTemp("", "diff-check-*").Return("/tmp/test", nil)
 	mockGit.EXPECT().Init(gomock.Any(), "/tmp/test").Return(nil)
 	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/test", "origin", "https://github.com/owner/repo").Return(nil)
-	mockGit.EXPECT().FetchAll(gomock.Any(), "/tmp/test").Return(nil)
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/test", 20, "main").Return(nil)
 	mockGit.EXPECT().Checkout(gomock.Any(), "/tmp/test", "FETCH_HEAD").Return(nil)
 	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test").Return("def456", nil)
 	mockGit.EXPECT().GetCommitLog(gomock.Any(), "/tmp/test", "abc123", "def456", 10).Return([]types.CommitInfo{
@@ -243,7 +243,7 @@ func TestFormatDiffOutput_Diverged(t *testing.T) {
 	}
 }
 
-func TestDiffVendor_FetchAllFails_FallsBackToFetch(t *testing.T) {
+func TestDiffVendor_ShallowFetch_FallsBackToDeepFetch(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -274,12 +274,15 @@ func TestDiffVendor_FetchAllFails_FallsBackToFetch(t *testing.T) {
 	mockGit.EXPECT().Init(gomock.Any(), "/tmp/test").Return(nil)
 	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/test", "origin", "https://github.com/owner/repo").Return(nil)
 
-	// FetchAll fails, triggering fallback to Fetch
-	mockGit.EXPECT().FetchAll(gomock.Any(), "/tmp/test").Return(errors.New("network timeout"))
-	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/test", 0, "main").Return(nil)
-
+	// Shallow fetch succeeds, but locked commit not in shallow history
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/test", 20, "main").Return(nil)
 	mockGit.EXPECT().Checkout(gomock.Any(), "/tmp/test", "FETCH_HEAD").Return(nil)
 	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test").Return("def456", nil)
+	// First GetCommitLog fails (locked commit not reachable in shallow clone)
+	mockGit.EXPECT().GetCommitLog(gomock.Any(), "/tmp/test", "abc123", "def456", 10).Return(nil, errors.New("bad revision"))
+	// Deep fetch fallback
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/test", 0, "main").Return(nil)
+	// Retry GetCommitLog succeeds
 	mockGit.EXPECT().GetCommitLog(gomock.Any(), "/tmp/test", "abc123", "def456", 10).Return([]types.CommitInfo{
 		{ShortHash: "def456", Subject: "Fix", Date: "2024-01-02 15:30:00 +0000"},
 	}, nil)
@@ -371,7 +374,7 @@ func TestDiffVendorWithOptions_RefFilter(t *testing.T) {
 	mockFS.EXPECT().CreateTemp("", "diff-check-*").Return("/tmp/test", nil)
 	mockGit.EXPECT().Init(gomock.Any(), "/tmp/test").Return(nil)
 	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/test", "origin", "https://github.com/owner/repo").Return(nil)
-	mockGit.EXPECT().FetchAll(gomock.Any(), "/tmp/test").Return(nil)
+	mockGit.EXPECT().Fetch(gomock.Any(), "/tmp/test", 20, "main").Return(nil)
 	mockGit.EXPECT().Checkout(gomock.Any(), "/tmp/test", "FETCH_HEAD").Return(nil)
 	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test").Return("ccc3333", nil)
 	mockGit.EXPECT().GetCommitLog(gomock.Any(), "/tmp/test", "aaa1111", "ccc3333", 10).Return([]types.CommitInfo{
