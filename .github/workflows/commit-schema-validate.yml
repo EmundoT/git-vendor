@@ -1,0 +1,70 @@
+# Commit Schema CI Validation
+#
+# Vendorable GitHub Actions workflow that enforces COMMIT-SCHEMA v1 on
+# pull requests using git-plumbing validate. Child projects vendor this
+# file to .github/workflows/commit-schema-validate.yml via vendor.yml.
+#
+# Configurable via env vars:
+#   SKIP_MERGE_COMMITS - set to 'false' to validate merge commits (default: true)
+#   GIT_PLUMBING_VERSION - git-plumbing version to install (default: latest)
+
+name: Commit Schema Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-commits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SKIP_MERGE_COMMITS: 'true'
+      GIT_PLUMBING_VERSION: 'latest'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0 # Full history for commit range validation
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.23'
+
+      - name: Install git-plumbing
+        run: go install "github.com/EmundoT/git-plumbing/cmd/git-plumbing@$GIT_PLUMBING_VERSION"
+
+      - name: Validate PR commits
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          echo "Validating commits: ${BASE:0:7}..${HEAD:0:7}"
+
+          if [ "$SKIP_MERGE_COMMITS" = "true" ]; then
+            COMMITS=$(git rev-list --no-merges "$BASE..$HEAD")
+            COUNT=$(echo "$COMMITS" | grep -c . || true)
+            echo "Found $COUNT non-merge commit(s) (merge commits skipped)"
+
+            if [ -z "$COMMITS" ]; then
+              echo "No non-merge commits to validate"
+              exit 0
+            fi
+
+            FAIL=0
+            for HASH in $COMMITS; do
+              if ! git-plumbing validate "$HASH"; then
+                FAIL=1
+              fi
+            done
+            exit $FAIL
+          else
+            git-plumbing validate "$BASE..$HEAD"
+          fi
