@@ -321,7 +321,11 @@ func (s *VendorSyncer) syncWithAutoUpdate(ctx context.Context, opts SyncOptions)
 		return err
 	}
 	fmt.Println("⚠ Stale lockfile detected — auto-updating...")
-	if updateErr := s.update.UpdateAllWithOptions(ctx, UpdateOptions{Local: opts.Local}); updateErr != nil {
+	if updateErr := s.update.UpdateAllWithOptions(ctx, UpdateOptions{
+		Local:      opts.Local,
+		VendorName: opts.VendorName,
+		Group:      opts.GroupName,
+	}); updateErr != nil {
 		return fmt.Errorf("auto-update after stale commit: %w", updateErr)
 	}
 	return nil
@@ -362,7 +366,11 @@ func (s *VendorSyncer) SyncWithFullOpts(ctx context.Context, opts SyncOptions) e
 	lock, err := s.lockStore.Load()
 	if err != nil || len(lock.Vendors) == 0 {
 		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
-		if err := s.update.UpdateAllWithOptions(ctx, UpdateOptions{Local: opts.Local}); err != nil {
+		if err := s.update.UpdateAllWithOptions(ctx, UpdateOptions{
+			Local:      opts.Local,
+			VendorName: opts.VendorName,
+			Group:      opts.GroupName,
+		}); err != nil {
 			return fmt.Errorf("generate lockfile: %w", err)
 		}
 		fmt.Println()
