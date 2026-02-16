@@ -621,20 +621,22 @@ func main() {
 		workers := 0
 		commit := false
 		local := false
+		vendorName := ""
+		groupName := ""
 
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
-			switch arg {
-			case "--verbose", "-v":
+			switch {
+			case arg == "--verbose" || arg == "-v":
 				core.Verbose = true
 				manager.UpdateVerboseMode(true)
-			case "--commit":
+			case arg == "--commit":
 				commit = true
-			case "--parallel":
+			case arg == "--parallel":
 				parallel = true
-			case "--local":
+			case arg == "--local":
 				local = true
-			case "--workers":
+			case arg == "--workers":
 				if i+1 < len(args) {
 					if _, err := fmt.Sscanf(args[i+1], "%d", &workers); err != nil {
 						callback.ShowError("Invalid Flag", fmt.Sprintf("--workers requires a valid number, got: %s", args[i+1]))
@@ -645,7 +647,23 @@ func main() {
 					callback.ShowError("Invalid Flag", "--workers requires a number")
 					os.Exit(1)
 				}
+			case arg == "--group":
+				if i+1 < len(args) {
+					groupName = args[i+1]
+					i++ // Skip next arg
+				} else {
+					callback.ShowError("Invalid Flag", "--group requires a group name")
+					os.Exit(1)
+				}
+			case !strings.HasPrefix(arg, "--"):
+				vendorName = arg
 			}
+		}
+
+		// Validate that vendor name and group are not both specified
+		if vendorName != "" && groupName != "" {
+			callback.ShowError("Invalid Options", "Cannot specify both vendor name and --group")
+			os.Exit(1)
 		}
 
 		if !core.IsVendorInitialized() {
@@ -658,7 +676,9 @@ func main() {
 		defer stop()
 
 		opts := core.UpdateOptions{
-			Local: local,
+			Local:      local,
+			VendorName: vendorName,
+			Group:      groupName,
 		}
 		if parallel {
 			opts.Parallel = types.ParallelOptions{
@@ -670,11 +690,20 @@ func main() {
 			callback.ShowError("Update Failed", err.Error())
 			os.Exit(1)
 		}
-		callback.ShowSuccess("Updated all vendors.")
+
+		// Tailor success message based on filter
+		switch {
+		case vendorName != "":
+			callback.ShowSuccess(fmt.Sprintf("Updated vendor '%s'.", vendorName))
+		case groupName != "":
+			callback.ShowSuccess(fmt.Sprintf("Updated group '%s'.", groupName))
+		default:
+			callback.ShowSuccess("Updated all vendors.")
+		}
 
 		// Auto-commit if --commit flag is set
 		if commit {
-			if err := manager.CommitVendorChanges("update", ""); err != nil {
+			if err := manager.CommitVendorChanges("update", vendorName); err != nil {
 				callback.ShowError("Commit Failed", err.Error())
 				os.Exit(1)
 			}
@@ -1356,7 +1385,7 @@ func main() {
 		fmt.Println(script)
 
 	case "diff":
-		// Parse common flags
+		// Parse common flags and diff-specific flags
 		flags, args := parseCommonFlags(os.Args[2:])
 
 		// Create appropriate callback
@@ -1368,27 +1397,55 @@ func main() {
 		}
 		manager.SetUICallback(callback)
 
-		// Get vendor name from args
-		if len(args) < 1 {
-			callback.ShowError("Usage", "git-vendor diff <vendor>")
+		// Parse diff-specific flags from remaining args
+		diffOpts := core.DiffOptions{}
+		var filteredArgs []string
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+			switch {
+			case strings.HasPrefix(arg, "--ref="):
+				diffOpts.Ref = strings.TrimPrefix(arg, "--ref=")
+			case arg == "--ref" && i+1 < len(args):
+				i++
+				diffOpts.Ref = args[i]
+			case strings.HasPrefix(arg, "--group="):
+				diffOpts.Group = strings.TrimPrefix(arg, "--group=")
+			case arg == "--group" && i+1 < len(args):
+				i++
+				diffOpts.Group = args[i]
+			default:
+				filteredArgs = append(filteredArgs, arg)
+			}
+		}
+
+		// Vendor name is optional positional arg (required when no --group)
+		if len(filteredArgs) > 0 {
+			diffOpts.VendorName = filteredArgs[0]
+		} else if diffOpts.Group == "" {
+			callback.ShowError("Usage", "git-vendor diff <vendor> [--ref <ref>] [--group <group>]")
 			os.Exit(1)
 		}
-		vendorName := args[0]
 
 		if !core.IsVendorInitialized() {
 			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
-		// Get diff for vendor
-		diffs, err := manager.DiffVendor(vendorName)
+		// Get diff with options
+		diffs, err := manager.DiffVendorWithOptions(diffOpts)
 		if err != nil {
 			callback.ShowError("Diff Failed", err.Error())
 			os.Exit(1)
 		}
 
 		if len(diffs) == 0 {
-			callback.ShowWarning("No Diffs", fmt.Sprintf("No locked versions found for vendor '%s'", vendorName))
+			label := diffOpts.VendorName
+			if label == "" {
+				label = "group '" + diffOpts.Group + "'"
+			} else {
+				label = "vendor '" + label + "'"
+			}
+			callback.ShowWarning("No Diffs", fmt.Sprintf("No locked versions found for %s", label))
 			os.Exit(0)
 		}
 

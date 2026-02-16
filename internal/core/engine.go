@@ -299,8 +299,16 @@ func (m *Manager) MigrateLockfile() (int, error) {
 }
 
 // DiffVendor shows commit differences between locked and latest versions
+// for a single vendor. DiffVendor is a convenience wrapper; use DiffVendorWithOptions
+// for ref/group filtering.
 func (m *Manager) DiffVendor(vendorName string) ([]types.VendorDiff, error) {
 	return m.syncer.DiffVendor(vendorName)
+}
+
+// DiffVendorWithOptions shows commit differences with optional vendor/ref/group filtering.
+// Empty DiffOptions fields match all (e.g., empty Ref diffs all refs).
+func (m *Manager) DiffVendorWithOptions(opts DiffOptions) ([]types.VendorDiff, error) {
+	return m.syncer.DiffVendorWithOptions(opts)
 }
 
 // WatchConfig watches for changes to vendor.yml and triggers a callback

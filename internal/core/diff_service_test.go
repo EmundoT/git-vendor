@@ -337,6 +337,177 @@ func TestDiffVendor_MultipleSpecs_SkipsUnlocked(t *testing.T) {
 	}
 }
 
+func TestDiffVendorWithOptions_RefFilter(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+	mockGit := NewMockGitClient(ctrl)
+	mockFS := NewMockFileSystem(ctrl)
+
+	// Vendor with two specs (refs: "main" and "v2")
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "multi-ref",
+				URL:  "https://github.com/owner/repo",
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src", To: "lib"}}},
+					{Ref: "v2", Mapping: []types.PathMapping{{From: "v2/src", To: "lib/v2"}}},
+				},
+			},
+		},
+	}, nil)
+
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "multi-ref", Ref: "main", CommitHash: "aaa1111", Updated: "2024-01-01 10:00:00 +0000"},
+			{Name: "multi-ref", Ref: "v2", CommitHash: "bbb2222", Updated: "2024-01-01 10:00:00 +0000"},
+		},
+	}, nil)
+
+	// Only "main" ref should be processed (v2 filtered out)
+	mockFS.EXPECT().CreateTemp("", "diff-check-*").Return("/tmp/test", nil)
+	mockGit.EXPECT().Init(gomock.Any(), "/tmp/test").Return(nil)
+	mockGit.EXPECT().AddRemote(gomock.Any(), "/tmp/test", "origin", "https://github.com/owner/repo").Return(nil)
+	mockGit.EXPECT().FetchAll(gomock.Any(), "/tmp/test").Return(nil)
+	mockGit.EXPECT().Checkout(gomock.Any(), "/tmp/test", "FETCH_HEAD").Return(nil)
+	mockGit.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test").Return("ccc3333", nil)
+	mockGit.EXPECT().GetCommitLog(gomock.Any(), "/tmp/test", "aaa1111", "ccc3333", 10).Return([]types.CommitInfo{
+		{ShortHash: "ccc3333", Subject: "New change", Date: "2024-02-01 12:00:00 +0000"},
+	}, nil)
+	mockFS.EXPECT().RemoveAll("/tmp/test").Return(nil)
+
+	syncer := NewVendorSyncer(mockConfig, mockLock, mockGit, mockFS, nil, "", &SilentUICallback{}, nil)
+
+	diffs, err := syncer.DiffVendorWithOptions(DiffOptions{VendorName: "multi-ref", Ref: "main"})
+	if err != nil {
+		t.Fatalf("DiffVendorWithOptions() error = %v", err)
+	}
+
+	if len(diffs) != 1 {
+		t.Fatalf("Expected 1 diff (only main ref), got %d", len(diffs))
+	}
+	if diffs[0].Ref != "main" {
+		t.Errorf("Expected ref 'main', got '%s'", diffs[0].Ref)
+	}
+}
+
+func TestDiffVendorWithOptions_GroupFilter(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:   "vendor-a",
+				URL:    "https://github.com/a/repo",
+				Groups: []string{"frontend"},
+				Specs:  []types.BranchSpec{{Ref: "main"}},
+			},
+			{
+				Name:   "vendor-b",
+				URL:    "https://github.com/b/repo",
+				Groups: []string{"backend"},
+				Specs:  []types.BranchSpec{{Ref: "main"}},
+			},
+		},
+	}, nil)
+
+	// Neither vendor is locked, so both return empty diffs
+	mockLock.EXPECT().Load().Return(types.VendorLock{}, nil)
+
+	syncer := NewVendorSyncer(mockConfig, mockLock, nil, nil, nil, "", &SilentUICallback{}, nil)
+
+	// Filter by "frontend" group — vendor-b should be excluded
+	diffs, err := syncer.DiffVendorWithOptions(DiffOptions{Group: "frontend"})
+	if err != nil {
+		t.Fatalf("DiffVendorWithOptions() error = %v", err)
+	}
+
+	// vendor-a matched but is unlocked, so 0 diffs (not an error)
+	if len(diffs) != 0 {
+		t.Errorf("Expected 0 diffs (unlocked vendor), got %d", len(diffs))
+	}
+}
+
+func TestDiffVendorWithOptions_GroupNotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "vendor-a", Groups: []string{"frontend"}, Specs: []types.BranchSpec{{Ref: "main"}}},
+		},
+	}, nil)
+	mockLock.EXPECT().Load().Return(types.VendorLock{}, nil)
+
+	syncer := NewVendorSyncer(mockConfig, mockLock, nil, nil, nil, "", &SilentUICallback{}, nil)
+
+	_, err := syncer.DiffVendorWithOptions(DiffOptions{Group: "nonexistent"})
+	if err == nil {
+		t.Fatal("Expected error for nonexistent group")
+	}
+	if !contains(err.Error(), "no vendors found in group") {
+		t.Errorf("Expected group-not-found error, got: %s", err.Error())
+	}
+}
+
+func TestDiffVendorWithOptions_EmptyFilters_AllVendors(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "vendor-a", Specs: []types.BranchSpec{{Ref: "main"}}},
+			{Name: "vendor-b", Specs: []types.BranchSpec{{Ref: "main"}}},
+		},
+	}, nil)
+	mockLock.EXPECT().Load().Return(types.VendorLock{}, nil)
+
+	syncer := NewVendorSyncer(mockConfig, mockLock, nil, nil, nil, "", &SilentUICallback{}, nil)
+
+	// Empty opts = all vendors (both unlocked, so 0 diffs, no error)
+	diffs, err := syncer.DiffVendorWithOptions(DiffOptions{})
+	if err != nil {
+		t.Fatalf("DiffVendorWithOptions() with empty opts error = %v", err)
+	}
+	if len(diffs) != 0 {
+		t.Errorf("Expected 0 diffs (unlocked vendors), got %d", len(diffs))
+	}
+}
+
+func TestContainsGroup(t *testing.T) {
+	tests := []struct {
+		name   string
+		groups []string
+		target string
+		want   bool
+	}{
+		{"found", []string{"a", "b", "c"}, "b", true},
+		{"not found", []string{"a", "b"}, "c", false},
+		{"empty groups", []string{}, "a", false},
+		{"nil groups", nil, "a", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := containsGroup(tt.groups, tt.target); got != tt.want {
+				t.Errorf("containsGroup(%v, %q) = %v, want %v", tt.groups, tt.target, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFormatDate(t *testing.T) {
 	tests := []struct {
 		name     string
