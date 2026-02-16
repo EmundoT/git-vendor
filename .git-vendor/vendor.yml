@@ -79,6 +79,19 @@ vendors:
           # CI workflows (vendored to .github/workflows/)
           - from: workflows/commit-schema-validate.yml
             to: .github/workflows/commit-schema-validate.yml
+          # Rules: agent DX
+          - from: rules/nominations.md
+            to: .claude/rules/nominations.md
+          - from: rules/vendored-files.md
+            to: .claude/rules/vendored-files.md
+          # Skills: nomination protocol
+          - from: skills/nominate/SKILL.md
+            to: .claude/skills/nominate/SKILL.md
+          # Hooks: vendor protection
+          - from: hooks/vendor-guard.sh
+            to: .claude/hooks/vendor-guard.sh
+          - from: hooks/vendor-context.sh
+            to: .claude/hooks/vendor-context.sh
           # Docs (canonical copies — kept in sync via vendor)
           - from: COMMIT-SCHEMA.md
             to: docs/COMMIT-SCHEMA.md
