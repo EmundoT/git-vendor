@@ -89,6 +89,19 @@ func (s *ValidationService) validateVendor(vendor *types.VendorSpec) error {
 		return fmt.Errorf("vendor %s: %w", vendor.Name, err)
 	}
 
+	// Validate mirror URLs
+	for i, mirror := range vendor.Mirrors {
+		if mirror == "" {
+			return fmt.Errorf("vendor %s: mirror[%d] is empty", vendor.Name, i)
+		}
+		if mirror == vendor.URL {
+			return fmt.Errorf("vendor %s: mirror[%d] duplicates primary URL", vendor.Name, i)
+		}
+		if err := ValidateVendorURL(mirror); err != nil {
+			return fmt.Errorf("vendor %s: mirror[%d]: %w", vendor.Name, i, err)
+		}
+	}
+
 	// Validate vendor has at least one spec
 	if len(vendor.Specs) == 0 {
 		return fmt.Errorf("vendor %s has no specs configured", vendor.Name)
@@ -263,6 +276,9 @@ func (s *ValidationService) detectOverlappingPathConflicts(pathMap map[string][]
 func (s *ValidationService) validateInternalVendor(vendor *types.VendorSpec) error {
 	if vendor.URL != "" {
 		return NewValidationError(vendor.Name, "", "url", "internal vendors MUST NOT have a URL")
+	}
+	if len(vendor.Mirrors) > 0 {
+		return NewValidationError(vendor.Name, "", "mirrors", "internal vendors MUST NOT have mirrors")
 	}
 	if vendor.License != "" {
 		return NewValidationError(vendor.Name, "", "license", "internal vendors MUST NOT have a license")

@@ -28,8 +28,9 @@ type SyncOptions struct {
 // RefMetadata holds per-ref metadata collected during sync
 type RefMetadata struct {
 	CommitHash string
-	VersionTag string             // Git tag pointing to commit, if any
-	Positions  []positionRecord   // Position extractions performed during sync
+	VersionTag string           // Git tag pointing to commit, if any
+	Positions  []positionRecord // Position extractions performed during sync
+	SourceURL  string           // Which mirror URL succeeded (empty = primary URL)
 }
 
 // SyncServiceInterface defines the contract for vendor synchronization.
