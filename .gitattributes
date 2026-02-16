@@ -3,3 +3,6 @@
 .claude/rules/*.md text eol=lf
 .claude/hooks/*.sh text eol=lf
 .githooks/* text eol=lf
+
+# Enforce LF in Go vendor cache to prevent CRLF drift from go mod vendor.
+vendor/** text=auto eol=lf
