@@ -65,8 +65,9 @@ internal/
     diff_service.go / drift_service.go  # Diff (with DiffOptions filtering) and drift detection
     outdated_service.go              # Lightweight staleness check via git ls-remote
     commit_service.go            # COMMIT-SCHEMA v1 trailers + git notes
-    config_commands.go           # LLM-friendly CLI (Spec 072)
+    config_commands.go           # LLM-friendly CLI (Spec 072) + mirror management
     cli_response.go              # JSON output types for Spec 072
+    remote_fallback.go           # Multi-remote: ResolveVendorURLs + FetchWithFallback
     internal_sync_service.go     # Internal vendor sync (same-repo file copy, Spec 070)
     compliance_service.go        # Drift detection + propagation for internal vendors (Spec 070)
     errors.go                    # Sentinel errors + structured types
@@ -136,6 +137,25 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 `FileLockStore.Load()` scans for git merge conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) before YAML parsing. Returns `LockConflictError` (wraps `ErrLockConflict` sentinel) with structured `LockConflict` entries (line number, ours/theirs raw content). `MergeLockEntries(ours, theirs)` performs programmatic three-way merge: later timestamp wins, lexicographic commit hash tiebreaker, unresolvable entries flagged in `LockMergeResult.Conflicts`.
 
 Key types in `internal/types/types.go`: `LockConflict`, `LockMergeConflict`, `LockMergeResult`.
+
+## Multi-Remote / Mirrors (Schema v1.3)
+
+Vendors support mirror URLs for redundancy. Primary URL is tried first, then mirrors in declaration order.
+
+| VendorSpec Field | Purpose |
+|-----------------|---------|
+| `Mirrors` | `[]string` — fallback URLs tried after primary URL fails |
+
+| LockDetails Field | Purpose |
+|------------------|---------|
+| `SourceURL` | Which URL actually served the content (empty = primary URL) |
+
+- `ResolveVendorURLs(vendor)` returns `[primary, mirror1, mirror2, ...]` (nil for internal vendors)
+- `FetchWithFallback(ctx, gitClient, fs, ui, tempDir, urls, ref, depth)` tries each URL in order, swapping origin's URL on fallback
+- All services (sync, update, diff, drift, outdated) use `FetchWithFallback` automatically
+- CLI management: `config add-mirror`, `config remove-mirror`, `config list-mirrors`
+- Business logic: `remote_fallback.go` (ResolveVendorURLs, FetchWithFallback)
+- Mirror config commands: `config_commands.go` (AddMirror, RemoveMirror, ListMirrors)
 
 ## Design Principles
 

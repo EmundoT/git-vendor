@@ -246,6 +246,10 @@ func (s *VendorSyncer) ShowVendor(name string) (map[string]interface{}, error) {
 		"license": vendor.License,
 	}
 
+	if len(vendor.Mirrors) > 0 {
+		data["mirrors"] = vendor.Mirrors
+	}
+
 	if len(vendor.Groups) > 0 {
 		data["groups"] = vendor.Groups
 	}
@@ -320,6 +324,9 @@ func (s *VendorSyncer) ShowVendor(name string) (map[string]interface{}, error) {
 				}
 				specData["positions"] = posData
 			}
+			if entry.SourceURL != "" {
+				specData["source_url"] = entry.SourceURL
+			}
 		}
 
 		specsData = append(specsData, specData)
@@ -370,12 +377,16 @@ func (s *VendorSyncer) GetConfigValue(key string) (interface{}, error) {
 
 	if len(parts) == 2 {
 		// Return the whole vendor as a map
-		return map[string]interface{}{
+		data := map[string]interface{}{
 			"name":    vendor.Name,
 			"url":     vendor.URL,
 			"license": vendor.License,
 			"groups":  vendor.Groups,
-		}, nil
+		}
+		if len(vendor.Mirrors) > 0 {
+			data["mirrors"] = vendor.Mirrors
+		}
+		return data, nil
 	}
 
 	field := parts[2]
@@ -388,13 +399,15 @@ func (s *VendorSyncer) GetConfigValue(key string) (interface{}, error) {
 		return vendor.License, nil
 	case "groups":
 		return vendor.Groups, nil
+	case "mirrors":
+		return vendor.Mirrors, nil
 	case "ref":
 		if len(vendor.Specs) > 0 {
 			return vendor.Specs[0].Ref, nil
 		}
 		return "", nil
 	default:
-		return nil, fmt.Errorf("unknown vendor field: %s (valid: name, url, license, groups, ref)", field)
+		return nil, fmt.Errorf("unknown vendor field: %s (valid: name, url, license, groups, mirrors, ref)", field)
 	}
 }
 
@@ -523,5 +536,102 @@ func (s *VendorSyncer) CheckVendorStatus(vendorName string) (map[string]interfac
 		"vendor": vendorName,
 		"status": status,
 		"specs":  specsStatus,
+	}, nil
+}
+
+// AddMirror appends a mirror URL to a vendor's Mirrors slice.
+// AddMirror validates the URL format and rejects duplicates (same as primary URL or already present).
+func (s *VendorSyncer) AddMirror(vendorName, mirrorURL string) error {
+	if vendorName == "" || mirrorURL == "" {
+		return fmt.Errorf("vendor name and mirror URL are required")
+	}
+
+	if err := ValidateVendorURL(mirrorURL); err != nil {
+		return fmt.Errorf("invalid mirror URL: %w", err)
+	}
+
+	cfg, err := s.configStore.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	idx := FindVendorIndex(cfg.Vendors, vendorName)
+	if idx < 0 {
+		return NewVendorNotFoundError(vendorName)
+	}
+
+	vendor := &cfg.Vendors[idx]
+
+	// Reject if same as primary URL
+	if vendor.URL == mirrorURL {
+		return fmt.Errorf("mirror URL is the same as the primary URL")
+	}
+
+	// Reject if already in mirrors
+	for _, m := range vendor.Mirrors {
+		if m == mirrorURL {
+			return fmt.Errorf("mirror URL '%s' already exists for vendor '%s'", mirrorURL, vendorName)
+		}
+	}
+
+	vendor.Mirrors = append(vendor.Mirrors, mirrorURL)
+	return s.configStore.Save(cfg)
+}
+
+// RemoveMirror removes a mirror URL from a vendor's Mirrors slice.
+// RemoveMirror returns an error if the mirror URL is not found.
+func (s *VendorSyncer) RemoveMirror(vendorName, mirrorURL string) error {
+	if vendorName == "" || mirrorURL == "" {
+		return fmt.Errorf("vendor name and mirror URL are required")
+	}
+
+	cfg, err := s.configStore.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	idx := FindVendorIndex(cfg.Vendors, vendorName)
+	if idx < 0 {
+		return NewVendorNotFoundError(vendorName)
+	}
+
+	vendor := &cfg.Vendors[idx]
+	found := false
+	for i, m := range vendor.Mirrors {
+		if m == mirrorURL {
+			vendor.Mirrors = append(vendor.Mirrors[:i], vendor.Mirrors[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("mirror URL '%s' not found in vendor '%s'", mirrorURL, vendorName)
+	}
+
+	return s.configStore.Save(cfg)
+}
+
+// ListMirrors returns the primary URL and all mirror URLs for a vendor.
+// ListMirrors returns a map with "primary" (string) and "mirrors" ([]string) keys.
+func (s *VendorSyncer) ListMirrors(vendorName string) (map[string]interface{}, error) {
+	if vendorName == "" {
+		return nil, fmt.Errorf("vendor name is required")
+	}
+
+	cfg, err := s.configStore.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+
+	vendor := FindVendor(cfg.Vendors, vendorName)
+	if vendor == nil {
+		return nil, NewVendorNotFoundError(vendorName)
+	}
+
+	return map[string]interface{}{
+		"vendor":  vendorName,
+		"primary": vendor.URL,
+		"mirrors": vendor.Mirrors,
 	}, nil
 }
