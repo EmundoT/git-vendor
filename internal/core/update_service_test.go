@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -830,5 +831,220 @@ func TestUpdateAllWithOptions_ParallelPartialFailure(t *testing.T) {
 	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{Parallel: types.ParallelOptions{Enabled: true, MaxWorkers: 2}})
 	if err != nil {
 		t.Fatalf("Expected success (partial results saved), got error: %v", err)
+	}
+}
+
+// ============================================================================
+// UpdateAllWithOptions — VendorName / Group Filtering Tests
+// ============================================================================
+
+func TestUpdateAllWithOptions_VendorNameFilter(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor1 := createTestVendorSpec("vendor-a", "https://github.com/owner/repo-a", "main")
+	vendor2 := createTestVendorSpec("vendor-b", "https://github.com/owner/repo-b", "main")
+
+	config.EXPECT().Load().Return(createTestConfig(vendor1, vendor2), nil)
+
+	// Existing lock has entries for both vendors
+	existingLock := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "old_a_hash", Updated: "2024-01-01T00:00:00Z", VendoredAt: "2024-01-01T00:00:00Z", VendoredBy: "alice"},
+			{Name: "vendor-b", Ref: "main", CommitHash: "old_b_hash", Updated: "2024-01-01T00:00:00Z", VendoredAt: "2024-01-01T00:00:00Z", VendoredBy: "bob"},
+		},
+	}
+	lock.EXPECT().Load().Return(existingLock, nil)
+
+	// Only vendor-a should be synced (one temp dir, one init, etc.)
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil).Times(1)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil).Times(1)
+	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), "https://github.com/owner/repo-a").Return(nil).Times(1)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("new_a_hash_1234", nil).Times(1)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
+		if len(l.Vendors) != 2 {
+			t.Errorf("Expected 2 lock entries (1 updated + 1 preserved), got %d", len(l.Vendors))
+		}
+		entryMap := make(map[string]types.LockDetails)
+		for _, e := range l.Vendors {
+			entryMap[e.Name] = e
+		}
+		// vendor-a should have new hash
+		if a, ok := entryMap["vendor-a"]; !ok {
+			t.Error("Missing vendor-a in lock")
+		} else if a.CommitHash != "new_a_hash_1234" {
+			t.Errorf("vendor-a should have new hash, got %s", a.CommitHash)
+		}
+		// vendor-b should be preserved with old hash
+		if b, ok := entryMap["vendor-b"]; !ok {
+			t.Error("Missing vendor-b in lock")
+		} else if b.CommitHash != "old_b_hash" {
+			t.Errorf("vendor-b should retain old hash 'old_b_hash', got '%s'", b.CommitHash)
+		}
+		return nil
+	})
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{VendorName: "vendor-a"})
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+}
+
+func TestUpdateAllWithOptions_GroupFilter(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	// vendor-a in "frontend" group, vendor-b in "backend" group, vendor-c in "frontend" group
+	vendorA := createTestVendorSpec("vendor-a", "https://github.com/owner/repo-a", "main")
+	vendorA.Groups = []string{"frontend"}
+	vendorB := createTestVendorSpec("vendor-b", "https://github.com/owner/repo-b", "main")
+	vendorB.Groups = []string{"backend"}
+	vendorC := createTestVendorSpec("vendor-c", "https://github.com/owner/repo-c", "main")
+	vendorC.Groups = []string{"frontend"}
+
+	config.EXPECT().Load().Return(createTestConfig(vendorA, vendorB, vendorC), nil)
+
+	existingLock := types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "old_a"},
+			{Name: "vendor-b", Ref: "main", CommitHash: "old_b"},
+			{Name: "vendor-c", Ref: "main", CommitHash: "old_c"},
+		},
+	}
+	lock.EXPECT().Load().Return(existingLock, nil)
+
+	// Two vendors in "frontend" group should be synced
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil).Times(2)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil).Times(2)
+	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("new_hash_00000", nil).Times(2)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
+		if len(l.Vendors) != 3 {
+			t.Errorf("Expected 3 lock entries (2 updated + 1 preserved), got %d", len(l.Vendors))
+		}
+		entryMap := make(map[string]types.LockDetails)
+		for _, e := range l.Vendors {
+			entryMap[e.Name] = e
+		}
+		// vendor-a and vendor-c should have new hash
+		if a, ok := entryMap["vendor-a"]; !ok || a.CommitHash != "new_hash_00000" {
+			t.Error("vendor-a should have new hash")
+		}
+		if c, ok := entryMap["vendor-c"]; !ok || c.CommitHash != "new_hash_00000" {
+			t.Error("vendor-c should have new hash")
+		}
+		// vendor-b should be preserved
+		if b, ok := entryMap["vendor-b"]; !ok || b.CommitHash != "old_b" {
+			t.Error("vendor-b should retain old hash")
+		}
+		return nil
+	})
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{Group: "frontend"})
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+}
+
+func TestUpdateAllWithOptions_NonExistentVendorName(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("real-vendor", "https://github.com/owner/repo", "main")
+	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{VendorName: "no-such-vendor"})
+	if err == nil {
+		t.Fatal("Expected error for non-existent vendor, got nil")
+	}
+
+	var vnfErr *VendorNotFoundError
+	if !errors.As(err, &vnfErr) {
+		t.Errorf("Expected VendorNotFoundError, got: %T: %v", err, err)
+	}
+}
+
+func TestUpdateAllWithOptions_NonExistentGroup(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := createTestVendorSpec("real-vendor", "https://github.com/owner/repo", "main")
+	vendor.Groups = []string{"existing-group"}
+	config.EXPECT().Load().Return(createTestConfig(vendor), nil)
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{Group: "ghost-group"})
+	if err == nil {
+		t.Fatal("Expected error for non-existent group, got nil")
+	}
+
+	var gnfErr *GroupNotFoundError
+	if !errors.As(err, &gnfErr) {
+		t.Errorf("Expected GroupNotFoundError, got: %T: %v", err, err)
+	}
+}
+
+func TestUpdateAllWithOptions_NoFilter_Regression(t *testing.T) {
+	// Regression: Ensure no-filter update still processes all vendors (original behavior).
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor1 := createTestVendorSpec("vendor-a", "https://github.com/owner/repo-a", "main")
+	vendor2 := createTestVendorSpec("vendor-b", "https://github.com/owner/repo-b", "main")
+
+	config.EXPECT().Load().Return(createTestConfig(vendor1, vendor2), nil)
+	lock.EXPECT().Load().Return(types.VendorLock{}, nil)
+
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/test-12345", nil).Times(2)
+	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil).Times(2)
+	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def456", nil).Times(2)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	lock.EXPECT().Save(gomock.Any()).DoAndReturn(func(l types.VendorLock) error {
+		if len(l.Vendors) != 2 {
+			t.Errorf("Expected 2 lock entries (all vendors), got %d", len(l.Vendors))
+		}
+		return nil
+	})
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+
+	// Empty options = no filter = update all
+	err := syncer.UpdateAllWithOptions(context.Background(), UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
 	}
 }

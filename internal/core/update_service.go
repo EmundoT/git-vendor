@@ -10,9 +10,14 @@ import (
 )
 
 // UpdateOptions configures update operation behavior.
+// VendorName and Group are mutually exclusive filters; when set, only matching
+// vendors are re-fetched and their lock entries regenerated. Non-matching
+// vendors retain their existing lock entries unchanged.
 type UpdateOptions struct {
-	Parallel types.ParallelOptions
-	Local    bool // Allow file:// and local path vendor URLs
+	Parallel   types.ParallelOptions
+	Local      bool   // Allow file:// and local path vendor URLs
+	VendorName string // Filter to single vendor by name (empty = all)
+	Group      string // Filter to vendor group (empty = all)
 }
 
 // UpdateServiceInterface defines the contract for update operations and lockfile regeneration.
@@ -64,7 +69,9 @@ func (s *UpdateService) UpdateAll(ctx context.Context) error {
 	return s.UpdateAllWithOptions(ctx, UpdateOptions{})
 }
 
-// UpdateAllWithOptions updates all vendors with optional parallel processing and local path support.
+// UpdateAllWithOptions updates vendors with optional parallel processing, local path support,
+// and vendor name/group filtering. When VendorName or Group is set, only matching vendors
+// are re-fetched; non-matching vendors retain their existing lock entries.
 // ctx controls cancellation of git operations during update.
 func (s *UpdateService) UpdateAllWithOptions(ctx context.Context, opts UpdateOptions) error {
 	config, err := s.configStore.Load()
@@ -72,17 +79,36 @@ func (s *UpdateService) UpdateAllWithOptions(ctx context.Context, opts UpdateOpt
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	// Validate vendor name filter
+	if opts.VendorName != "" {
+		if err := s.validateVendorExists(config, opts.VendorName); err != nil {
+			return err
+		}
+	}
+
+	// Validate group filter
+	if opts.Group != "" {
+		if err := s.validateGroupExists(config, opts.Group); err != nil {
+			return err
+		}
+	}
+
 	if opts.Parallel.Enabled {
 		return s.updateAllParallel(ctx, config, opts)
 	}
 
-	return s.updateAllSequential(ctx, config, opts.Local)
+	return s.updateAllSequential(ctx, config, opts)
 }
 
 // updateAllSequential performs sequential update (original implementation).
+// When opts.VendorName or opts.Group is set, only matching vendors are updated;
+// non-matching vendors retain their existing lock entries verbatim.
 // ctx controls cancellation — checked at each vendor boundary.
-func (s *UpdateService) updateAllSequential(ctx context.Context, config types.VendorConfig, local bool) error {
-	// Load existing lock to preserve VendoredAt and VendoredBy
+func (s *UpdateService) updateAllSequential(ctx context.Context, config types.VendorConfig, opts UpdateOptions) error {
+	filtered := s.isFiltered(opts)
+
+	// Load existing lock to preserve VendoredAt/VendoredBy and carry forward
+	// unfiltered vendor entries when a name/group filter is active.
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
 	existingEntries := make(map[string]types.LockDetails)
@@ -96,15 +122,23 @@ func (s *UpdateService) updateAllSequential(ctx context.Context, config types.Ve
 	now := time.Now().UTC().Format(time.RFC3339)
 	user := GetGitUserIdentity()
 
+	// Determine which vendors to update
+	vendorsToUpdate := s.filterVendors(config.Vendors, opts)
+
 	// Start progress tracking
-	progress := s.ui.StartProgress(len(config.Vendors), "Updating vendors")
+	progress := s.ui.StartProgress(len(vendorsToUpdate), "Updating vendors")
 	defer progress.Complete()
 
-	// Update each vendor
-	for _, v := range config.Vendors {
+	// Track which vendor names were targeted for update (for lock merge)
+	updatedVendorNames := make(map[string]bool)
+
+	// Update each targeted vendor
+	for _, v := range vendorsToUpdate {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+
+		updatedVendorNames[v.Name] = true
 
 		var updatedRefs map[string]RefMetadata
 
@@ -124,7 +158,7 @@ func (s *UpdateService) updateAllSequential(ctx context.Context, config types.Ve
 			updatedRefs = refs
 		} else {
 			// External vendor: sync via git
-			refs, _, err := s.syncService.SyncVendor(ctx, &v, nil, SyncOptions{Force: true, NoCache: true, Local: local})
+			refs, _, err := s.syncService.SyncVendor(ctx, &v, nil, SyncOptions{Force: true, NoCache: true, Local: opts.Local})
 			if err != nil {
 				s.ui.ShowError("Update Failed", fmt.Sprintf("%s: %v", v.Name, err))
 				progress.Increment(fmt.Sprintf("✗ %s (failed)", v.Name))
@@ -192,15 +226,29 @@ func (s *UpdateService) updateAllSequential(ctx context.Context, config types.Ve
 		progress.Increment(fmt.Sprintf("✓ %s", v.Name))
 	}
 
+	// When filtered, carry forward existing lock entries for non-targeted vendors
+	if filtered {
+		for _, entry := range existingLock.Vendors {
+			if !updatedVendorNames[entry.Name] {
+				lock.Vendors = append(lock.Vendors, entry)
+			}
+		}
+	}
+
 	// Save the new lockfile
 	return s.lockStore.Save(lock)
 }
 
 // updateAllParallel performs parallel update using worker pool.
+// When opts.VendorName or opts.Group is set, only matching vendors are updated;
+// non-matching vendors retain their existing lock entries verbatim.
 // ctx controls cancellation — passed to the parallel executor and each worker.
 func (s *UpdateService) updateAllParallel(ctx context.Context, config types.VendorConfig, opts UpdateOptions) error {
+	filtered := s.isFiltered(opts)
 	parallelOpts := opts.Parallel
-	// Load existing lock to preserve VendoredAt and VendoredBy
+
+	// Load existing lock to preserve VendoredAt/VendoredBy and carry forward
+	// unfiltered vendor entries when a name/group filter is active.
 	//nolint:errcheck // Lock file may not exist yet, empty struct is acceptable
 	existingLock, _ := s.lockStore.Load()
 	existingEntries := make(map[string]types.LockDetails)
@@ -213,18 +261,26 @@ func (s *UpdateService) updateAllParallel(ctx context.Context, config types.Vend
 	now := time.Now().UTC().Format(time.RFC3339)
 	user := GetGitUserIdentity()
 
+	// Filter vendors based on options
+	vendorsToUpdate := s.filterVendors(config.Vendors, opts)
+
 	// Start progress tracking
-	progress := s.ui.StartProgress(len(config.Vendors), "Updating vendors (parallel)")
+	progress := s.ui.StartProgress(len(vendorsToUpdate), "Updating vendors (parallel)")
 	defer progress.Complete()
 
 	// Create parallel executor
 	executor := NewParallelExecutor(parallelOpts, s.ui)
 
+	// Track which vendor names were targeted for update (for lock merge)
+	updatedVendorNames := make(map[string]bool)
+
 	// Phase 1: Internal vendors — sequential (before parallel external vendors)
 	lock := types.VendorLock{}
 	var externalVendors []types.VendorSpec
 
-	for _, v := range config.Vendors {
+	for _, v := range vendorsToUpdate {
+		updatedVendorNames[v.Name] = true
+
 		if v.Source == SourceInternal {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -345,8 +401,75 @@ func (s *UpdateService) updateAllParallel(ctx context.Context, config types.Vend
 		}
 	}
 
+	// When filtered, carry forward existing lock entries for non-targeted vendors
+	if filtered {
+		for _, entry := range existingLock.Vendors {
+			if !updatedVendorNames[entry.Name] {
+				lock.Vendors = append(lock.Vendors, entry)
+			}
+		}
+	}
+
 	// Save the new lockfile
 	return s.lockStore.Save(lock)
+}
+
+// isFiltered reports whether the UpdateOptions specify a vendor name or group filter.
+func (s *UpdateService) isFiltered(opts UpdateOptions) bool {
+	return opts.VendorName != "" || opts.Group != ""
+}
+
+// validateVendorExists returns a VendorNotFoundError if no vendor with vendorName
+// exists in the config.
+func (s *UpdateService) validateVendorExists(config types.VendorConfig, vendorName string) error {
+	for _, v := range config.Vendors {
+		if v.Name == vendorName {
+			return nil
+		}
+	}
+	return NewVendorNotFoundError(vendorName)
+}
+
+// validateGroupExists returns a GroupNotFoundError if no vendor in the config
+// belongs to the given group.
+func (s *UpdateService) validateGroupExists(config types.VendorConfig, groupName string) error {
+	for _, v := range config.Vendors {
+		for _, g := range v.Groups {
+			if g == groupName {
+				return nil
+			}
+		}
+	}
+	return NewGroupNotFoundError(groupName)
+}
+
+// filterVendors returns the subset of vendors matching the UpdateOptions filters.
+// If no filter is set, all vendors are returned.
+func (s *UpdateService) filterVendors(vendors []types.VendorSpec, opts UpdateOptions) []types.VendorSpec {
+	if opts.VendorName == "" && opts.Group == "" {
+		return vendors
+	}
+
+	var filtered []types.VendorSpec
+	for _, v := range vendors {
+		if opts.VendorName != "" && v.Name != opts.VendorName {
+			continue
+		}
+		if opts.Group != "" {
+			hasGroup := false
+			for _, g := range v.Groups {
+				if g == opts.Group {
+					hasGroup = true
+					break
+				}
+			}
+			if !hasGroup {
+				continue
+			}
+		}
+		filtered = append(filtered, v)
+	}
+	return filtered
 }
 
 // toPositionLocks converts internal position records to lockfile-safe types.
