@@ -156,7 +156,7 @@ func NewVendorSyncer(
 	updateChecker := NewUpdateChecker(configStore, lockStore, gitClient, fs, ui)
 	verifyService := NewVerifyService(configStore, lockStore, cache, fs, rootDir)
 	vulnScanner := VulnScannerInterface(NewVulnScanner(lockStore, configStore))
-	driftSvc := DriftServiceInterface(NewDriftService(configStore, lockStore, gitClient, fs, rootDir))
+	driftSvc := DriftServiceInterface(NewDriftService(configStore, lockStore, gitClient, fs, ui, rootDir))
 	auditSvc := AuditServiceInterface(NewAuditService(verifyService, vulnScanner, driftSvc, configStore, lockStore))
 	complianceSvc := ComplianceServiceInterface(NewComplianceService(configStore, lockStore, cache, fs, rootDir))
 	outdatedSvc := OutdatedServiceInterface(NewOutdatedService(configStore, lockStore, gitClient))

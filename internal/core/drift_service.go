@@ -35,6 +35,7 @@ type DriftService struct {
 	lockStore   LockStore
 	gitClient   GitClient
 	fs          FileSystem
+	ui          UICallback
 	rootDir     string
 }
 
@@ -44,13 +45,18 @@ func NewDriftService(
 	lockStore LockStore,
 	gitClient GitClient,
 	fs FileSystem,
+	ui UICallback,
 	rootDir string,
 ) *DriftService {
+	if ui == nil {
+		ui = &SilentUICallback{}
+	}
 	return &DriftService{
 		configStore: configStore,
 		lockStore:   lockStore,
 		gitClient:   gitClient,
 		fs:          fs,
+		ui:          ui,
 		rootDir:     rootDir,
 	}
 }
@@ -174,16 +180,12 @@ func (s *DriftService) driftForVendorRef(
 	if err := s.gitClient.Init(ctx, tempDir); err != nil {
 		return nil, fmt.Errorf("init temp repo: %w", err)
 	}
-	if err := s.gitClient.AddRemote(ctx, tempDir, "origin", vendor.URL); err != nil {
-		return nil, fmt.Errorf("add remote: %w", err)
-	}
 
-	// Fetch full history (need both locked commit and potentially HEAD)
-	if err := s.gitClient.FetchAll(ctx, tempDir, "origin"); err != nil {
-		// Fallback to specific ref fetch
-		if err := s.gitClient.Fetch(ctx, tempDir, "origin", 0, spec.Ref); err != nil {
-			return nil, fmt.Errorf("fetch ref '%s': %w", spec.Ref, err)
-		}
+	// Fetch full history (need both locked commit and potentially HEAD).
+	// FetchWithFallback handles AddRemote + mirror fallback. Depth 0 = full fetch.
+	urls := ResolveVendorURLs(vendor)
+	if _, err := FetchWithFallback(ctx, s.gitClient, s.fs, s.ui, tempDir, urls, spec.Ref, 0); err != nil {
+		return nil, fmt.Errorf("fetch ref '%s': %w", spec.Ref, err)
 	}
 
 	// Phase 1: Read original files at locked commit

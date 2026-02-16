@@ -132,9 +132,9 @@ func TestSyncVendor_ShallowFetchFails_FullFetchSucceeds(t *testing.T) {
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
-	// Mock: Shallow fetch fails, then FetchAll succeeds
+	// Mock: Shallow fetch fails, then full fetch (depth 0) succeeds
 	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", 1, gomock.Any()).Return(fmt.Errorf("shallow fetch failed"))
-	git.EXPECT().FetchAll(gomock.Any(), gomock.Any(), "origin").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", 0, gomock.Any()).Return(nil)
 
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil)
@@ -167,9 +167,9 @@ func TestSyncVendor_BothFetchesFail(t *testing.T) {
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
-	// Mock: Both fetches fail
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(fmt.Errorf("network error"))
-	git.EXPECT().FetchAll(gomock.Any(), gomock.Any(), "origin").Return(fmt.Errorf("network error"))
+	// Mock: Both fetch attempts fail (shallow depth 1, then full depth 0)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", 1, gomock.Any()).Return(fmt.Errorf("network error"))
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", 0, gomock.Any()).Return(fmt.Errorf("network error"))
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
@@ -182,6 +182,112 @@ func TestSyncVendor_BothFetchesFail(t *testing.T) {
 	}
 	if !contains(err.Error(), "failed to fetch ref") {
 		t.Errorf("Expected 'failed to fetch ref' error, got: %v", err)
+	}
+}
+
+// TestSyncVendor_MirrorFallback_PrimaryFails_MirrorSucceeds exercises the mirror
+// fallback path end-to-end: primary URL fetch fails, mirror URL succeeds, and
+// SourceURL is recorded in RefMetadata when a mirror was used.
+func TestSyncVendor_MirrorFallback_PrimaryFails_MirrorSucceeds(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := types.VendorSpec{
+		Name:    "mirror-test",
+		URL:     "https://primary.example.com/repo",
+		Mirrors: []string{"https://mirror.example.com/repo"},
+		License: "MIT",
+		Specs: []types.BranchSpec{{
+			Ref:     "main",
+			Mapping: []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}},
+		}},
+	}
+
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/mirror-test", nil)
+	fs.EXPECT().RemoveAll("/tmp/mirror-test").Return(nil)
+
+	git.EXPECT().Init(gomock.Any(), "/tmp/mirror-test").Return(nil)
+	// AddRemote with primary URL
+	git.EXPECT().AddRemote(gomock.Any(), "/tmp/mirror-test", "origin", "https://primary.example.com/repo").Return(nil)
+	// Shallow fetch on primary fails
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/mirror-test", "origin", 1, "main").Return(fmt.Errorf("primary down"))
+	// SetRemoteURL to mirror
+	git.EXPECT().SetRemoteURL(gomock.Any(), "/tmp/mirror-test", "origin", "https://mirror.example.com/repo").Return(nil)
+	// Shallow fetch on mirror succeeds
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/mirror-test", "origin", 1, "main").Return(nil)
+
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123mirror", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+	refs, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
+	if err != nil {
+		t.Fatalf("Expected success via mirror fallback, got error: %v", err)
+	}
+
+	metadata, ok := refs["main"]
+	if !ok {
+		t.Fatal("Expected RefMetadata for 'main'")
+	}
+
+	// SourceURL should be set to mirror URL (non-empty because it differs from primary)
+	if metadata.SourceURL != "https://mirror.example.com/repo" {
+		t.Errorf("SourceURL = %q, want mirror URL", metadata.SourceURL)
+	}
+}
+
+// TestSyncVendor_MirrorFallback_PrimarySucceeds_SourceURLEmpty verifies that when the
+// primary URL succeeds, SourceURL remains empty (clean lockfile).
+func TestSyncVendor_MirrorFallback_PrimarySucceeds_SourceURLEmpty(t *testing.T) {
+	ctrl, git, fs, config, lock, license := setupMocks(t)
+	defer ctrl.Finish()
+
+	vendor := types.VendorSpec{
+		Name:    "mirror-test",
+		URL:     "https://primary.example.com/repo",
+		Mirrors: []string{"https://mirror.example.com/repo"},
+		License: "MIT",
+		Specs: []types.BranchSpec{{
+			Ref:     "main",
+			Mapping: []types.PathMapping{{From: "src/file.go", To: "lib/file.go"}},
+		}},
+	}
+
+	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Return("/tmp/mirror-test2", nil)
+	fs.EXPECT().RemoveAll("/tmp/mirror-test2").Return(nil)
+
+	git.EXPECT().Init(gomock.Any(), "/tmp/mirror-test2").Return(nil)
+	git.EXPECT().AddRemote(gomock.Any(), "/tmp/mirror-test2", "origin", "https://primary.example.com/repo").Return(nil)
+	// Primary succeeds
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/mirror-test2", "origin", 1, "main").Return(nil)
+
+	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123primary", nil)
+	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
+
+	fs.EXPECT().Stat(gomock.Any()).Return(&mockFileInfo{name: "LICENSE", isDir: false}, nil).AnyTimes()
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
+
+	syncer := createMockSyncer(git, fs, config, lock, license)
+	refs, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	metadata, ok := refs["main"]
+	if !ok {
+		t.Fatal("Expected RefMetadata for 'main'")
+	}
+
+	// SourceURL should be empty when primary URL succeeds (keeps lockfile clean)
+	if metadata.SourceURL != "" {
+		t.Errorf("SourceURL = %q, want empty (primary succeeded)", metadata.SourceURL)
 	}
 }
 
@@ -1728,68 +1834,6 @@ func TestSyncVendor_NoCacheFlag_BypassesCacheEntirely(t *testing.T) {
 	}
 	if cache.saveCalled {
 		t.Error("Expected cache.Save() to NOT be called when NoCache=true")
-	}
-}
-
-// ============================================================================
-// fetchWithFallback Tests — Shallow clone fallback paths
-// ============================================================================
-
-// TestFetchWithFallback_ShallowSucceeds verifies that fetchWithFallback returns nil
-// when the shallow fetch (depth=1) succeeds on the first attempt.
-func TestFetchWithFallback_ShallowSucceeds(t *testing.T) {
-	ctrl, git, fs, config, lock, license := setupMocks(t)
-	defer ctrl.Finish()
-
-	// Shallow fetch succeeds — FetchAll should NOT be called
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/repo", "origin", 1, "main").Return(nil)
-	git.EXPECT().FetchAll(gomock.Any(), gomock.Any(), "origin").Times(0)
-
-	syncer := createMockSyncer(git, fs, config, lock, license)
-	syncService := syncer.sync.(*SyncService)
-
-	err := syncService.fetchWithFallback(context.Background(), "/tmp/repo", "main")
-	if err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-}
-
-// TestFetchWithFallback_ShallowFails_FullSucceeds verifies the fallback path:
-// shallow fetch fails, full fetch succeeds.
-func TestFetchWithFallback_ShallowFails_FullSucceeds(t *testing.T) {
-	ctrl, git, fs, config, lock, license := setupMocks(t)
-	defer ctrl.Finish()
-
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/repo", "origin", 1, "v1.0").Return(fmt.Errorf("shallow not supported"))
-	git.EXPECT().FetchAll(gomock.Any(), "/tmp/repo", "origin").Return(nil)
-
-	syncer := createMockSyncer(git, fs, config, lock, license)
-	syncService := syncer.sync.(*SyncService)
-
-	err := syncService.fetchWithFallback(context.Background(), "/tmp/repo", "v1.0")
-	if err != nil {
-		t.Fatalf("expected nil (full fetch fallback), got %v", err)
-	}
-}
-
-// TestFetchWithFallback_BothFail verifies that when both shallow and full fetch fail,
-// the error from FetchAll is returned.
-func TestFetchWithFallback_BothFail(t *testing.T) {
-	ctrl, git, fs, config, lock, license := setupMocks(t)
-	defer ctrl.Finish()
-
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/repo", "origin", 1, "stale-tag").Return(fmt.Errorf("shallow failed"))
-	git.EXPECT().FetchAll(gomock.Any(), "/tmp/repo", "origin").Return(fmt.Errorf("network unreachable"))
-
-	syncer := createMockSyncer(git, fs, config, lock, license)
-	syncService := syncer.sync.(*SyncService)
-
-	err := syncService.fetchWithFallback(context.Background(), "/tmp/repo", "stale-tag")
-	if err == nil {
-		t.Fatal("expected error when both fetches fail")
-	}
-	if !contains(err.Error(), "fetch ref stale-tag") {
-		t.Errorf("error = %q, want wrapped fetch ref message", err.Error())
 	}
 }
 

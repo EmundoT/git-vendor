@@ -486,24 +486,26 @@ func (s *SyncService) SyncVendor(ctx context.Context, v *types.VendorSpec, locke
 		return results, totalStats, nil
 	}
 
-	// Resolve clone URL: detect local paths and apply --local gating
-	cloneURL := v.URL
-	if IsLocalPath(v.URL) {
-		if !opts.Local {
-			return nil, CopyStats{}, fmt.Errorf("vendor %s uses a local path (%s); pass --local to allow local filesystem access", v.Name, v.URL)
+	// Resolve vendor URLs: primary + mirrors, with --local gating applied to each
+	urls := ResolveVendorURLs(v)
+	for i, u := range urls {
+		if IsLocalPath(u) {
+			if !opts.Local {
+				return nil, CopyStats{}, fmt.Errorf("vendor %s uses a local path (%s); pass --local to allow local filesystem access", v.Name, u)
+			}
+			resolved, err := ResolveLocalURL(u, s.rootDir)
+			if err != nil {
+				return nil, CopyStats{}, fmt.Errorf("resolve local URL for %s: %w", v.Name, err)
+			}
+			urls[i] = resolved
 		}
-		resolved, err := ResolveLocalURL(v.URL, s.rootDir)
-		if err != nil {
-			return nil, CopyStats{}, fmt.Errorf("resolve local URL for %s: %w", v.Name, err)
-		}
-		cloneURL = resolved
 	}
 
-	// Execute pre-sync hook before cloning
+	// Execute pre-sync hook before cloning (use primary URL for hook context)
 	if v.Hooks != nil && v.Hooks.PreSync != "" {
 		hookCtx := types.HookContext{
 			VendorName: v.Name,
-			VendorURL:  cloneURL,
+			VendorURL:  urls[0],
 			RootDir:    s.rootDir,
 		}
 		if err := s.hooks.ExecutePreSync(v, &hookCtx); err != nil {
@@ -520,13 +522,12 @@ func (s *SyncService) SyncVendor(ctx context.Context, v *types.VendorSpec, locke
 	}
 	defer func() { _ = s.fs.RemoveAll(tempDir) }() //nolint:errcheck // cleanup in defer
 
-	// Initialize git repo
+	// Initialize git repo and add primary remote
 	if err := s.gitClient.Init(ctx, tempDir); err != nil {
 		return nil, CopyStats{}, fmt.Errorf("failed to initialize git repository for %s: %w", v.Name, err)
 	}
-	if err := s.gitClient.AddRemote(ctx, tempDir, "origin", cloneURL); err != nil {
-		// SEC-013: Sanitize URL in error output to prevent credential leakage
-		return nil, CopyStats{}, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, SanitizeURL(cloneURL), err)
+	if err := s.gitClient.AddRemote(ctx, tempDir, "origin", urls[0]); err != nil {
+		return nil, CopyStats{}, fmt.Errorf("failed to add remote for %s (%s): %w\n\nPlease verify the repository URL is correct and accessible", v.Name, SanitizeURL(urls[0]), err)
 	}
 
 	results := make(map[string]RefMetadata)
@@ -534,7 +535,7 @@ func (s *SyncService) SyncVendor(ctx context.Context, v *types.VendorSpec, locke
 
 	// Sync each ref
 	for _, spec := range v.Specs {
-		metadata, stats, err := s.syncRef(ctx, tempDir, v, spec, lockedRefs, opts)
+		metadata, stats, err := s.syncRef(ctx, tempDir, v, spec, lockedRefs, opts, urls)
 		if err != nil {
 			return nil, CopyStats{}, err
 		}
@@ -561,7 +562,7 @@ func (s *SyncService) SyncVendor(ctx context.Context, v *types.VendorSpec, locke
 
 		hookCtx := types.HookContext{
 			VendorName:  v.Name,
-			VendorURL:   cloneURL,
+			VendorURL:   urls[0],
 			Ref:         firstRef,
 			CommitHash:  firstHash,
 			RootDir:     s.rootDir,
@@ -577,7 +578,8 @@ func (s *SyncService) SyncVendor(ctx context.Context, v *types.VendorSpec, locke
 
 // syncRef syncs a single ref for a vendor.
 // ctx controls cancellation of git operations during sync.
-func (s *SyncService) syncRef(ctx context.Context, tempDir string, v *types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string, opts SyncOptions) (RefMetadata, CopyStats, error) {
+// urls is the ordered list of URLs to try (primary first, then mirrors).
+func (s *SyncService) syncRef(ctx context.Context, tempDir string, v *types.VendorSpec, spec types.BranchSpec, lockedRefs map[string]string, opts SyncOptions, urls []string) (RefMetadata, CopyStats, error) {
 	targetCommit := ""
 	isLocked := false
 
@@ -589,14 +591,21 @@ func (s *SyncService) syncRef(ctx context.Context, tempDir string, v *types.Vend
 		}
 	}
 
-	// Fetch and checkout
+	// Fetch and checkout using mirror-aware fallback (origin already added by SyncVendor)
 	fmt.Printf("  ⠿ Fetching ref '%s'...\n", spec.Ref)
+
+	// Shallow fetch first; if that fails for all URLs, try full depth
+	usedURL, fetchErr := s.fetchWithMirrorFallback(ctx, tempDir, urls, spec.Ref, 1)
+	if fetchErr != nil {
+		// Shallow fetch failed across all URLs — try full fetch (depth 0)
+		usedURL, fetchErr = s.fetchWithMirrorFallback(ctx, tempDir, urls, spec.Ref, 0)
+		if fetchErr != nil {
+			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, fetchErr)
+		}
+	}
 
 	if isLocked {
 		// Locked sync - checkout specific commit
-		if err := s.fetchWithFallback(ctx, tempDir, spec.Ref); err != nil {
-			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
-		}
 		if err := s.gitClient.Checkout(ctx, tempDir, targetCommit); err != nil {
 			// Detect stale lock hash error and provide helpful message
 			errMsg := err.Error()
@@ -607,14 +616,17 @@ func (s *SyncService) syncRef(ctx context.Context, tempDir string, v *types.Vend
 		}
 	} else {
 		// Unlocked sync - checkout latest
-		if err := s.fetchWithFallback(ctx, tempDir, spec.Ref); err != nil {
-			return RefMetadata{}, CopyStats{}, fmt.Errorf("failed to fetch ref %s: %w", spec.Ref, err)
-		}
 		if err := s.gitClient.Checkout(ctx, tempDir, FetchHead); err != nil {
 			if err := s.gitClient.Checkout(ctx, tempDir, spec.Ref); err != nil {
 				return RefMetadata{}, CopyStats{}, NewCheckoutError(spec.Ref, v.Name, err)
 			}
 		}
+	}
+
+	// Track which URL succeeded (empty if primary URL was used, to keep lockfile clean)
+	sourceURL := ""
+	if usedURL != urls[0] {
+		sourceURL = usedURL
 	}
 
 	// Get current commit hash
@@ -653,20 +665,38 @@ func (s *SyncService) syncRef(ctx context.Context, tempDir string, v *types.Vend
 		}
 	}
 
-	return RefMetadata{CommitHash: hash, VersionTag: versionTag, Positions: stats.Positions}, stats, nil
+	return RefMetadata{CommitHash: hash, VersionTag: versionTag, Positions: stats.Positions, SourceURL: sourceURL}, stats, nil
 }
 
-// fetchWithFallback tries shallow fetch first, falls back to full fetch if needed.
-// ctx controls cancellation of git fetch operations.
-func (s *SyncService) fetchWithFallback(ctx context.Context, tempDir, ref string) error {
-	// Try shallow fetch first
-	if err := s.gitClient.Fetch(ctx, tempDir, "origin", 1, ref); err != nil {
-		// Shallow fetch failed, try full fetch
-		if err := s.gitClient.FetchAll(ctx, tempDir, "origin"); err != nil {
-			return fmt.Errorf("fetch ref %s: %w", ref, err)
+// fetchWithMirrorFallback tries fetching from each URL in order. Assumes "origin"
+// remote already exists in tempDir (added by SyncVendor). Uses SetRemoteURL for
+// mirror fallback instead of AddRemote. Returns the URL that succeeded.
+func (s *SyncService) fetchWithMirrorFallback(ctx context.Context, tempDir string, urls []string, ref string, depth int) (string, error) {
+	var lastErr error
+	for i, url := range urls {
+		if i > 0 {
+			// Switch origin's URL to this mirror
+			if setErr := s.gitClient.SetRemoteURL(ctx, tempDir, "origin", url); setErr != nil {
+				lastErr = fmt.Errorf("set remote URL to %s: %w", SanitizeURL(url), setErr)
+				continue
+			}
+			if Verbose {
+				s.ui.ShowWarning("Mirror Fallback", fmt.Sprintf("Trying %s", SanitizeURL(url)))
+			}
+		}
+
+		fetchErr := s.gitClient.Fetch(ctx, tempDir, "origin", depth, ref)
+		if fetchErr == nil {
+			return url, nil
+		}
+		lastErr = fetchErr
+
+		if len(urls) > 1 {
+			s.ui.ShowWarning("Fetch Failed", fmt.Sprintf("%s: %v", SanitizeURL(url), fetchErr))
 		}
 	}
-	return nil
+
+	return "", fmt.Errorf("all URLs failed for ref %s (last error: %w)", ref, lastErr)
 }
 
 // canSkipSync checks if a vendor@ref can skip sync based on cache.
