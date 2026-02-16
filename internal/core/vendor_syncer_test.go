@@ -66,6 +66,7 @@ func (s *stubSyncService) SyncVendor(_ context.Context, _ *types.VendorSpec, _ m
 type stubUpdateService struct {
 	updateErr error
 	callCount int
+	lastOpts  UpdateOptions // Captures last UpdateOptions passed to UpdateAllWithOptions
 }
 
 func (s *stubUpdateService) UpdateAll(_ context.Context) error {
@@ -73,8 +74,9 @@ func (s *stubUpdateService) UpdateAll(_ context.Context) error {
 	return s.updateErr
 }
 
-func (s *stubUpdateService) UpdateAllWithOptions(_ context.Context, _ UpdateOptions) error {
+func (s *stubUpdateService) UpdateAllWithOptions(_ context.Context, opts UpdateOptions) error {
 	s.callCount++
+	s.lastOpts = opts
 	return s.updateErr
 }
 
@@ -998,6 +1000,134 @@ func TestVendorSyncer_UpdateAllWithOptions(t *testing.T) {
 		t.Fatalf("UpdateAllWithOptions() error = %v", err)
 	}
 }
+
+// TestSyncWithFullOpts_NoLockfile_PassesVendorFilter verifies that when no
+// lockfile exists, SyncWithFullOpts passes VendorName and GroupName through
+// to UpdateAllWithOptions instead of updating all vendors.
+func TestSyncWithFullOpts_NoLockfile_PassesVendorFilter(t *testing.T) {
+	update := &stubUpdateService{}
+	// stubSyncService that succeeds (sync after lockfile creation should work)
+	syncSvc := &stubSyncService{}
+	// stubLockStore returns empty lock on first call (no lockfile), then returns
+	// a non-empty lock for subsequent calls (after update creates it).
+	lock := &countingLockStore{
+		loads: []types.VendorLock{
+			{},                                                                                      // First call: empty (triggers lockfile generation)
+			{Vendors: []types.LockDetails{{Name: "vendor-a", Ref: "main", CommitHash: "abc123"}}},   // Second call: non-empty
+		},
+	}
+
+	syncer := newTestSyncer(nil, lock, nil, &ServiceOverrides{
+		Update: update,
+		Sync:   syncSvc,
+	})
+
+	err := syncer.SyncWithFullOpts(context.Background(), SyncOptions{
+		VendorName: "vendor-a",
+		Local:      true,
+	})
+	if err != nil {
+		t.Fatalf("SyncWithFullOpts() error = %v", err)
+	}
+
+	// UpdateAllWithOptions should have been called with the vendor filter
+	if update.lastOpts.VendorName != "vendor-a" {
+		t.Errorf("UpdateAllWithOptions VendorName = %q, want %q", update.lastOpts.VendorName, "vendor-a")
+	}
+	if !update.lastOpts.Local {
+		t.Error("UpdateAllWithOptions Local = false, want true")
+	}
+}
+
+// TestSyncWithFullOpts_NoLockfile_PassesGroupFilter verifies that when no
+// lockfile exists, SyncWithFullOpts passes GroupName through to
+// UpdateAllWithOptions.
+func TestSyncWithFullOpts_NoLockfile_PassesGroupFilter(t *testing.T) {
+	update := &stubUpdateService{}
+	syncSvc := &stubSyncService{}
+	lock := &countingLockStore{
+		loads: []types.VendorLock{
+			{},
+			{Vendors: []types.LockDetails{{Name: "vendor-a", Ref: "main", CommitHash: "abc123"}}},
+		},
+	}
+
+	syncer := newTestSyncer(nil, lock, nil, &ServiceOverrides{
+		Update: update,
+		Sync:   syncSvc,
+	})
+
+	err := syncer.SyncWithFullOpts(context.Background(), SyncOptions{
+		GroupName: "frontend",
+	})
+	if err != nil {
+		t.Fatalf("SyncWithFullOpts() error = %v", err)
+	}
+
+	if update.lastOpts.Group != "frontend" {
+		t.Errorf("UpdateAllWithOptions Group = %q, want %q", update.lastOpts.Group, "frontend")
+	}
+}
+
+// TestSyncWithAutoUpdate_StaleCommit_PassesVendorFilter verifies that when
+// sync encounters a stale commit error, the auto-update fallback passes
+// VendorName through to UpdateAllWithOptions.
+func TestSyncWithAutoUpdate_StaleCommit_PassesVendorFilter(t *testing.T) {
+	update := &stubUpdateService{}
+	// stubSyncService that returns a StaleCommitError
+	syncSvc := &stubSyncService{
+		syncErr: &StaleCommitError{CommitHash: "deadbeef", VendorName: "vendor-a", Ref: "main"},
+	}
+	lock := &stubLockStore{
+		lock: types.VendorLock{
+			Vendors: []types.LockDetails{{Name: "vendor-a", Ref: "main", CommitHash: "deadbeef"}},
+		},
+	}
+
+	syncer := newTestSyncer(nil, lock, nil, &ServiceOverrides{
+		Update: update,
+		Sync:   syncSvc,
+	})
+
+	err := syncer.SyncWithFullOpts(context.Background(), SyncOptions{
+		VendorName: "vendor-a",
+		Local:      true,
+	})
+	if err != nil {
+		t.Fatalf("SyncWithFullOpts() error = %v", err)
+	}
+
+	if update.lastOpts.VendorName != "vendor-a" {
+		t.Errorf("auto-update UpdateAllWithOptions VendorName = %q, want %q", update.lastOpts.VendorName, "vendor-a")
+	}
+	if update.lastOpts.Group != "" {
+		t.Errorf("auto-update UpdateAllWithOptions Group = %q, want %q", update.lastOpts.Group, "")
+	}
+	if !update.lastOpts.Local {
+		t.Error("auto-update UpdateAllWithOptions Local = false, want true")
+	}
+}
+
+// countingLockStore returns successive lock values on each Load call.
+// countingLockStore enables testing code paths that check lockfile existence
+// before and after lockfile generation.
+type countingLockStore struct {
+	loads    []types.VendorLock
+	loadIdx int
+}
+
+func (s *countingLockStore) Load() (types.VendorLock, error) {
+	if s.loadIdx < len(s.loads) {
+		l := s.loads[s.loadIdx]
+		s.loadIdx++
+		return l, nil
+	}
+	return types.VendorLock{}, nil
+}
+
+func (s *countingLockStore) Save(_ types.VendorLock) error { return nil }
+func (s *countingLockStore) Path() string                  { return ".git-vendor/vendor.lock" }
+func (s *countingLockStore) GetHash(_, _ string) string    { return "" }
 
 // ============================================================================
 // VendorSyncer delegation tests
