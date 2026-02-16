@@ -31,7 +31,7 @@ func TestUpdateAll_HappyPath_SingleVendor(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), "/tmp/test-12345").Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), "/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", "origin", 1, "main").Return(nil)
 	git.EXPECT().Checkout(gomock.Any(), "/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test-12345").Return("abc123def456", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -88,7 +88,7 @@ func TestUpdateAll_HappyPath_MultipleVendors(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(3)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil).Times(3)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
 
 	callCount := 0
@@ -173,7 +173,7 @@ func TestUpdateAll_OneVendorFails_OthersContinue(t *testing.T) {
 	}).Times(3)
 
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil).Times(2)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -218,7 +218,7 @@ func TestUpdateAll_LockSaveFails(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -283,7 +283,7 @@ func TestUpdateAll_TimestampFormat(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -356,7 +356,7 @@ func TestUpdateAll_MultipleSpecsPerVendor(t *testing.T) {
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
 	// Each spec gets fetched, checked out, and hash retrieved
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil).Times(3)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
 
 	hashCounter := 0
@@ -408,7 +408,7 @@ func TestUpdateAll_LicensePathSet(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -724,7 +724,7 @@ func TestUpdateAllWithOptions_SequentialFallback(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -763,7 +763,7 @@ func TestUpdateAllWithOptions_ParallelMultipleVendors(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil).Times(2)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -810,7 +810,7 @@ func TestUpdateAllWithOptions_ParallelPartialFailure(t *testing.T) {
 	}).Times(2)
 
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def", nil).AnyTimes()
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -861,7 +861,7 @@ func TestUpdateAllWithOptions_VendorNameFilter(t *testing.T) {
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil).Times(1)
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), "https://github.com/owner/repo-a").Return(nil).Times(1)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil).Times(1)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("new_a_hash_1234", nil).Times(1)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -929,7 +929,7 @@ func TestUpdateAllWithOptions_GroupFilter(t *testing.T) {
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil).Times(2)
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("new_hash_00000", nil).Times(2)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -1024,7 +1024,7 @@ func TestUpdateAllWithOptions_NoFilter_Regression(t *testing.T) {
 	fs.EXPECT().RemoveAll("/tmp/test-12345").Return(nil).Times(2)
 	git.EXPECT().Init(gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().AddRemote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	git.EXPECT().GetHeadHash(gomock.Any(), gomock.Any()).Return("abc123def456", nil).Times(2)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()

@@ -176,7 +176,7 @@ func TestCopyMappings_AutoNaming(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), "/tmp/test-12345").Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), "/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", "origin", 1, "main").Return(nil)
 	git.EXPECT().Checkout(gomock.Any(), "/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test-12345").Return("abc123def", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -220,7 +220,7 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), "/tmp/test-12345").Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), "/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", "origin", 1, "main").Return(nil)
 	git.EXPECT().Checkout(gomock.Any(), "/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test-12345").Return("abc123def", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
@@ -252,7 +252,7 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 
 	git.EXPECT().Init(gomock.Any(), "/tmp/test-12345").Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), "/tmp/test-12345", "origin", "https://github.com/owner/repo").Return(nil)
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", 1, "main").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", "origin", 1, "main").Return(nil)
 	git.EXPECT().Checkout(gomock.Any(), "/tmp/test-12345", "FETCH_HEAD").Return(nil)
 	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test-12345").Return("abc123def", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()

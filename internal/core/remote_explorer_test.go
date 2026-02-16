@@ -171,7 +171,7 @@ func TestFetchRepoDir_HappyPath(t *testing.T) {
 	git.EXPECT().Clone(gomock.Any(), "/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(nil)
 
 	// Mock: Fetch is called after clone when ref is not HEAD
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", 0, "main").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", "origin", 0, "main").Return(nil)
 
 	// Mock: ListTree returns files
 	git.EXPECT().ListTree(gomock.Any(), "/tmp/test-12345", "main", "src").Return([]string{"file1.go", "file2.go", "subdir/"}, nil)
@@ -221,7 +221,7 @@ func TestFetchRepoDir_SpecificRef(t *testing.T) {
 	git.EXPECT().Clone(gomock.Any(), "/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(nil)
 
 	// Mock: Fetch called for specific ref
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", gomock.Any(), "v1.0.0").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", "origin", gomock.Any(), "v1.0.0").Return(nil)
 
 	// Mock: ListTree returns files
 	git.EXPECT().ListTree(gomock.Any(), "/tmp/test-12345", "v1.0.0", "").Return([]string{"file.go"}, nil)
@@ -246,7 +246,7 @@ func TestFetchRepoDir_ListTreeFails(t *testing.T) {
 	git.EXPECT().Clone(gomock.Any(), "/tmp/test-12345", "https://github.com/owner/repo", gomock.Any()).Return(nil)
 
 	// Mock: Fetch is called after clone when ref is not HEAD
-	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", 0, "main").Return(nil)
+	git.EXPECT().Fetch(gomock.Any(), "/tmp/test-12345", "origin", 0, "main").Return(nil)
 
 	// Mock: ListTree fails
 	git.EXPECT().ListTree(gomock.Any(), "/tmp/test-12345", "main", "nonexistent").Return(nil, fmt.Errorf("invalid tree object"))

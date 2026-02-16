@@ -154,31 +154,31 @@ func (mr *MockGitClientMockRecorder) ConfigSet(ctx, dir, key, value interface{})
 }
 
 // Fetch mocks base method.
-func (m *MockGitClient) Fetch(ctx context.Context, dir string, depth int, ref string) error {
+func (m *MockGitClient) Fetch(ctx context.Context, dir, remote string, depth int, ref string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Fetch", ctx, dir, depth, ref)
+	ret := m.ctrl.Call(m, "Fetch", ctx, dir, remote, depth, ref)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Fetch indicates an expected call of Fetch.
-func (mr *MockGitClientMockRecorder) Fetch(ctx, dir, depth, ref interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) Fetch(ctx, dir, remote, depth, ref interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Fetch", reflect.TypeOf((*MockGitClient)(nil).Fetch), ctx, dir, depth, ref)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Fetch", reflect.TypeOf((*MockGitClient)(nil).Fetch), ctx, dir, remote, depth, ref)
 }
 
 // FetchAll mocks base method.
-func (m *MockGitClient) FetchAll(ctx context.Context, dir string) error {
+func (m *MockGitClient) FetchAll(ctx context.Context, dir, remote string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FetchAll", ctx, dir)
+	ret := m.ctrl.Call(m, "FetchAll", ctx, dir, remote)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // FetchAll indicates an expected call of FetchAll.
-func (mr *MockGitClientMockRecorder) FetchAll(ctx, dir interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) FetchAll(ctx, dir, remote interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchAll", reflect.TypeOf((*MockGitClient)(nil).FetchAll), ctx, dir)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchAll", reflect.TypeOf((*MockGitClient)(nil).FetchAll), ctx, dir, remote)
 }
 
 // GetCommitLog mocks base method.
@@ -283,4 +283,18 @@ func (m *MockGitClient) LsRemote(ctx context.Context, url, ref string) (string, 
 func (mr *MockGitClientMockRecorder) LsRemote(ctx, url, ref interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LsRemote", reflect.TypeOf((*MockGitClient)(nil).LsRemote), ctx, url, ref)
+}
+
+// SetRemoteURL mocks base method.
+func (m *MockGitClient) SetRemoteURL(ctx context.Context, dir, name, url string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetRemoteURL", ctx, dir, name, url)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetRemoteURL indicates an expected call of SetRemoteURL.
+func (mr *MockGitClientMockRecorder) SetRemoteURL(ctx, dir, name, url interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetRemoteURL", reflect.TypeOf((*MockGitClient)(nil).SetRemoteURL), ctx, dir, name, url)
 }
