@@ -24,7 +24,7 @@ allowed-tools: Bash, Read, Glob, Grep, Write, Edit, Task
 - **Review Current Schema:**
   ```bash
   # Check current lockfile structure
-  cat vendor/vendor.lock
+  cat .git-.git-vendor/vendor.lock
 
   # Review type definitions
   grep -A 30 "type VendorLock" internal/types/types.go
@@ -313,7 +313,7 @@ When migrations are verified:
 
 ```bash
 # View lockfile structure
-cat vendor/vendor.lock
+cat .git-vendor/vendor.lock
 
 # View type definitions
 grep -A 50 "type VendorLock\|type LockDetails\|type VendorConfig\|type VendorSpec" internal/types/types.go
@@ -358,7 +358,7 @@ testdata/
 
 - **internal/types/types.go** - Schema definitions
 - **internal/core/lock_store.go** - Lockfile I/O and migration
-- **vendor/vendor.lock** - Actual lockfile
+- **.git-vendor/vendor.lock** - Actual lockfile
 - **docs/LOCKFILE_SCHEMA.md** - Schema documentation
 - **docs/ROADMAP.md** - Planned schema changes
 - **CLAUDE.md** - Developer documentation

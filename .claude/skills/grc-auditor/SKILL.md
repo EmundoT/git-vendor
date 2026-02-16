@@ -7,11 +7,13 @@ hooks:
         - type: command
           command: "echo '## GRC AUDIT IN PROGRESS' && echo 'An active compliance audit is walking the message chain.' && echo 'Preserve all requirement tracking (REQ-NNN) and findings (FINDING-NNN) from above.' && cat .claude/krillin_counters.md 2>/dev/null | head -20"
           timeout: 10
+          statusMessage: "Preserving GRC audit context"
   SubagentStart:
     - hooks:
         - type: command
           command: "echo '## GRC Audit Subagent Constraint' && echo 'You are operating under a GRC compliance audit.' && echo 'Do NOT modify files. Do NOT implement fixes. Read and report only.'"
           timeout: 5
+          statusMessage: "Constraining subagent to read-only"
 ---
 
 # GRC Compliance Audit

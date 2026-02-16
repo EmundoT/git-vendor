@@ -1,6 +1,7 @@
 ---
 name: commit-schema
 description: COMMIT-SCHEMA v1 protocol reference for writing structured commits with trailers, tags, and notes in the git-plumbing ecosystem
+user-invocable: false
 ---
 
 # Commit Schema v1 — Protocol Reference
