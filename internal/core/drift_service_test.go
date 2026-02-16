@@ -665,7 +665,7 @@ func expectGitOpsForDrift(
 
 	git.EXPECT().Init(gomock.Any(), cloneDir).Return(nil)
 	git.EXPECT().AddRemote(gomock.Any(), cloneDir, "origin", gomock.Any()).Return(nil)
-	git.EXPECT().FetchAll(gomock.Any(), cloneDir).Return(nil)
+	git.EXPECT().FetchAll(gomock.Any(), cloneDir, "origin").Return(nil)
 	// Checkout locked commit
 	git.EXPECT().Checkout(gomock.Any(), cloneDir, gomock.Any()).Return(nil)
 
@@ -884,7 +884,7 @@ func TestDrift_HappyPath_UpstreamModified(t *testing.T) {
 	fs.EXPECT().RemoveAll(cloneDir).Return(nil)
 	gitClient.EXPECT().Init(gomock.Any(), cloneDir).Return(nil)
 	gitClient.EXPECT().AddRemote(gomock.Any(), cloneDir, "origin", gomock.Any()).Return(nil)
-	gitClient.EXPECT().FetchAll(gomock.Any(), cloneDir).Return(nil)
+	gitClient.EXPECT().FetchAll(gomock.Any(), cloneDir, "origin").Return(nil)
 
 	// First checkout: locked commit (files already written as original)
 	gitClient.EXPECT().Checkout(gomock.Any(), cloneDir, "abc1234567890").Return(nil)
@@ -955,7 +955,7 @@ func TestDrift_ConflictRisk(t *testing.T) {
 	fs.EXPECT().RemoveAll(cloneDir).Return(nil)
 	gitClient.EXPECT().Init(gomock.Any(), cloneDir).Return(nil)
 	gitClient.EXPECT().AddRemote(gomock.Any(), cloneDir, "origin", gomock.Any()).Return(nil)
-	gitClient.EXPECT().FetchAll(gomock.Any(), cloneDir).Return(nil)
+	gitClient.EXPECT().FetchAll(gomock.Any(), cloneDir, "origin").Return(nil)
 	gitClient.EXPECT().Checkout(gomock.Any(), cloneDir, "abc1234567890").Return(nil)
 	gitClient.EXPECT().Checkout(gomock.Any(), cloneDir, "FETCH_HEAD").
 		DoAndReturn(func(_ context.Context, dir, _ string) error {
@@ -1243,8 +1243,8 @@ func TestDrift_FetchAllAndFetchBothFail(t *testing.T) {
 	fs.EXPECT().RemoveAll(tmpDir).Return(nil)
 	gitClient.EXPECT().Init(gomock.Any(), tmpDir).Return(nil)
 	gitClient.EXPECT().AddRemote(gomock.Any(), tmpDir, "origin", gomock.Any()).Return(nil)
-	gitClient.EXPECT().FetchAll(gomock.Any(), tmpDir).Return(fmt.Errorf("fetch all failed"))
-	gitClient.EXPECT().Fetch(gomock.Any(), tmpDir, 0, "main").Return(fmt.Errorf("fetch ref failed"))
+	gitClient.EXPECT().FetchAll(gomock.Any(), tmpDir, "origin").Return(fmt.Errorf("fetch all failed"))
+	gitClient.EXPECT().Fetch(gomock.Any(), tmpDir, "origin", 0, "main").Return(fmt.Errorf("fetch ref failed"))
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, "/root")
 	_, err := svc.Drift(context.Background(), DriftOptions{})
@@ -1284,7 +1284,7 @@ func TestDrift_CheckoutLockedCommitError(t *testing.T) {
 	fs.EXPECT().RemoveAll(tmpDir).Return(nil)
 	gitClient.EXPECT().Init(gomock.Any(), tmpDir).Return(nil)
 	gitClient.EXPECT().AddRemote(gomock.Any(), tmpDir, "origin", gomock.Any()).Return(nil)
-	gitClient.EXPECT().FetchAll(gomock.Any(), tmpDir).Return(nil)
+	gitClient.EXPECT().FetchAll(gomock.Any(), tmpDir, "origin").Return(nil)
 	gitClient.EXPECT().Checkout(gomock.Any(), tmpDir, "abc1234567890").Return(fmt.Errorf("bad commit"))
 
 	svc := NewDriftService(configStore, lockStore, gitClient, fs, "/root")
@@ -1331,7 +1331,7 @@ func TestDrift_UpstreamCheckoutFallbackToOffline(t *testing.T) {
 	fs.EXPECT().RemoveAll(cloneDir).Return(nil)
 	gitClient.EXPECT().Init(gomock.Any(), cloneDir).Return(nil)
 	gitClient.EXPECT().AddRemote(gomock.Any(), cloneDir, "origin", gomock.Any()).Return(nil)
-	gitClient.EXPECT().FetchAll(gomock.Any(), cloneDir).Return(nil)
+	gitClient.EXPECT().FetchAll(gomock.Any(), cloneDir, "origin").Return(nil)
 	gitClient.EXPECT().Checkout(gomock.Any(), cloneDir, "abc1234567890").Return(nil)
 	// Both upstream checkout attempts fail → graceful fallback to offline
 	gitClient.EXPECT().Checkout(gomock.Any(), cloneDir, "FETCH_HEAD").Return(fmt.Errorf("no FETCH_HEAD"))

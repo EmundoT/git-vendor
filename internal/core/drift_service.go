@@ -179,9 +179,9 @@ func (s *DriftService) driftForVendorRef(
 	}
 
 	// Fetch full history (need both locked commit and potentially HEAD)
-	if err := s.gitClient.FetchAll(ctx, tempDir); err != nil {
+	if err := s.gitClient.FetchAll(ctx, tempDir, "origin"); err != nil {
 		// Fallback to specific ref fetch
-		if err := s.gitClient.Fetch(ctx, tempDir, 0, spec.Ref); err != nil {
+		if err := s.gitClient.Fetch(ctx, tempDir, "origin", 0, spec.Ref); err != nil {
 			return nil, fmt.Errorf("fetch ref '%s': %w", spec.Ref, err)
 		}
 	}

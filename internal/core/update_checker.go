@@ -127,7 +127,7 @@ func (c *UpdateChecker) fetchLatestHash(ctx context.Context, url, ref string) (s
 	}
 
 	// Fetch the specific ref with depth 1 (we only need the latest commit)
-	if err := c.gitClient.Fetch(ctx, tempDir, 1, ref); err != nil {
+	if err := c.gitClient.Fetch(ctx, tempDir, "origin", 1, ref); err != nil {
 		return "", fmt.Errorf("git fetch failed: %w", err)
 	}
 

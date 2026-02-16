@@ -659,9 +659,9 @@ func (s *SyncService) syncRef(ctx context.Context, tempDir string, v *types.Vend
 // ctx controls cancellation of git fetch operations.
 func (s *SyncService) fetchWithFallback(ctx context.Context, tempDir, ref string) error {
 	// Try shallow fetch first
-	if err := s.gitClient.Fetch(ctx, tempDir, 1, ref); err != nil {
+	if err := s.gitClient.Fetch(ctx, tempDir, "origin", 1, ref); err != nil {
 		// Shallow fetch failed, try full fetch
-		if err := s.gitClient.FetchAll(ctx, tempDir); err != nil {
+		if err := s.gitClient.FetchAll(ctx, tempDir, "origin"); err != nil {
 			return fmt.Errorf("fetch ref %s: %w", ref, err)
 		}
 	}

@@ -19,8 +19,9 @@ var semverRegex = regexp.MustCompile(`^\d+\.\d+\.\d+`)
 type GitClient interface {
 	Init(ctx context.Context, dir string) error
 	AddRemote(ctx context.Context, dir, name, url string) error
-	Fetch(ctx context.Context, dir string, depth int, ref string) error
-	FetchAll(ctx context.Context, dir string) error
+	Fetch(ctx context.Context, dir, remote string, depth int, ref string) error
+	FetchAll(ctx context.Context, dir, remote string) error
+	SetRemoteURL(ctx context.Context, dir, name, url string) error
 	Checkout(ctx context.Context, dir, ref string) error
 	GetHeadHash(ctx context.Context, dir string) (string, error)
 	Clone(ctx context.Context, dir, url string, opts *types.CloneOptions) error
@@ -63,14 +64,20 @@ func (g *SystemGitClient) AddRemote(ctx context.Context, dir, name, url string) 
 	return g.gitFor(dir).AddRemote(ctx, name, url)
 }
 
-// Fetch fetches from remote with optional depth
-func (g *SystemGitClient) Fetch(ctx context.Context, dir string, depth int, ref string) error {
-	return g.gitFor(dir).Fetch(ctx, "origin", ref, depth)
+// Fetch fetches from the named remote with optional depth.
+func (g *SystemGitClient) Fetch(ctx context.Context, dir, remote string, depth int, ref string) error {
+	return g.gitFor(dir).Fetch(ctx, remote, ref, depth)
 }
 
-// FetchAll fetches all refs from origin
-func (g *SystemGitClient) FetchAll(ctx context.Context, dir string) error {
-	return g.gitFor(dir).FetchAll(ctx, "origin")
+// FetchAll fetches all refs from the named remote.
+func (g *SystemGitClient) FetchAll(ctx context.Context, dir, remote string) error {
+	return g.gitFor(dir).FetchAll(ctx, remote)
+}
+
+// SetRemoteURL updates the URL of an existing remote.
+// SetRemoteURL uses git config directly (no git-plumbing SetRemoteURL method).
+func (g *SystemGitClient) SetRemoteURL(ctx context.Context, dir, name, url string) error {
+	return g.gitFor(dir).ConfigSet(ctx, "remote."+name+".url", url)
 }
 
 // Checkout checks out a git ref

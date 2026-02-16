@@ -30,10 +30,13 @@ type stubGitClient struct {
 
 func (s *stubGitClient) Init(_ context.Context, _ string) error            { return nil }
 func (s *stubGitClient) AddRemote(_ context.Context, _, _, _ string) error { return nil }
-func (s *stubGitClient) Fetch(_ context.Context, _ string, _ int, _ string) error {
+func (s *stubGitClient) Fetch(_ context.Context, _, _ string, _ int, _ string) error {
 	return nil
 }
-func (s *stubGitClient) FetchAll(_ context.Context, _ string) error { return nil }
+func (s *stubGitClient) FetchAll(_ context.Context, _, _ string) error { return nil }
+func (s *stubGitClient) SetRemoteURL(_ context.Context, _, _, _ string) error {
+	return nil
+}
 
 // Checkout populates the git working directory with pre-configured source files.
 func (s *stubGitClient) Checkout(_ context.Context, dir, _ string) error {

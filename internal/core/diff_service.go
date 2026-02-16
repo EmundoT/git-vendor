@@ -113,7 +113,7 @@ func (s *VendorSyncer) DiffVendorWithOptions(opts DiffOptions) ([]types.VendorDi
 				// log limit plus margin). Only deepen if the locked commit is not
 				// reachable in the shallow history.
 				const shallowDepth = 20
-				if err := s.gitClient.Fetch(ctx, tempDir, shallowDepth, spec.Ref); err != nil {
+				if err := s.gitClient.Fetch(ctx, tempDir, "origin", shallowDepth, spec.Ref); err != nil {
 					return fmt.Errorf("failed to fetch ref '%s': %w", spec.Ref, err)
 				}
 
@@ -131,7 +131,7 @@ func (s *VendorSyncer) DiffVendorWithOptions(opts DiffOptions) ([]types.VendorDi
 				commits, err := s.gitClient.GetCommitLog(ctx, tempDir, lockedHash, latestHash, 10)
 				if err != nil {
 					// Locked commit not in shallow history — deepen and retry
-					if deepErr := s.gitClient.Fetch(ctx, tempDir, 0, spec.Ref); deepErr != nil {
+					if deepErr := s.gitClient.Fetch(ctx, tempDir, "origin", 0, spec.Ref); deepErr != nil {
 						// Full fetch also failed; return empty log (diverged or force-pushed)
 						commits = []types.CommitInfo{}
 					} else {
