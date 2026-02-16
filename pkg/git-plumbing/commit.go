@@ -6,8 +6,8 @@ import "context"
 // Trailers are ordered and support duplicate keys, enabling multi-valued
 // semantics (e.g., multiple Vendor-Name entries with positional association).
 type Trailer struct {
-	Key   string
-	Value string
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // CommitOpts configures a commit operation.
