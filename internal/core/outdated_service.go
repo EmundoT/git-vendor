@@ -88,7 +88,8 @@ func (s *OutdatedService) Outdated(ctx context.Context, opts OutdatedOptions) (*
 				continue
 			}
 
-			latestHash, err := s.gitClient.LsRemote(ctx, vendor.URL, spec.Ref)
+			urls := ResolveVendorURLs(&vendor)
+			latestHash, err := s.lsRemoteWithFallback(ctx, urls, spec.Ref)
 			if err != nil {
 				// Network/auth error — skip, don't fail the entire check
 				result.Skipped++
@@ -117,4 +118,19 @@ func (s *OutdatedService) Outdated(ctx context.Context, opts OutdatedOptions) (*
 	}
 
 	return result, nil
+}
+
+// lsRemoteWithFallback tries LsRemote against each URL in order until one succeeds.
+// lsRemoteWithFallback returns the resolved hash from the first successful URL, or
+// the last error if all URLs fail.
+func (s *OutdatedService) lsRemoteWithFallback(ctx context.Context, urls []string, ref string) (string, error) {
+	var lastErr error
+	for _, url := range urls {
+		hash, err := s.gitClient.LsRemote(ctx, url, ref)
+		if err == nil {
+			return hash, nil
+		}
+		lastErr = err
+	}
+	return "", lastErr
 }

@@ -104,16 +104,13 @@ func (s *VendorSyncer) DiffVendorWithOptions(opts DiffOptions) ([]types.VendorDi
 					return fmt.Errorf("failed to init temp repo: %w", err)
 				}
 
-				// Add remote
-				if err := s.gitClient.AddRemote(ctx, tempDir, "origin", vendor.URL); err != nil {
-					return fmt.Errorf("failed to add remote: %w", err)
-				}
-
-				// Shallow fetch the target ref first (depth 20 covers the 10-commit
-				// log limit plus margin). Only deepen if the locked commit is not
+				// Shallow fetch the target ref (depth 20 covers the 10-commit
+				// log limit plus margin). FetchWithFallback handles AddRemote
+				// and mirror fallback. Only deepen if the locked commit is not
 				// reachable in the shallow history.
 				const shallowDepth = 20
-				if err := s.gitClient.Fetch(ctx, tempDir, "origin", shallowDepth, spec.Ref); err != nil {
+				urls := ResolveVendorURLs(vendor)
+				if _, err := FetchWithFallback(ctx, s.gitClient, s.fs, s.ui, tempDir, urls, spec.Ref, shallowDepth); err != nil {
 					return fmt.Errorf("failed to fetch ref '%s': %w", spec.Ref, err)
 				}
 
@@ -130,7 +127,9 @@ func (s *VendorSyncer) DiffVendorWithOptions(opts DiffOptions) ([]types.VendorDi
 				// Get commit log between locked and latest
 				commits, err := s.gitClient.GetCommitLog(ctx, tempDir, lockedHash, latestHash, 10)
 				if err != nil {
-					// Locked commit not in shallow history — deepen and retry
+					// Locked commit not in shallow history — deepen and retry.
+					// Origin remote already exists from FetchWithFallback, so
+					// a direct Fetch call suffices for deepening.
 					if deepErr := s.gitClient.Fetch(ctx, tempDir, "origin", 0, spec.Ref); deepErr != nil {
 						// Full fetch also failed; return empty log (diverged or force-pushed)
 						commits = []types.CommitInfo{}
@@ -181,10 +180,10 @@ func containsGroup(groups []string, target string) bool {
 func FormatDiffOutput(diff *types.VendorDiff) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("📦 %s @ %s\n", diff.VendorName, diff.Ref))
+	sb.WriteString(fmt.Sprintf("\xf0\x9f\x93\xa6 %s @ %s\n", diff.VendorName, diff.Ref))
 
 	if diff.OldHash == diff.NewHash {
-		sb.WriteString(fmt.Sprintf("   ✓ Up to date (%s)\n", diff.OldHash[:7]))
+		sb.WriteString(fmt.Sprintf("   \u2713 Up to date (%s)\n", diff.OldHash[:7]))
 		return sb.String()
 	}
 
@@ -204,10 +203,10 @@ func FormatDiffOutput(diff *types.VendorDiff) string {
 		sb.WriteString(fmt.Sprintf("\n   Commits (+%d):\n", diff.CommitCount))
 		for _, commit := range diff.Commits {
 			date := formatDate(commit.Date)
-			sb.WriteString(fmt.Sprintf("   • %s - %s (%s)\n", commit.ShortHash, commit.Subject, date))
+			sb.WriteString(fmt.Sprintf("   \u2022 %s - %s (%s)\n", commit.ShortHash, commit.Subject, date))
 		}
 	} else if diff.OldHash != diff.NewHash {
-		sb.WriteString("\n   ⚠ Commits diverged or ahead\n")
+		sb.WriteString("\n   \u26a0 Commits diverged or ahead\n")
 	}
 
 	return sb.String()

@@ -81,8 +81,9 @@ func (c *UpdateChecker) CheckUpdates(ctx context.Context) ([]types.UpdateCheckRe
 				continue
 			}
 
-			// Fetch latest commit hash for the ref
-			latestHash, err := c.fetchLatestHash(ctx, vendor.URL, spec.Ref)
+			// Fetch latest commit hash for the ref (tries primary URL + mirrors)
+			urls := ResolveVendorURLs(&vendor)
+			latestHash, err := c.fetchLatestHash(ctx, urls, spec.Ref)
 			if err != nil {
 				// Failed to fetch, skip this vendor (don't fail entire check)
 				c.ui.ShowWarning("Fetch Failed", fmt.Sprintf("Could not check updates for %s @ %s: %s", vendor.Name, spec.Ref, err.Error()))
@@ -107,8 +108,9 @@ func (c *UpdateChecker) CheckUpdates(ctx context.Context) ([]types.UpdateCheckRe
 }
 
 // fetchLatestHash fetches the latest commit hash for a given ref.
+// fetchLatestHash tries each URL in order (primary + mirrors) via FetchWithFallback.
 // ctx controls cancellation of git operations.
-func (c *UpdateChecker) fetchLatestHash(ctx context.Context, url, ref string) (string, error) {
+func (c *UpdateChecker) fetchLatestHash(ctx context.Context, urls []string, ref string) (string, error) {
 	// Create temporary directory for fetch
 	tempDir, err := c.fs.CreateTemp("", "update-check-*")
 	if err != nil {
@@ -121,13 +123,8 @@ func (c *UpdateChecker) fetchLatestHash(ctx context.Context, url, ref string) (s
 		return "", fmt.Errorf("git init failed: %w", err)
 	}
 
-	// Add remote
-	if err := c.gitClient.AddRemote(ctx, tempDir, "origin", url); err != nil {
-		return "", fmt.Errorf("git remote add failed: %w", err)
-	}
-
-	// Fetch the specific ref with depth 1 (we only need the latest commit)
-	if err := c.gitClient.Fetch(ctx, tempDir, "origin", 1, ref); err != nil {
+	// Fetch the specific ref with depth 1 via FetchWithFallback (handles AddRemote + mirrors)
+	if _, err := FetchWithFallback(ctx, c.gitClient, c.fs, c.ui, tempDir, urls, ref, 1); err != nil {
 		return "", fmt.Errorf("git fetch failed: %w", err)
 	}
 

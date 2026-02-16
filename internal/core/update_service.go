@@ -206,6 +206,7 @@ func (s *UpdateService) updateAllSequential(ctx context.Context, config types.Ve
 				VendoredBy:       vendoredBy,
 				LastSyncedAt:     now,
 				Positions:        toPositionLocks(metadata.Positions),
+				SourceURL:        metadata.SourceURL,
 			}
 
 			if v.Source == SourceInternal {
@@ -397,6 +398,7 @@ func (s *UpdateService) updateAllParallel(ctx context.Context, config types.Vend
 				VendoredBy:       vendoredBy,
 				LastSyncedAt:     now,
 				Positions:        toPositionLocks(metadata.Positions),
+				SourceURL:        metadata.SourceURL,
 			})
 		}
 	}
