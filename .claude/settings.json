@@ -8,6 +8,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/commit-schema-guard.sh\"",
             "statusMessage": "Checking commit schema + vendor freshness"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/vendor-guard.sh\"",
+            "statusMessage": "Checking vendored file integrity"
           }
         ]
       }

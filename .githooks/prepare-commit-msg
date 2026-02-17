@@ -75,18 +75,36 @@ for f in $STAGED; do
 done
 TOUCH=$(echo "$TOUCH_TAGS" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
 
-# Append trailers (blank line + trailers)
-{
-  echo ""
-  echo "Commit-Schema: manual/v1"
-  if [ -n "$TAGS" ] && ! echo "$MSG" | grep -q "^Tags:"; then
-    echo "Tags: $TAGS"
-  fi
-  if [ -n "$TOUCH" ] && ! echo "$MSG" | grep -q "^Touch:"; then
-    echo "Touch: $TOUCH"
-  fi
-  echo "Diff-Additions: $ADDITIONS"
-  echo "Diff-Deletions: $DELETIONS"
-  echo "Diff-Files: $FILES"
-  echo "Diff-Surface: $SURFACE"
-} >> "$MSG_FILE"
+# Build trailer block
+TRAILERS="Commit-Schema: manual/v1"
+if [ -n "$TAGS" ] && ! echo "$MSG" | grep -q "^Tags:"; then
+  TRAILERS="$TRAILERS
+Tags: $TAGS"
+fi
+if [ -n "$TOUCH" ] && ! echo "$MSG" | grep -q "^Touch:"; then
+  TRAILERS="$TRAILERS
+Touch: $TOUCH"
+fi
+TRAILERS="$TRAILERS
+Diff-Additions: $ADDITIONS
+Diff-Deletions: $DELETIONS
+Diff-Files: $FILES
+Diff-Surface: $SURFACE"
+
+# Append trailers — merge into existing trailer paragraph if present.
+# Git's %(trailers) only parses the LAST paragraph of the commit body.
+# If Co-Authored-By or other trailers already exist as the final paragraph,
+# we MUST append into that paragraph (no blank line) so git sees all trailers.
+# Detect existing trailers: the last non-blank line must look like a trailer
+# (Key-Name: value) AND there must be a blank-line-separated body above it.
+# This avoids false-matching subject lines like "docs: update readme".
+LAST_LINE=$(sed '/^$/d' "$MSG_FILE" | tail -1)
+LINE_COUNT=$(wc -l < "$MSG_FILE" | tr -d ' ')
+HAS_BLANK=$(grep -c '^$' "$MSG_FILE" || true)
+if [ "$HAS_BLANK" -gt 0 ] && echo "$LAST_LINE" | grep -qE '^[A-Za-z][A-Za-z-]+: '; then
+  # Last non-blank line is already a trailer — append directly (same paragraph)
+  echo "$TRAILERS" >> "$MSG_FILE"
+else
+  # No existing trailers — start a new trailer paragraph
+  { echo ""; echo "$TRAILERS"; } >> "$MSG_FILE"
+fi
