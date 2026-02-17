@@ -21,7 +21,8 @@ case "$COMMAND" in
     echo ""
 
     # Vendor freshness check
-    LOCK_FILE="$CLAUDE_PROJECT_DIR/.git-vendor/vendor.lock"
+    PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
+    LOCK_FILE="$PROJECT_DIR/.git-vendor/vendor.lock"
     if [ -f "$LOCK_FILE" ]; then
       STALE_COUNT=0
       while IFS= read -r line; do
@@ -31,9 +32,9 @@ case "$COMMAND" in
           VENDOR_NAME=$(echo "$PREV_LINE" | sed -n 's/.*name:[[:space:]]*\(.*\)/\1/p' | tr -d '"')
           if [ -n "$VENDOR_NAME" ] && [ -n "$HASH" ]; then
             # Check if vendored files have been modified locally (drift detection)
-            VENDOR_DIR="$CLAUDE_PROJECT_DIR/pkg/$VENDOR_NAME"
+            VENDOR_DIR="$PROJECT_DIR/pkg/$VENDOR_NAME"
             if [ -d "$VENDOR_DIR" ]; then
-              MODIFIED=$(git -C "$CLAUDE_PROJECT_DIR" diff --name-only -- "$VENDOR_DIR" 2>/dev/null | wc -l | tr -d ' ')
+              MODIFIED=$(git -C "$PROJECT_DIR" diff --name-only -- "$VENDOR_DIR" 2>/dev/null | wc -l | tr -d ' ')
               if [ "$MODIFIED" -gt 0 ]; then
                 echo "WARNING: $VENDOR_NAME has $MODIFIED locally modified vendored files."
                 echo "  Consider running: git-vendor update && git-vendor sync"

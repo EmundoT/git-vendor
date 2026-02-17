@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/commit-schema-guard.sh\"",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/commit-schema-guard.sh\"",
             "statusMessage": "Checking commit schema + vendor freshness"
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/go-format.sh\"",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/go-format.sh\"",
             "statusMessage": "Formatting Go code"
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/go-verify.sh\"",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/go-verify.sh\"",
             "statusMessage": "Verifying build, tests, and lint",
             "timeout": 120
           }
