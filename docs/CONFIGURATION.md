@@ -25,6 +25,7 @@ Main configuration file defining all vendor dependencies.
 vendors:
   - name: string                    # Required
     url: string                     # Required
+    mirrors: []string               # Optional (schema v1.3+)
     license: string                 # Auto-detected
     groups: []string                # Optional
     hooks:                          # Optional
@@ -78,6 +79,7 @@ vendors:
     commit_hash: string
     license_path: string
     updated: string (ISO8601)
+    source_url: string              # Schema v1.3+: which URL served the content (empty = primary)
 ```
 
 ### Example
@@ -143,6 +145,25 @@ Top-level vendor configuration.
 ✅ url: "https://gitlab.com/group/subgroup/project"
 ✅ url: "git://git.kernel.org/pub/scm/git/git.git"
 ❌ url: "not-a-url"  # Invalid format
+```
+
+#### mirrors (optional, schema v1.3+)
+
+**Type:** `[]string`
+**Description:** Fallback mirror URLs tried after the primary URL fails during sync, update, diff, and outdated operations. Mirrors are tried in declaration order.
+**Validation:**
+
+- Each URL must be a valid Git URL
+- Must not duplicate the primary URL
+- Must not be empty strings
+- Not supported for internal vendors (`source: internal`)
+
+**Example:**
+
+```yaml
+mirrors:
+  - "https://gitlab.com/owner/repo"
+  - "https://internal.corp/mirrors/repo"
 ```
 
 #### license (auto-detected)
