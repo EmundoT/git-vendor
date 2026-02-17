@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -447,8 +448,17 @@ func collectVendorPaths(spec *types.VendorSpec, lock types.LockDetails, rootDir 
 
 	paths = append(paths, LockPath, ConfigPath)
 
+	// Only stage the license file if it actually exists on disk.
+	// Upstream repos without a LICENSE file won't have one copied,
+	// but LicensePath may still be set in the lock entry.
 	if lock.LicensePath != "" {
-		paths = append(paths, lock.LicensePath)
+		licenseFull := lock.LicensePath
+		if rootDir != "" && rootDir != "." {
+			licenseFull = filepath.Join(rootDir, lock.LicensePath)
+		}
+		if _, err := os.Stat(licenseFull); err == nil {
+			paths = append(paths, lock.LicensePath)
+		}
 	}
 
 	return paths
