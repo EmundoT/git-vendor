@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -197,12 +199,22 @@ func TestCollectVendorPaths_Basic(t *testing.T) {
 			},
 		},
 	}
+	// Create the license file so collectVendorPaths can verify it exists
+	tmpDir := t.TempDir()
+	licenseDir := filepath.Join(tmpDir, ".git-vendor", "licenses")
+	if err := os.MkdirAll(licenseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(licenseDir, "my-lib.txt"), []byte("MIT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	lock := types.LockDetails{
 		Name:        "my-lib",
 		LicensePath: ".git-vendor/licenses/my-lib.txt",
 	}
 
-	paths := collectVendorPaths(spec, lock, ".")
+	paths := collectVendorPaths(spec, lock, tmpDir)
 	// 2 mapping paths + LockPath + ConfigPath + license = 5
 	if len(paths) != 5 {
 		t.Errorf("expected 5 paths, got %d: %v", len(paths), paths)
