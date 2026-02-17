@@ -4,9 +4,14 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+// reAICoAuthor matches Co-Authored-By trailers from known AI providers.
+// Used by HookPrepareCommitMsg to select assisted/v1 vs manual/v1 namespace.
+var reAICoAuthor = regexp.MustCompile(`(?im)^Co-Authored-By:.*\b(Claude|GPT|Copilot|Gemini)\b`)
 
 // SharedTrailers computes the auto-generated COMMIT-SCHEMA v1 enrichment
 // trailers from staged changes in the git repo at dir. Returns trailers for:
@@ -63,8 +68,14 @@ func SharedTrailers(ctx context.Context, dir string) ([]Trailer, error) {
 // Does not write the file — caller decides whether to write.
 // Existing trailer keys are never overwritten (idempotent).
 func HookPrepareCommitMsg(ctx context.Context, dir string, msg string) (string, error) {
-	// Commit-Schema: manual/v1 (only if no Commit-Schema trailer present)
-	msg = AppendTrailer(msg, "Commit-Schema", "manual/v1")
+	// Detect AI-authored commits via Co-Authored-By trailer.
+	// assisted/v1 = LLM composed the message, hook enriched it.
+	// manual/v1   = human commit, hook enriched it.
+	ns := "manual/v1"
+	if reAICoAuthor.MatchString(msg) {
+		ns = "assisted/v1"
+	}
+	msg = AppendTrailer(msg, "Commit-Schema", ns)
 
 	trailers, err := SharedTrailers(ctx, dir)
 	if err != nil {
@@ -83,7 +94,7 @@ func HookPrepareCommitMsg(ctx context.Context, dir string, msg string) (string, 
 // Tags and Touch trailer values are normalized to lowercase.
 // Returns an error if a Commit-Schema namespace requires trailers that are
 // missing: agent/v1 requires Agent-Id, Intent, Tags; vendor/v1 requires
-// Vendor-Name, Vendor-Ref, Vendor-Commit. manual/v1 has no extra requirements.
+// Vendor-Name, Vendor-Ref, Vendor-Commit. assisted/v1 and manual/v1 have no extra requirements.
 func HookCommitMsg(_ context.Context, msg string) (string, []string, error) {
 	var warnings []string
 	lines := strings.Split(msg, "\n")

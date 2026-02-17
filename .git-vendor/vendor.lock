@@ -1,10 +1,42 @@
 schema_version: "1.3"
 vendors:
+    - name: git-plumbing
+      ref: main
+      commit_hash: b4eca7920979d915b85b926bc3553fa965ea33b0
+      license_path: .git-vendor\licenses\git-plumbing.txt
+      updated: "2026-02-17T20:09:49Z"
+      file_hashes:
+        pkg/git-plumbing/branch.go: 4f7989bd438e932204d0c39ce8b8ed59c3734c5d6058a09f574caea8baa635be
+        pkg/git-plumbing/commit.go: daa3ae212b9d0e3f08f7916dae8018c2af506bd3d7d9771ecb170c12b9b1d384
+        pkg/git-plumbing/config.go: 4974cbb22572f9c7c98cc20e9025500c76a54f34150a4b6357c213ce3ef28141
+        pkg/git-plumbing/custom_refs.go: 4ca72c8f06dc60b63a85600899de05605a278da419b35ad715a69219098e7004
+        pkg/git-plumbing/diff.go: f9ddb056f3f6d117133fd4d0494e423dc392ee2d79574d08b04eb81f1f0daeea
+        pkg/git-plumbing/errors.go: 170ae008ffd450fdc0eef6f42afa525492afa0e5073ca2071e80793592e30482
+        pkg/git-plumbing/git.go: 9356d1a8bfb86666b85515c4497540084c9e7af6d059782445f87f0be32485ea
+        pkg/git-plumbing/go.mod: fc7e17da6efea393520179ae5d4b63a2e5c4f30cf60222435ad8d58358907d13
+        pkg/git-plumbing/hook.go: b3aa4d028dfa2e813a1b4e0cc6db61a98185c8e15e454964052c3d969bf869d9
+        pkg/git-plumbing/log.go: 494ac2cd8449271942a7adf60b15580b9ffd23b6d64f06a3f263fdaf397dab3e
+        pkg/git-plumbing/notes.go: 8ba85c12962abde0140fa4ff07b0e1f4f7444a646768a8010038229df0fc9228
+        pkg/git-plumbing/refs.go: d91b86ed288f76517cebba0b92280301b3cba1d9e3fe436de7fbef52e0eaec2d
+        pkg/git-plumbing/remote.go: 0113d4bf3c2f318951483af3755e97a121140f522a7976da143f071a9ae566b2
+        pkg/git-plumbing/status.go: 53dcc7e7d0c54bbb7706e6d28c62acf03c938f093297d7dce7168a1d210e1111
+        pkg/git-plumbing/subject.go: 241dccd729c24adead0530cf0c85fc0f88e97e42b06313121cb79bfd1352f58c
+        pkg/git-plumbing/surface.go: db9c72e6cd7301c2bf684a8e2a2156b57f1dbd4ce81ab43766f3425040321760
+        pkg/git-plumbing/tag.go: 0a756247f1f52479dc59c415c52486695e45de5a76318eed24db96942911f37d
+        pkg/git-plumbing/tags.go: 14b5603aeb757b76c82940a73687419a19d96f1bfbb3bc3ffb33a5b74dabb59c
+        pkg/git-plumbing/tagscan.go: e8e11783525d929a771a2191936ff938ccf5de0b96217dffd79663c93b9a84cf
+        pkg/git-plumbing/testutil/fixtures.go: ae76ca8445434e9400f3942ff2ed80c9657e6ea527e4efaa35c9cd5162f2775b
+        pkg/git-plumbing/testutil/repo.go: f6d8ba62441d0d197a04092a931ccb2bf5e08d08a9e7ebb65878bbf1d6ce8736
+        pkg/git-plumbing/tree.go: 709126c61fba5b64a310e119f5c1591d7bf9053ab6de94a10373bab18c11ac35
+      license_spdx: MIT
+      vendored_at: "2026-02-09T12:00:00Z"
+      vendored_by: Claude <noreply@anthropic.com>
+      last_synced_at: "2026-02-17T20:09:49Z"
     - name: git-ecosystem
       ref: main
       commit_hash: 2ebe0bcaae83dcb7dfc20aecaa6b9296f8c89072
       license_path: .git-vendor\licenses\git-ecosystem.txt
-      updated: "2026-02-17T19:47:19Z"
+      updated: "2026-02-17T20:09:37Z"
       file_hashes:
         .claude/hooks/env.sh: e7d5524e4d4540ac4d5844a88c8e0d15d75e6fabdbdba225fe2f5ad0429d48f2
         .claude/hooks/go-format.sh: 73020d916c670d2cb77088f3be4a502e040fb93cffaafec7672de0a593db0304
@@ -26,36 +58,4 @@ vendors:
         docs/COMMIT-SCHEMA.md: 4d572252e442ee022fe8b618247118f9d8a6796d8f698aa228454e2869e03343
       vendored_at: "2026-02-11T19:49:11Z"
       vendored_by: EmundoT <emtheredia@gmail.com>
-      last_synced_at: "2026-02-17T19:47:19Z"
-    - name: git-plumbing
-      ref: main
-      commit_hash: 77eca252ca5e897042f8edf5e0e903c57bcc6c34
-      license_path: .git-vendor\licenses\git-plumbing.txt
-      updated: "2026-02-16T22:00:13Z"
-      file_hashes:
-        pkg/git-plumbing/branch.go: 4f7989bd438e932204d0c39ce8b8ed59c3734c5d6058a09f574caea8baa635be
-        pkg/git-plumbing/commit.go: daa3ae212b9d0e3f08f7916dae8018c2af506bd3d7d9771ecb170c12b9b1d384
-        pkg/git-plumbing/config.go: 4974cbb22572f9c7c98cc20e9025500c76a54f34150a4b6357c213ce3ef28141
-        pkg/git-plumbing/custom_refs.go: 4ca72c8f06dc60b63a85600899de05605a278da419b35ad715a69219098e7004
-        pkg/git-plumbing/diff.go: f9ddb056f3f6d117133fd4d0494e423dc392ee2d79574d08b04eb81f1f0daeea
-        pkg/git-plumbing/errors.go: 170ae008ffd450fdc0eef6f42afa525492afa0e5073ca2071e80793592e30482
-        pkg/git-plumbing/git.go: 9356d1a8bfb86666b85515c4497540084c9e7af6d059782445f87f0be32485ea
-        pkg/git-plumbing/go.mod: fc7e17da6efea393520179ae5d4b63a2e5c4f30cf60222435ad8d58358907d13
-        pkg/git-plumbing/hook.go: fb057518a3e5f769fedc3279c9f872f0ab21820e78dbbf376f16d4079e388edf
-        pkg/git-plumbing/log.go: 4b6075023fb8bd9ba13c29861863caa863ac12b8c12158d0940706ac6e5fcae1
-        pkg/git-plumbing/notes.go: 8ba85c12962abde0140fa4ff07b0e1f4f7444a646768a8010038229df0fc9228
-        pkg/git-plumbing/refs.go: d91b86ed288f76517cebba0b92280301b3cba1d9e3fe436de7fbef52e0eaec2d
-        pkg/git-plumbing/remote.go: 0113d4bf3c2f318951483af3755e97a121140f522a7976da143f071a9ae566b2
-        pkg/git-plumbing/status.go: 53dcc7e7d0c54bbb7706e6d28c62acf03c938f093297d7dce7168a1d210e1111
-        pkg/git-plumbing/subject.go: 241dccd729c24adead0530cf0c85fc0f88e97e42b06313121cb79bfd1352f58c
-        pkg/git-plumbing/surface.go: db9c72e6cd7301c2bf684a8e2a2156b57f1dbd4ce81ab43766f3425040321760
-        pkg/git-plumbing/tag.go: 0a756247f1f52479dc59c415c52486695e45de5a76318eed24db96942911f37d
-        pkg/git-plumbing/tags.go: 14b5603aeb757b76c82940a73687419a19d96f1bfbb3bc3ffb33a5b74dabb59c
-        pkg/git-plumbing/tagscan.go: e8e11783525d929a771a2191936ff938ccf5de0b96217dffd79663c93b9a84cf
-        pkg/git-plumbing/testutil/fixtures.go: ae76ca8445434e9400f3942ff2ed80c9657e6ea527e4efaa35c9cd5162f2775b
-        pkg/git-plumbing/testutil/repo.go: f6d8ba62441d0d197a04092a931ccb2bf5e08d08a9e7ebb65878bbf1d6ce8736
-        pkg/git-plumbing/tree.go: 709126c61fba5b64a310e119f5c1591d7bf9053ab6de94a10373bab18c11ac35
-      license_spdx: MIT
-      vendored_at: "2026-02-09T12:00:00Z"
-      vendored_by: Claude <noreply@anthropic.com>
-      last_synced_at: "2026-02-16T22:00:13Z"
+      last_synced_at: "2026-02-17T20:09:37Z"

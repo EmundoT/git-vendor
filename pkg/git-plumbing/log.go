@@ -65,6 +65,7 @@ type LogOpts struct {
 	Author        string            // --author filter
 	Grep          string            // --grep filter (matches commit message)
 	All           bool              // --all flag
+	NoMerges      bool              // --no-merges flag: exclude commits with 2+ parents
 	OneLine       bool              // simplified one-line format (hash + subject only)
 	IncludeBody   bool              // include body and notes in output (incompatible with OneLine)
 	NotesRef      string            // e.g. "refs/notes/agent" — adds --notes=<ref> to git args
@@ -104,6 +105,9 @@ func (g *Git) Log(ctx context.Context, opts LogOpts) ([]Commit, error) {
 	}
 	if opts.All {
 		args = append(args, "--all")
+	}
+	if opts.NoMerges {
+		args = append(args, "--no-merges")
 	}
 	if opts.Range != "" {
 		args = append(args, opts.Range)
