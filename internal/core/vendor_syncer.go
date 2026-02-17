@@ -337,18 +337,6 @@ func (s *VendorSyncer) Sync(ctx context.Context) error {
 	return s.SyncWithFullOpts(ctx, SyncOptions{})
 }
 
-// SyncDryRun performs a dry-run sync.
-// ctx controls cancellation of the preview operation.
-func (s *VendorSyncer) SyncDryRun(ctx context.Context) error {
-	// Check if lockfile exists for dry-run
-	lock, err := s.lockStore.Load()
-	if err != nil || len(lock.Vendors) == 0 {
-		fmt.Println("No lockfile found. Would generate lockfile from latest commits, then sync files.")
-		return nil
-	}
-	return s.sync.Sync(ctx, SyncOptions{DryRun: true})
-}
-
 // SyncWithOptions performs sync with vendor filter, force, and cache options.
 // ctx controls cancellation of git operations during sync.
 func (s *VendorSyncer) SyncWithOptions(ctx context.Context, vendorName string, force, noCache bool) error {
@@ -360,11 +348,15 @@ func (s *VendorSyncer) SyncWithOptions(ctx context.Context, vendorName string, f
 }
 
 // SyncWithFullOpts performs sync with a full SyncOptions struct.
-// Supports InternalOnly, Reverse, and Local flags.
+// Supports DryRun, InternalOnly, Reverse, and Local flags.
 func (s *VendorSyncer) SyncWithFullOpts(ctx context.Context, opts SyncOptions) error {
-	// Check if lockfile exists, if not, run UpdateAllWithOptions
+	// Check if lockfile exists
 	lock, err := s.lockStore.Load()
 	if err != nil || len(lock.Vendors) == 0 {
+		if opts.DryRun {
+			fmt.Println("No lockfile found. Would generate lockfile from latest commits, then sync files.")
+			return nil
+		}
 		fmt.Println("No lockfile found. Generating lockfile from latest commits...")
 		if err := s.update.UpdateAllWithOptions(ctx, UpdateOptions{
 			Local:      opts.Local,
@@ -375,6 +367,9 @@ func (s *VendorSyncer) SyncWithFullOpts(ctx context.Context, opts SyncOptions) e
 		}
 		fmt.Println()
 		fmt.Println("Lockfile created. Now syncing files...")
+	}
+	if opts.DryRun {
+		return s.sync.Sync(ctx, opts)
 	}
 	return s.syncWithAutoUpdate(ctx, opts)
 }

@@ -394,7 +394,7 @@ func TestVendorSyncer_RemoveVendor_NotFound(t *testing.T) {
 }
 
 // ============================================================================
-// VendorSyncer.Sync / SyncDryRun / SyncWithOptions tests
+// VendorSyncer.Sync / DryRun / SyncWithOptions tests
 // ============================================================================
 
 func TestVendorSyncer_Sync_WithExistingLock(t *testing.T) {
@@ -481,9 +481,9 @@ func TestVendorSyncer_SyncDryRun_WithLock(t *testing.T) {
 		Sync: syncSvc,
 	})
 
-	err := syncer.SyncDryRun(context.Background())
+	err := syncer.SyncWithFullOpts(context.Background(), SyncOptions{DryRun: true})
 	if err != nil {
-		t.Fatalf("SyncDryRun() error = %v", err)
+		t.Fatalf("SyncWithFullOpts(DryRun) error = %v", err)
 	}
 }
 
@@ -496,9 +496,9 @@ func TestVendorSyncer_SyncDryRun_NoLock(t *testing.T) {
 
 	syncer := newTestSyncer(nil, mockLock, nil, &ServiceOverrides{})
 
-	err := syncer.SyncDryRun(context.Background())
+	err := syncer.SyncWithFullOpts(context.Background(), SyncOptions{DryRun: true})
 	if err != nil {
-		t.Fatalf("SyncDryRun() error = %v, want nil", err)
+		t.Fatalf("SyncWithFullOpts(DryRun) error = %v, want nil", err)
 	}
 }
 

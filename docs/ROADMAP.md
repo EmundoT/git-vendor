@@ -166,29 +166,34 @@ The lockfile format must remain backward-compatible. New fields are additive. Ol
 
 ### Feature 1.2: `git vendor verify` Hardening
 
-**What:** Ensure `git vendor verify` is bulletproof — it must detect any tampering, corruption, or drift between what the lockfile says and what's actually on disk.
+**What:** Ensure `git vendor verify` is bulletproof — it must detect any tampering, corruption, or drift between what the lockfile says and what's actually on disk. Additionally, detect config/lock coherence issues (stale mappings, orphaned lock entries).
 
 **Why:** This is the trust anchor. If `verify` says "all good," everything downstream (SBOMs, compliance reports, CVE scans) can be trusted. If `verify` is unreliable, nothing else matters.
 
 **Implementation Details:**
-- Re-hash every vendored file and compare against lockfile SHA-256
-- Detect files present on disk but not in lockfile (unauthorized additions)
-- Detect files in lockfile but missing from disk (deletions)
+- ~~Re-hash every vendored file and compare against lockfile SHA-256~~ ✅ Implemented
+- ~~Detect files present on disk but not in lockfile (unauthorized additions)~~ ✅ Implemented (`findAddedFiles()`)
+- ~~Detect files in lockfile but missing from disk (deletions)~~ ✅ Implemented (fs.Stat → status "deleted")
 - Detect files with matching hash but different permissions (if tracked)
-- Exit code 0 = all verified, exit code 1 = discrepancies found
-- Machine-readable output mode (`--format json`) for CI integration
-- Human-readable output with clear pass/fail per file
+- ~~Exit code 0 = all verified, exit code 1 = discrepancies found~~ ✅ Implemented (0=PASS, 1=FAIL, 2=WARN)
+- ~~Machine-readable output mode (`--format json`) for CI integration~~ ✅ Implemented
+- ~~Human-readable output with clear pass/fail per file~~ ✅ Implemented (`--format table`)
+- Detect config/lock coherence: mapping in `vendor.yml` with no corresponding `FileHashes` entry (stale config)
+- Detect config/lock coherence: `FileHashes` entry with no corresponding mapping in `vendor.yml` (orphaned lock entry)
+- Graceful sync behavior when upstream removes a mapped file: warn, delete local copy, prune lock entry, continue remaining files (currently hard-fails with `PathNotFoundError`)
 
 **Difficulty:** 2
-**Estimated Effort:** 3–5 days
+**Estimated Effort:** 2–3 days (core verify is done; remaining work is config coherence + sync-side removal handling)
 **Dependencies:** None (builds on existing verify)
 **Acceptance Criteria:**
-- [ ] Detects modified files (hash mismatch)
-- [ ] Detects added files (in vendor dir but not in lockfile)
-- [ ] Detects deleted files (in lockfile but not on disk)
-- [ ] `--format json` produces machine-parseable output
-- [ ] Exit codes are documented and consistent
+- [x] Detects modified files (hash mismatch)
+- [x] Detects added files (in vendor dir but not in lockfile)
+- [x] Detects deleted files (in lockfile but not on disk)
+- [x] `--format json` produces machine-parseable output
+- [x] Exit codes are documented and consistent
 - [ ] Integration test covers all three discrepancy types
+- [ ] Detects config/lock coherence issues (stale mappings, orphaned lock entries)
+- [ ] `sync` handles upstream file removal gracefully (warn + skip + prune, not hard fail)
 
 ---
 

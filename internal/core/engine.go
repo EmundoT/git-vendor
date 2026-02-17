@@ -148,12 +148,6 @@ func (m *Manager) Sync(ctx context.Context) error {
 	return m.syncer.Sync(ctx)
 }
 
-// SyncDryRun performs a dry-run sync.
-// ctx controls cancellation of the preview operation.
-func (m *Manager) SyncDryRun(ctx context.Context) error {
-	return m.syncer.SyncDryRun(ctx)
-}
-
 // SyncWithOptions performs sync with vendor filter, force, and cache options.
 // ctx controls cancellation of git operations during sync.
 func (m *Manager) SyncWithOptions(ctx context.Context, vendorName string, force, noCache bool) error {

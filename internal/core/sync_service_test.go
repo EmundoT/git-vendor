@@ -818,7 +818,7 @@ func TestSync_DryRun_PreviewMode(t *testing.T) {
 
 	testLock := types.VendorLock{
 		Vendors: []types.LockDetails{
-			createTestLockEntry("vendor-a", "main", "hash111"),
+			createTestLockEntry("vendor-a", "main", "hash111abc"),
 		},
 	}
 
@@ -830,9 +830,10 @@ func TestSync_DryRun_PreviewMode(t *testing.T) {
 	git.EXPECT().Fetch(gomock.Any(), gomock.Any(), "origin", gomock.Any(), gomock.Any()).Times(0)
 	git.EXPECT().Checkout(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
-	// NO file operations (except maybe stdout writes)
+	// NO file operations (except maybe stdout writes and Stat for dry-run classification)
 	fs.EXPECT().CreateTemp(gomock.Any(), gomock.Any()).Times(0)
 	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Times(0)
+	fs.EXPECT().Stat(gomock.Any()).Return(nil, os.ErrNotExist).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 	syncService := syncer.sync.(*SyncService)
@@ -1123,6 +1124,9 @@ func TestPreviewSyncVendor_LockedRefs(t *testing.T) {
 	ctrl, git, fs, config, lock, license := setupMocks(t)
 	defer ctrl.Finish()
 
+	// classifyMapping calls fs.Stat to check if dest files exist
+	fs.EXPECT().Stat(gomock.Any()).Return(nil, os.ErrNotExist).AnyTimes()
+
 	vendor := types.VendorSpec{
 		Name:    "test-vendor",
 		URL:     "https://github.com/owner/repo",
@@ -1153,7 +1157,7 @@ func TestPreviewSyncVendor_LockedRefs(t *testing.T) {
 
 	// Execute: preview with locked refs
 	// Note: This function prints to stdout, so we're just verifying no panic
-	syncService.previewSyncVendor(&vendor, lockedRefs)
+	syncService.previewSyncVendor(&vendor, lockedRefs, nil)
 
 	// Verify: no panic (output contains "locked: abc1234" and "locked: def0987")
 	// Since we can't easily capture stdout in unit tests without additional infrastructure,
@@ -1163,6 +1167,8 @@ func TestPreviewSyncVendor_LockedRefs(t *testing.T) {
 func TestPreviewSyncVendor_UnlockedRefs(t *testing.T) {
 	ctrl, git, fs, config, lock, license := setupMocks(t)
 	defer ctrl.Finish()
+
+	fs.EXPECT().Stat(gomock.Any()).Return(nil, os.ErrNotExist).AnyTimes()
 
 	vendor := types.VendorSpec{
 		Name:    "test-vendor",
@@ -1182,7 +1188,7 @@ func TestPreviewSyncVendor_UnlockedRefs(t *testing.T) {
 	syncService := syncer.sync.(*SyncService)
 
 	// Execute: preview with nil lockedRefs (unlocked mode)
-	syncService.previewSyncVendor(&vendor, nil)
+	syncService.previewSyncVendor(&vendor, nil, nil)
 
 	// Verify: no panic (output shows "not synced")
 }
@@ -1207,7 +1213,7 @@ func TestPreviewSyncVendor_NoMappings(t *testing.T) {
 	syncService := syncer.sync.(*SyncService)
 
 	// Execute: preview with no mappings
-	syncService.previewSyncVendor(&vendor, nil)
+	syncService.previewSyncVendor(&vendor, nil, nil)
 
 	// Verify: no panic (output shows "(no paths configured)")
 }
@@ -2240,6 +2246,252 @@ func TestSyncVendor_RemoteURL_UnaffectedByLocalFlag(t *testing.T) {
 	}
 }
 
+
+// ============================================================================
+// Dry-Run Preview Tests — classifyMapping and filter support
+// ============================================================================
+
+// TestPreviewSyncVendor_ClassifiesAddVsUpdate verifies that dry-run preview
+// labels destination files as [add] when missing and [update] when present.
+func TestPreviewSyncVendor_ClassifiesAddVsUpdate(t *testing.T) {
+	tempDir := t.TempDir()
+	osFS := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(osFS, tempDir)
+
+	// Create one destination file so it's classified as "update"
+	existingPath := filepath.Join(tempDir, "lib/existing.go")
+	if err := os.MkdirAll(filepath.Dir(existingPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(existingPath, []byte("existing content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	syncService := NewSyncService(
+		nil, nil, nil, osFS,
+		&stubFileCopyService{}, &stubLicenseService{},
+		cacheStore, &stubHookExecutor{},
+		&SilentUICallback{}, tempDir, nil,
+	)
+
+	// No lock hashes — everything existing is "update", missing is "add"
+	emptyHashes := map[string]map[string]string{}
+
+	tests := []struct {
+		dest     string
+		expected string
+	}{
+		{"lib/existing.go", "update"},
+		{"lib/missing.go", "add"},
+		{"(auto)", "add"},
+	}
+
+	for _, tt := range tests {
+		result := syncService.classifyMapping(tt.dest, emptyHashes[""]) // nil lockHashes
+		if result != tt.expected {
+			t.Errorf("classifyMapping(%q) = %q, want %q", tt.dest, result, tt.expected)
+		}
+	}
+}
+
+// TestPreviewSyncVendor_Unchanged verifies that a file matching its lock hash
+// is classified as [unchanged].
+func TestPreviewSyncVendor_Unchanged(t *testing.T) {
+	tempDir := t.TempDir()
+	osFS := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(osFS, tempDir)
+
+	// Create destination file
+	destPath := filepath.Join(tempDir, "lib/stable.go")
+	content := []byte("stable content")
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destPath, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compute the hash and build lockHashes matching it
+	hash, err := cacheStore.ComputeFileChecksum(destPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockHashes := map[string]string{"lib/stable.go": hash}
+
+	syncService := NewSyncService(
+		nil, nil, nil, osFS,
+		&stubFileCopyService{}, &stubLicenseService{},
+		cacheStore, &stubHookExecutor{},
+		&SilentUICallback{}, tempDir, nil,
+	)
+
+	result := syncService.classifyMapping("lib/stable.go", lockHashes)
+	if result != "unchanged" {
+		t.Errorf("classifyMapping() = %q, want 'unchanged'", result)
+	}
+}
+
+// TestPreviewSyncVendor_UnchangedWithSha256Prefix verifies that lock hashes
+// stored with "sha256:" prefix are correctly normalized for comparison.
+func TestPreviewSyncVendor_UnchangedWithSha256Prefix(t *testing.T) {
+	tempDir := t.TempDir()
+	osFS := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(osFS, tempDir)
+
+	destPath := filepath.Join(tempDir, "lib/prefixed.go")
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destPath, []byte("prefixed content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	hash, err := cacheStore.ComputeFileChecksum(destPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Store with "sha256:" prefix — classifyMapping should still match
+	lockHashes := map[string]string{"lib/prefixed.go": "sha256:" + hash}
+
+	syncService := NewSyncService(
+		nil, nil, nil, osFS,
+		&stubFileCopyService{}, &stubLicenseService{},
+		cacheStore, &stubHookExecutor{},
+		&SilentUICallback{}, tempDir, nil,
+	)
+
+	result := syncService.classifyMapping("lib/prefixed.go", lockHashes)
+	if result != "unchanged" {
+		t.Errorf("classifyMapping() = %q, want 'unchanged'", result)
+	}
+}
+
+// TestSyncDryRun_RespectsVendorNameFilter verifies that dry-run only previews
+// the vendor matching the VendorName filter.
+func TestSyncDryRun_RespectsVendorNameFilter(t *testing.T) {
+	tempDir := t.TempDir()
+	osFS := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(osFS, tempDir)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+
+	vendorA := types.VendorSpec{
+		Name: "vendor-a", URL: "https://example.com/a",
+		Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "a.go", To: "lib/a.go"}}}},
+	}
+	vendorB := types.VendorSpec{
+		Name: "vendor-b", URL: "https://example.com/b",
+		Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "b.go", To: "lib/b.go"}}}},
+	}
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{Vendors: []types.VendorSpec{vendorA, vendorB}}, nil)
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "aaa1234abcd"},
+			{Name: "vendor-b", Ref: "main", CommitHash: "bbb5678efgh"},
+		},
+	}, nil)
+
+	syncService := NewSyncService(
+		mockConfig, mockLock, nil, osFS,
+		&stubFileCopyService{}, &stubLicenseService{},
+		cacheStore, &stubHookExecutor{},
+		&SilentUICallback{}, tempDir, nil,
+	)
+
+	// Capture stdout to verify only vendor-a is previewed
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := syncService.Sync(context.Background(), SyncOptions{DryRun: true, VendorName: "vendor-a"})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("Sync(DryRun, VendorName=vendor-a) error = %v", err)
+	}
+
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if !strings.Contains(output, "vendor-a") {
+		t.Errorf("expected output to contain 'vendor-a', got: %s", output)
+	}
+	if strings.Contains(output, "vendor-b") {
+		t.Errorf("expected output to NOT contain 'vendor-b', got: %s", output)
+	}
+}
+
+// TestSyncDryRun_RespectsGroupFilter verifies that dry-run only previews
+// vendors belonging to the specified group.
+func TestSyncDryRun_RespectsGroupFilter(t *testing.T) {
+	tempDir := t.TempDir()
+	osFS := NewOSFileSystem()
+	cacheStore := NewFileCacheStore(osFS, tempDir)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockConfig := NewMockConfigStore(ctrl)
+	mockLock := NewMockLockStore(ctrl)
+
+	vendorFrontend := types.VendorSpec{
+		Name: "frontend-lib", URL: "https://example.com/fe",
+		Groups: []string{"frontend"},
+		Specs:  []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "fe.js", To: "lib/fe.js"}}}},
+	}
+	vendorBackend := types.VendorSpec{
+		Name: "backend-lib", URL: "https://example.com/be",
+		Groups: []string{"backend"},
+		Specs:  []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "be.go", To: "lib/be.go"}}}},
+	}
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{Vendors: []types.VendorSpec{vendorFrontend, vendorBackend}}, nil)
+	mockLock.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "frontend-lib", Ref: "main", CommitHash: "fe1234abcde"},
+			{Name: "backend-lib", Ref: "main", CommitHash: "be5678fghij"},
+		},
+	}, nil)
+
+	syncService := NewSyncService(
+		mockConfig, mockLock, nil, osFS,
+		&stubFileCopyService{}, &stubLicenseService{},
+		cacheStore, &stubHookExecutor{},
+		&SilentUICallback{}, tempDir, nil,
+	)
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := syncService.Sync(context.Background(), SyncOptions{DryRun: true, GroupName: "frontend"})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("Sync(DryRun, GroupName=frontend) error = %v", err)
+	}
+
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if !strings.Contains(output, "frontend-lib") {
+		t.Errorf("expected output to contain 'frontend-lib', got: %s", output)
+	}
+	if strings.Contains(output, "backend-lib") {
+		t.Errorf("expected output to NOT contain 'backend-lib', got: %s", output)
+	}
+}
 
 // ============================================================================
 // TestUpdateAll - Comprehensive tests for update orchestration
