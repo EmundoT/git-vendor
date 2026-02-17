@@ -1368,6 +1368,91 @@ func TestDetectConflicts_Gomock_NoConflict(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Mirror Validation Tests (Gomock-based)
+// ============================================================================
+
+func TestValidateConfig_MirrorEmptyURL(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:    "mirror-empty",
+				URL:     "https://github.com/a/repo",
+				Mirrors: []string{""},
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src", To: "lib"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for empty mirror URL")
+	}
+	if !contains(err.Error(), "mirror[0] is empty") {
+		t.Errorf("error = %q, want 'mirror[0] is empty'", err.Error())
+	}
+}
+
+func TestValidateConfig_MirrorDuplicatesPrimary(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:    "mirror-dupe",
+				URL:     "https://github.com/a/repo",
+				Mirrors: []string{"https://github.com/a/repo"},
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src", To: "lib"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for mirror duplicating primary URL")
+	}
+	if !contains(err.Error(), "duplicates primary URL") {
+		t.Errorf("error = %q, want 'duplicates primary URL'", err.Error())
+	}
+}
+
+func TestValidateConfig_MirrorValid(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:    "mirror-valid",
+				URL:     "https://github.com/a/repo",
+				Mirrors: []string{"https://gitlab.com/a/repo", "https://internal.corp/a/repo"},
+				Specs: []types.BranchSpec{
+					{Ref: "main", Mapping: []types.PathMapping{{From: "src", To: "lib"}}},
+				},
+			},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err != nil {
+		t.Errorf("expected no error for valid mirrors, got: %v", err)
+	}
+}
+
 func TestDetectConflicts_Gomock_ConfigLoadError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

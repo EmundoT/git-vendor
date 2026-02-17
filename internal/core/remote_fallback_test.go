@@ -120,6 +120,24 @@ func TestFetchWithFallback_EmptyURLs(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error for empty URLs")
 	}
+	if !contains(err.Error(), "no URLs provided") {
+		t.Errorf("Expected 'no URLs provided' error, got: %s", err.Error())
+	}
+}
+
+func TestFetchWithFallback_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := FetchWithFallback(ctx, nil, nil, nil, "/tmp",
+		[]string{"https://example.com/repo"}, "main", 1)
+
+	if err == nil {
+		t.Fatal("Expected error for cancelled context")
+	}
+	if !contains(err.Error(), "cancelled") {
+		t.Errorf("Expected error containing 'cancelled', got: %s", err.Error())
+	}
 }
 
 func TestFetchWithFallback_SingleURL(t *testing.T) {

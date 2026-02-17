@@ -728,7 +728,7 @@ func TestMergeLockEntries_NonOverlapping(t *testing.T) {
 		},
 	}
 
-	result := MergeLockEntries(ours, theirs)
+	result := MergeLockEntries(&ours, &theirs)
 
 	if len(result.Conflicts) != 0 {
 		t.Errorf("Expected 0 conflicts, got %d", len(result.Conflicts))
@@ -759,7 +759,7 @@ func TestMergeLockEntries_SameVendorDifferentCommits_TimestampWins(t *testing.T)
 		},
 	}
 
-	result := MergeLockEntries(ours, theirs)
+	result := MergeLockEntries(&ours, &theirs)
 
 	if len(result.Conflicts) != 0 {
 		t.Errorf("Expected 0 conflicts (timestamp resolves), got %d", len(result.Conflicts))
@@ -785,7 +785,7 @@ func TestMergeLockEntries_SameVendorSameCommit(t *testing.T) {
 		},
 	}
 
-	result := MergeLockEntries(ours, theirs)
+	result := MergeLockEntries(&ours, &theirs)
 
 	if len(result.Conflicts) != 0 {
 		t.Errorf("Expected 0 conflicts (same commit), got %d", len(result.Conflicts))
@@ -811,7 +811,7 @@ func TestMergeLockEntries_SameTimestampDifferentCommits_LexicographicTiebreaker(
 		},
 	}
 
-	result := MergeLockEntries(ours, theirs)
+	result := MergeLockEntries(&ours, &theirs)
 
 	if len(result.Conflicts) != 0 {
 		t.Errorf("Expected 0 conflicts (lexicographic resolves), got %d", len(result.Conflicts))
@@ -826,7 +826,7 @@ func TestMergeLockEntries_SchemaVersionPicksNewer(t *testing.T) {
 	ours := types.VendorLock{SchemaVersion: "1.1"}
 	theirs := types.VendorLock{SchemaVersion: "1.2"}
 
-	result := MergeLockEntries(ours, theirs)
+	result := MergeLockEntries(&ours, &theirs)
 
 	if result.Merged.SchemaVersion != "1.2" {
 		t.Errorf("Expected schema version '1.2', got '%s'", result.Merged.SchemaVersion)
