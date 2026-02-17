@@ -1,34 +1,43 @@
 ---
-description: Fires on every conversation. Reads PROJECT_TASK.md for the current assignment.
+description: Fires on every conversation. Directs agents to the universal work queues.
 globs: "*"
 ---
 
-# Project Task Assignment
+# Universal Work Queues
 
-Check `PROJECT_TASK.md` in the project root at session start. If it exists:
+Work is tracked in universal queues at `../git-ecosystem/ideas/`. Each item has an ID prefix indicating which repo it primarily affects:
 
-1. Read the file — the active task (frontmatter `status: active`) is your current assignment
-2. Work toward the acceptance criteria
-3. Append timestamped progress notes to `## Notes` as you make meaningful progress
-4. When all acceptance criteria are met, set frontmatter `status: complete` and update the `updated` date
+- CLI-xxx, VFY-xxx, GRD-xxx → git-vendor
+- PLB-xxx → git-plumbing
+- AGT-xxx → git-agent
+- ECO-xxx → git-ecosystem
 
-If `status: blocked`, read the Notes section for blocker context and attempt to resolve it. If you cannot, document what you tried in Notes.
+## On Session Start
 
-Do NOT modify `## Pending Tasks` — that backlog is managed by the ecosystem manager.
+1. Read the queue file(s) relevant to your project
+2. Look for items with status **ready** or **in-progress** assigned to you
+3. If no assignment, check for unassigned **ready** items in your domain
 
-## PROJECT_TASK.md Format
+## Working an Item
 
-```yaml
----
-status: active | complete | blocked
-assigned: YYYY-MM-DD
-updated: YYYY-MM-DD
-project: <project-name>
----
-```
+1. Set status to **in-progress** in the queue file
+2. Create a worktree in the target repo if needed
+3. Do the work, commit, push
+4. Set status to **done** in the queue file
+5. Clean up worktree
 
-- `# Current Task` — title on the next non-empty line
-- `## Objective` — what to accomplish
-- `## Acceptance Criteria` — checkboxes (`- [ ]` / `- [x]`)
-- `## Notes` — append-only progress log
-- `## Pending Tasks` — priority-ordered backlog (manager-managed, do not modify)
+## Queue Files
+
+| File | Domain |
+|------|--------|
+| `cli-redesign.md` | CLI-001..006 (status, pull, accept, aliases, push, cascade) |
+| `verify-hardening.md` | VFY-001..003 (coherence, tests, sync removal) |
+| `commit-guard.md` | GRD-001..003 (drift hook, policy engine, staleness) |
+| `completed.md` | Archive of done items |
+
+## Rules
+
+- Queue status updates go to git-ecosystem (commit there)
+- Code changes go to the target repo (commit there)
+- Never mix repos in one commit
+- Do NOT modify items assigned to other agents
