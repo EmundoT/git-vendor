@@ -166,7 +166,7 @@ func detectConflictsInData(data []byte) error {
 
 	for scanner.Scan() {
 		lineNum++
-		line := scanner.Text()
+		line := strings.TrimRight(scanner.Text(), "\r")
 
 		switch {
 		case strings.HasPrefix(line, "<<<<<<<"):
@@ -237,7 +237,14 @@ func (s *FileLockStore) Save(lock types.VendorLock) error {
 // If timestamps are equal, the higher CommitHash (lexicographic) wins.
 // If neither heuristic resolves the conflict, it is flagged in
 // LockMergeResult.Conflicts for manual resolution.
-func MergeLockEntries(ours, theirs types.VendorLock) types.LockMergeResult {
+func MergeLockEntries(ours, theirs *types.VendorLock) types.LockMergeResult {
+	if ours == nil {
+		ours = &types.VendorLock{}
+	}
+	if theirs == nil {
+		theirs = &types.VendorLock{}
+	}
+
 	type key struct {
 		Name string
 		Ref  string

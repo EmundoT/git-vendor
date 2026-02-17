@@ -43,6 +43,10 @@ func FetchWithFallback(
 
 	var lastErr error
 	for i, url := range urls {
+		if err := ctx.Err(); err != nil {
+			return "", fmt.Errorf("fetch cancelled: %w", err)
+		}
+
 		if i == 0 {
 			// First URL: add as "origin"
 			if addErr := gitClient.AddRemote(ctx, tempDir, "origin", url); addErr != nil {

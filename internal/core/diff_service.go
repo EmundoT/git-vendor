@@ -9,6 +9,8 @@ import (
 )
 
 // DiffOptions configures filtering for DiffVendorWithOptions.
+// All non-empty filters are AND'd together: a vendor must match
+// VendorName AND belong to Group AND match Ref to be included.
 // Empty fields mean "no filter" (match all).
 type DiffOptions struct {
 	VendorName string // Filter to a single vendor by name
