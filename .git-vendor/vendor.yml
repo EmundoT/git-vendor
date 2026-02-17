@@ -92,3 +92,8 @@ vendors:
             to: docs/COMMIT-SCHEMA.md
           - from: COMMIT-COOKBOOK.md
             to: docs/COMMIT-COOKBOOK.md
+          # Vision docs (git-vendor is primary consumer)
+          - from: vision/VENDOR-VISION.md
+            to: docs/VENDOR-VISION.md
+          - from: vision/CLI-REDESIGN.md
+            to: docs/CLI-REDESIGN.md
