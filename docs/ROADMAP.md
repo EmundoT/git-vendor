@@ -286,6 +286,37 @@ The lockfile format must remain backward-compatible. New fields are additive. Ol
 
 ---
 
+### Feature 1.6: CLI Redesign — Bidirectional Vendoring
+
+**What:** Restructure the CLI command surface around four intuitive verbs (`pull`, `push`, `status`, `accept`) that support bidirectional vendoring workflows. Merge the confusing `sync`/`update` split into `pull`. Merge `verify`/`diff`/`outdated` into `status`. Add `push` (propose changes upstream via PR) and `accept` (legitimize local drift). Add a commit guard that blocks committing vendored files with unacknowledged lock mismatch.
+
+**Why:** The current command names fight user intuition. `sync` and `update` sound interchangeable but do different things (lock→disk vs. fetch→lock). Three separate inspection commands (`verify`, `diff`, `outdated`) fragment a single question ("what's different?"). Local edits to vendored files are treated as corruption with no path to propose them upstream. This redesign makes git-vendor bidirectional and intuitive for both humans and LLMs.
+
+**Full specification:** `docs/plans/cli-redesign.md`
+
+**Implementation Sequence:**
+1. `status` — merge verify + diff + outdated, add config/lock coherence checks
+2. `pull` — merge update + sync, add upstream removal handling
+3. `accept` — lock schema addition (`accepted_drift`), enables commit guard
+4. Commit guard — pre-commit hook, depends on `status` + `accept`
+5. `push` — upstream PR creation via `gh`, independent of other changes
+6. Aliases + deprecation — wire old commands to new ones
+
+**Difficulty:** 4
+**Estimated Effort:** 10–15 days (incremental, each step is independently shippable)
+**Dependencies:** Feature 1.2 (verify hardening provides the foundation for `status`)
+**Acceptance Criteria:**
+- [ ] `git vendor pull` replaces `update` + `sync` as single downstream command
+- [ ] `git vendor status` replaces `verify` + `diff` + `outdated` as single inspection command
+- [ ] `git vendor accept` writes `accepted_drift` to lock, acknowledged files pass commit guard
+- [ ] `git vendor push` creates upstream PR via `gh` for locally modified vendored files
+- [ ] Pre-commit hook blocks commits with unacknowledged vendored file drift
+- [ ] `pull` gracefully handles upstream file removal (warn + delete + prune lock)
+- [ ] Old commands (`sync`, `update`, `verify`, `diff`, `outdated`) work as aliases with deprecation notice
+- [ ] `status` detects config/lock coherence issues (stale mappings, orphaned entries)
+
+---
+
 ## 6. Phase 2: Supply Chain Intelligence (Months 2–4)
 
 **Goal:** Transform git-vendor from a file-moving tool into a supply chain intelligence tool. Every feature in this phase produces output that security teams, compliance teams, or engineering leadership would find valuable.
