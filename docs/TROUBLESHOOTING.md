@@ -11,6 +11,8 @@ Common issues and solutions for git-vendor.
 - [Performance Issues](#performance-issues)
 - [Git Issues](#git-issues)
 - [TUI/Display Issues](#tuidisplay-issues)
+- [Mirror Fallback](#mirror-fallback)
+- [Lock File Merge Conflicts](#lock-file-merge-conflicts)
 - [General Debugging](#general-debugging)
 
 ## Sync Errors
@@ -1476,6 +1478,67 @@ After selecting "💾 Save & Exit", the wizard will:
 - Save changes to `vendor.yml`
 - Run `update` to regenerate `vendor.lock`
 - Check for path conflicts and display warnings if any
+
+---
+
+## Mirror Fallback
+
+### Mirror URLs not being tried
+
+**Symptoms:** Sync/update fails with a network error even though mirror URLs are configured.
+
+**Cause:** Mirror URLs are only tried when the primary URL fails with a fetch error. Check that mirrors are correctly configured:
+
+```bash
+git-vendor config list-mirrors <vendor-name>
+```
+
+**How mirror fallback works:**
+
+1. Primary URL (from `url:` field) is tried first
+2. If primary fails, mirrors are tried in declaration order
+3. The lock file records which URL served the content in `source_url` (empty means primary)
+4. All operations (sync, update, diff, outdated) use mirror fallback automatically
+
+**To add mirrors:**
+
+```bash
+git-vendor config add-mirror <vendor-name> https://mirror.example.com/repo
+```
+
+---
+
+## Lock File Merge Conflicts
+
+### Error: "vendor.lock contains merge conflict markers"
+
+**Symptoms:**
+
+```text
+✖ Lock Conflict Detected
+vendor.lock contains git merge conflict markers at line 12
+```
+
+**Cause:** A `git merge` or `git rebase` left unresolved conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) in `vendor.lock`.
+
+**Resolution options:**
+
+1. **Manual resolution:** Edit `.git-vendor/vendor.lock`, resolve the conflicts, and re-run your command.
+2. **Re-update:** Run `git-vendor update` to regenerate the lock file from scratch (fetches latest commits for all vendors).
+
+**Automatic merge strategy:** When using programmatic merge (`MergeLockEntries`), conflicts are resolved by: later timestamp wins, lexicographic commit hash as tiebreaker. Unresolvable entries are flagged for manual review.
+
+---
+
+## Shallow Fetch Fallback
+
+### Diff is slow for some vendors
+
+**Cause:** The `diff` command uses shallow fetch (depth 20) for performance. If the locked commit is not within the 20 most recent commits, git-vendor automatically falls back to a full fetch, which is slower.
+
+**This is expected behavior** — no user action needed. The fallback happens transparently and ensures correct results regardless of repository history depth.
+
+**To avoid slow diffs:** Run `git-vendor update` periodically so locked commits stay close to HEAD.
 
 ---
 

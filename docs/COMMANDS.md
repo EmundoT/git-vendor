@@ -185,6 +185,9 @@ git-vendor sync [options] [vendor-name]
 | `--group <name>` | Sync only vendors in the specified group                              |
 | `--parallel`     | Enable parallel processing (3-5x faster)                              |
 | `--workers <N>`  | Number of parallel workers (default: NumCPU, max 8)                   |
+| `--internal`     | Sync only internal vendors (no network access required)               |
+| `--reverse`      | Propagate destination changes back to source (requires `--internal`)  |
+| `--commit`       | Auto-commit after sync with vendor/v1 trailers                       |
 | `--local`        | Allow file:// and local filesystem paths in vendor URLs               |
 | `--verbose, -v`  | Show git commands as they run (useful for debugging)                  |
 | `<vendor-name>`  | Sync only the specified vendor                                        |
@@ -238,17 +241,22 @@ Fetch the latest commits for all configured refs and update the lock file.
 **Usage:**
 
 ```bash
-git-vendor update [options]
+git-vendor update [vendor-name] [options]
 ```
+
+**Arguments:**
+
+- `[vendor-name]` - Optional. Update only the specified vendor (others retain existing lock entries)
 
 **Options:**
 
-| Flag            | Description                                          |
-| --------------- | ---------------------------------------------------- |
-| `--parallel`    | Enable parallel processing (3-5x faster)             |
-| `--workers <N>` | Number of parallel workers (default: NumCPU, max 8)  |
-| `--local`       | Allow file:// and local filesystem paths in vendor URLs |
-| `--verbose, -v` | Show git commands as they run (useful for debugging) |
+| Flag             | Description                                             |
+| ---------------- | ------------------------------------------------------- |
+| `--group <name>` | Update only vendors in the specified group               |
+| `--parallel`     | Enable parallel processing (3-5x faster)                |
+| `--workers <N>`  | Number of parallel workers (default: NumCPU, max 8)     |
+| `--local`        | Allow file:// and local filesystem paths in vendor URLs  |
+| `--verbose, -v`  | Show git commands as they run (useful for debugging)     |
 
 **This command:**
 
@@ -449,12 +457,19 @@ Show commit differences between the locked version and the latest available vers
 **Usage:**
 
 ```bash
-git-vendor diff <vendor>
+git-vendor diff [vendor-name] [options]
 ```
 
 **Arguments:**
 
-- `<vendor>` - Name of the vendor to show diff for
+- `[vendor-name]` - Optional. Show diff for a specific vendor only
+
+**Options:**
+
+| Flag             | Description                                             |
+| ---------------- | ------------------------------------------------------- |
+| `--ref <ref>`    | Compare against a specific ref instead of latest         |
+| `--group <name>` | Show diffs only for vendors in the specified group        |
 
 **This command displays:**
 
@@ -583,6 +598,44 @@ git-vendor completion powershell >> $PROFILE
 - Command name completion
 - Flag completion for each command
 - Context-aware suggestions (e.g., flags only shown for relevant commands)
+
+---
+
+### config add-mirror
+
+Add a fallback mirror URL to a vendor.
+
+**Usage:**
+
+```bash
+git-vendor config add-mirror <vendor-name> <mirror-url>
+```
+
+The mirror URL is tried after the primary URL fails during sync, update, diff, and outdated operations. Multiple mirrors are tried in declaration order.
+
+---
+
+### config remove-mirror
+
+Remove a mirror URL from a vendor.
+
+**Usage:**
+
+```bash
+git-vendor config remove-mirror <vendor-name> <mirror-url>
+```
+
+---
+
+### config list-mirrors
+
+List all mirror URLs configured for a vendor.
+
+**Usage:**
+
+```bash
+git-vendor config list-mirrors <vendor-name>
+```
 
 ---
 
