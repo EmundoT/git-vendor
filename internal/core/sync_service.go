@@ -148,7 +148,7 @@ func (s *SyncService) Sync(ctx context.Context, opts SyncOptions) error {
 
 	// Dry-run mode always uses sequential processing
 	if opts.DryRun {
-		return s.syncDryRun(vendorsToSync, lockMap)
+		return s.syncDryRun(vendorsToSync, lockMap, lock)
 	}
 
 	// Use parallel or sequential sync based on options
@@ -159,10 +159,14 @@ func (s *SyncService) Sync(ctx context.Context, opts SyncOptions) error {
 	return s.syncSequential(ctx, vendorsToSync, lockMap, opts)
 }
 
-// syncDryRun performs dry-run preview (always sequential)
-func (s *SyncService) syncDryRun(vendors []types.VendorSpec, lockMap map[string]map[string]string) error {
+// syncDryRun performs dry-run preview (always sequential).
+// lock is the full VendorLock — needed for FileHashes to classify unchanged files.
+func (s *SyncService) syncDryRun(vendors []types.VendorSpec, lockMap map[string]map[string]string, lock types.VendorLock) error {
 	progress := s.ui.StartProgress(len(vendors), "Previewing sync")
 	defer progress.Complete()
+
+	// Build a map of vendor+ref -> FileHashes for unchanged detection
+	fileHashMap := buildFileHashMap(lock)
 
 	for _, v := range vendors {
 		if v.Source == SourceInternal {
@@ -174,11 +178,25 @@ func (s *SyncService) syncDryRun(vendors []types.VendorSpec, lockMap map[string]
 			progress.Increment(v.Name)
 			continue
 		}
-		s.previewSyncVendor(&v, lockMap[v.Name])
+		s.previewSyncVendor(&v, lockMap[v.Name], fileHashMap)
 		progress.Increment(v.Name)
 	}
 
 	return nil
+}
+
+// buildFileHashMap builds a map of "vendor:ref" -> FileHashes from the lock.
+// Used by dry-run to classify files as unchanged when dest matches the lock hash.
+func buildFileHashMap(lock types.VendorLock) map[string]map[string]string {
+	m := make(map[string]map[string]string)
+	for i := range lock.Vendors {
+		l := &lock.Vendors[i]
+		if len(l.FileHashes) > 0 {
+			key := l.Name + ":" + l.Ref
+			m[key] = l.FileHashes
+		}
+	}
+	return m
 }
 
 // syncSequential performs sequential sync (original implementation).
@@ -407,15 +425,21 @@ func (s *SyncService) printSyncHeader(config types.VendorConfig, vendorName stri
 	}
 }
 
-// previewSyncVendor shows what would be synced in dry-run mode
-func (s *SyncService) previewSyncVendor(v *types.VendorSpec, lockedRefs map[string]string) {
+// previewSyncVendor shows what would be synced in dry-run mode.
+// fileHashMap maps "vendor:ref" to FileHashes from the lockfile,
+// used to classify destination files as [unchanged] when their hash matches.
+func (s *SyncService) previewSyncVendor(v *types.VendorSpec, lockedRefs map[string]string, fileHashMap map[string]map[string]string) {
 	fmt.Printf("✓ %s\n", v.Name)
 
 	for _, spec := range v.Specs {
 		status := "not synced"
 		if lockedRefs != nil {
 			if h, ok := lockedRefs[spec.Ref]; ok && h != "" {
-				status = fmt.Sprintf("locked: %s", h[:7])
+				short := h
+				if len(short) > 7 {
+					short = short[:7]
+				}
+				status = fmt.Sprintf("locked: %s", short)
 			}
 		}
 
@@ -424,16 +448,77 @@ func (s *SyncService) previewSyncVendor(v *types.VendorSpec, lockedRefs map[stri
 		if len(spec.Mapping) == 0 {
 			fmt.Printf("    (no paths configured)\n")
 		} else {
+			// Get file hashes for this vendor+ref from the lockfile
+			lockHashes := fileHashMap[v.Name+":"+spec.Ref]
+
+			var addCount, updateCount, unchangedCount int
+
 			for _, m := range spec.Mapping {
 				dest := m.To
 				if dest == "" {
 					dest = "(auto)"
 				}
-				fmt.Printf("    → %s → %s\n", m.From, dest)
+
+				// Classify: [add], [update], or [unchanged]
+				tag := s.classifyMapping(dest, lockHashes)
+				switch tag {
+				case "add":
+					addCount++
+				case "update":
+					updateCount++
+				case "unchanged":
+					unchangedCount++
+				}
+
+				fmt.Printf("    → %s → %s  [%s]\n", m.From, dest, tag)
 			}
+
+			// Print per-ref summary
+			fmt.Printf("  Summary: %s, %s, %s\n",
+				Pluralize(addCount, "add", "adds"),
+				Pluralize(updateCount, "update", "updates"),
+				Pluralize(unchangedCount, "unchanged", "unchanged"))
 		}
 	}
 	fmt.Println()
+}
+
+// classifyMapping determines whether a destination file would be added, updated,
+// or is unchanged during a dry-run preview.
+//   - "add": destination file does not exist on disk
+//   - "unchanged": destination file exists and its SHA-256 matches the lockfile hash
+//   - "update": destination file exists but differs from (or is absent in) the lockfile
+func (s *SyncService) classifyMapping(dest string, lockHashes map[string]string) string {
+	if dest == "(auto)" {
+		return "add" // Can't stat auto-named files; treat as new
+	}
+
+	// Strip position specifier from destination path for filesystem access
+	destFile, _, err := types.ParsePathPosition(dest)
+	if err != nil {
+		destFile = dest
+	}
+
+	fullPath := filepath.Join(s.rootDir, destFile)
+	if _, statErr := s.fs.Stat(fullPath); statErr != nil {
+		return "add"
+	}
+
+	// File exists — check if it matches the lock hash
+	if lockHashes != nil {
+		if lockedHash, ok := lockHashes[destFile]; ok && lockedHash != "" {
+			currentHash, hashErr := s.cache.ComputeFileChecksum(fullPath)
+			if hashErr == nil {
+				// Lock stores bare hex or "sha256:hex" — normalize for comparison
+				normalizedLock := strings.TrimPrefix(lockedHash, "sha256:")
+				if currentHash == normalizedLock {
+					return "unchanged"
+				}
+			}
+		}
+	}
+
+	return "update"
 }
 
 // SyncVendor syncs a single vendor.

@@ -562,35 +562,36 @@ func main() {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 
-		if dryRun {
-			if err := manager.SyncDryRun(ctx); err != nil {
-				callback.ShowError("Preview Failed", err.Error())
-				os.Exit(1)
+		opts := core.SyncOptions{
+			DryRun:       dryRun,
+			VendorName:   vendorName,
+			GroupName:    groupName,
+			Force:        force,
+			NoCache:      noCache,
+			InternalOnly: internalOnly,
+			Reverse:      reverse,
+			Local:        local,
+		}
+		if parallel {
+			opts.Parallel = types.ParallelOptions{
+				Enabled:    true,
+				MaxWorkers: workers,
 			}
+		}
+		if err := manager.SyncWithFullOptions(ctx, opts); err != nil {
+			if dryRun {
+				callback.ShowError("Preview Failed", err.Error())
+			} else {
+				callback.ShowError("Sync Failed", err.Error())
+			}
+			os.Exit(1)
+		}
+		if dryRun {
 			if flags.Mode != core.OutputQuiet {
 				fmt.Println("This is a dry-run. No files were modified.")
 				fmt.Println("Run 'git-vendor sync' to apply changes.")
 			}
 		} else {
-			opts := core.SyncOptions{
-				VendorName:   vendorName,
-				GroupName:    groupName,
-				Force:        force,
-				NoCache:      noCache,
-				InternalOnly: internalOnly,
-				Reverse:      reverse,
-				Local:        local,
-			}
-			if parallel {
-				opts.Parallel = types.ParallelOptions{
-					Enabled:    true,
-					MaxWorkers: workers,
-				}
-			}
-			if err := manager.SyncWithFullOptions(ctx, opts); err != nil {
-				callback.ShowError("Sync Failed", err.Error())
-				os.Exit(1)
-			}
 			callback.ShowSuccess("Synced.")
 
 			// Auto-commit if --commit flag is set
