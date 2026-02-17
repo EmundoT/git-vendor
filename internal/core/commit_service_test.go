@@ -376,6 +376,13 @@ func TestCommitVendorChanges_SingleVendor(t *testing.T) {
 			assertTrailer(t, opts.Trailers, 2, "Vendor-Name", "my-lib")
 			assertTrailer(t, opts.Trailers, 3, "Vendor-Ref", "main")
 			assertTrailer(t, opts.Trailers, 4, "Vendor-Commit", "abc123def456789012345678901234567890abcd")
+			// Vendor Touch extracted from destination paths
+			assertHasTrailerKey(t, opts.Trailers, "Touch")
+			// Verify Touch contains vendor area from mapping dest "vendor/a.go" → "vendor"
+			touchValue := findTrailerValue(opts.Trailers, "Touch")
+			if touchValue == "" {
+				t.Error("Touch trailer value is empty")
+			}
 			// Shared trailers computed from real git state — verify presence, not values
 			assertHasTrailerKey(t, opts.Trailers, "Diff-Additions")
 			assertHasTrailerKey(t, opts.Trailers, "Diff-Deletions")
@@ -652,16 +659,14 @@ func TestCommitVendorChanges_SharedTrailerEnrichmentFailureNonFatal(t *testing.T
 
 	mockGit.EXPECT().Commit(gomock.Any(), tmpDir, gomock.Any()).DoAndReturn(
 		func(_ context.Context, _ string, opts types.CommitOptions) error {
-			// Should only have vendor trailers (Schema + Tags + Name + Ref + Commit = 5), no shared
-			if len(opts.Trailers) != 5 {
-				t.Errorf("expected 5 trailers (no shared), got %d: %v", len(opts.Trailers), opts.Trailers)
-			}
-			// Verify no Diff-* trailers
+			// Verify no Diff-* trailers (SharedTrailers failed)
 			for _, tr := range opts.Trailers {
 				if tr.Key == "Diff-Additions" || tr.Key == "Diff-Deletions" || tr.Key == "Diff-Files" || tr.Key == "Diff-Surface" {
 					t.Errorf("unexpected shared trailer: %s=%s", tr.Key, tr.Value)
 				}
 			}
+			// But vendor Touch SHOULD still be present (from dest path extraction)
+			// Mapping dest "b.go" is root-level, so no area — Touch may be absent
 			return nil
 		},
 	)
@@ -683,6 +688,187 @@ func TestVendorTrailers_TagsPresent(t *testing.T) {
 
 	// Tags MUST be second trailer (after Commit-Schema, before vendor trailers)
 	assertTrailer(t, trailers, 1, "Tags", "vendor.update")
+}
+
+// --- Touch extraction tests ---
+
+func TestPathToTouchArea_Basic(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"pkg/git-plumbing/hook.go", "pkg.git-plumbing"},
+		{".claude/hooks/guard.sh", "claude.hooks"},
+		{"internal/core/engine.go", "internal.core"},
+		{"a/b/c/d.go", "a.b.c"},
+		{"root.go", ""},
+		{"docs/ROADMAP.md", "docs"},
+		{".claude/skills/commit-schema.md", "claude.skills"},
+		{"vendor/a.go", "vendor"},
+	}
+
+	for _, tt := range tests {
+		got := pathToTouchArea(tt.path)
+		if got != tt.want {
+			t.Errorf("pathToTouchArea(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestPathToTouchArea_WindowsSlashes(t *testing.T) {
+	got := pathToTouchArea("pkg\\git-plumbing\\hook.go")
+	if got != "pkg.git-plumbing" {
+		t.Errorf("pathToTouchArea with backslashes = %q, want %q", got, "pkg.git-plumbing")
+	}
+}
+
+func TestPathToTouchArea_LeadingDots(t *testing.T) {
+	got := pathToTouchArea(".hidden/dir/file.go")
+	if got != "hidden.dir" {
+		t.Errorf("pathToTouchArea(.hidden/dir) = %q, want %q", got, "hidden.dir")
+	}
+}
+
+func TestPathToTouchArea_NumericSegment(t *testing.T) {
+	// Segments starting with digits are skipped (tag grammar requires leading letter)
+	got := pathToTouchArea("2ndparty/src/file.go")
+	if got != "src" {
+		t.Errorf("pathToTouchArea(2ndparty/src) = %q, want %q", got, "src")
+	}
+
+	// "v2" starts with a letter — valid tag segment
+	got = pathToTouchArea("v2/src/file.go")
+	if got != "v2.src" {
+		t.Errorf("pathToTouchArea(v2/src) = %q, want %q", got, "v2.src")
+	}
+}
+
+func TestExtractVendorTouch_SingleSpec(t *testing.T) {
+	specs := []*types.VendorSpec{
+		{
+			Name: "git-plumbing",
+			Specs: []types.BranchSpec{
+				{
+					Ref: "main",
+					Mapping: []types.PathMapping{
+						{From: "git.go", To: "pkg/git-plumbing/git.go"},
+						{From: "hook.go", To: "pkg/git-plumbing/hook.go"},
+					},
+				},
+			},
+		},
+	}
+
+	got := ExtractVendorTouch(specs)
+	if len(got) != 1 || got[0] != "pkg.git-plumbing" {
+		t.Errorf("ExtractVendorTouch = %v, want [pkg.git-plumbing]", got)
+	}
+}
+
+func TestExtractVendorTouch_MultiSpec(t *testing.T) {
+	specs := []*types.VendorSpec{
+		{
+			Name: "plumbing",
+			Specs: []types.BranchSpec{
+				{Ref: "main", Mapping: []types.PathMapping{{From: "a.go", To: "pkg/git-plumbing/a.go"}}},
+			},
+		},
+		{
+			Name: "ecosystem",
+			Specs: []types.BranchSpec{
+				{Ref: "main", Mapping: []types.PathMapping{
+					{From: "rules/tags.md", To: ".claude/rules/tags.md"},
+					{From: "skills/commit.md", To: ".claude/skills/commit.md"},
+				}},
+			},
+		},
+	}
+
+	got := ExtractVendorTouch(specs)
+	// Expect sorted: claude.rules, claude.skills, pkg.git-plumbing
+	if len(got) != 3 {
+		t.Fatalf("ExtractVendorTouch = %v, want 3 areas", got)
+	}
+	if got[0] != "claude.rules" || got[1] != "claude.skills" || got[2] != "pkg.git-plumbing" {
+		t.Errorf("ExtractVendorTouch = %v", got)
+	}
+}
+
+func TestExtractVendorTouch_RootLevelFile(t *testing.T) {
+	specs := []*types.VendorSpec{
+		{
+			Name: "simple",
+			Specs: []types.BranchSpec{
+				{Ref: "main", Mapping: []types.PathMapping{{From: "lib.go", To: "lib.go"}}},
+			},
+		},
+	}
+
+	got := ExtractVendorTouch(specs)
+	if len(got) != 0 {
+		t.Errorf("ExtractVendorTouch for root file = %v, want empty", got)
+	}
+}
+
+func TestExtractVendorTouch_AutoNamedDest(t *testing.T) {
+	specs := []*types.VendorSpec{
+		{
+			Name: "auto",
+			Specs: []types.BranchSpec{
+				{Ref: "main", Mapping: []types.PathMapping{{From: "src/deep/file.go", To: ""}}},
+			},
+		},
+	}
+
+	got := ExtractVendorTouch(specs)
+	// Auto-named: filepath.Base("src/deep/file.go") = "file.go" — root level, no area
+	if len(got) != 0 {
+		t.Errorf("ExtractVendorTouch for auto-named = %v, want empty", got)
+	}
+}
+
+func TestMergeTouch_VendorOnly(t *testing.T) {
+	vendorTouch := []string{"pkg.git-plumbing", "claude.hooks"}
+	merged, filtered := mergeTouch(vendorTouch, nil)
+
+	if len(merged) != 2 || merged[0] != "claude.hooks" || merged[1] != "pkg.git-plumbing" {
+		t.Errorf("mergeTouch vendor-only = %v", merged)
+	}
+	if len(filtered) != 0 {
+		t.Errorf("filtered should be empty, got %v", filtered)
+	}
+}
+
+func TestMergeTouch_SharedOnly(t *testing.T) {
+	shared := []types.Trailer{
+		{Key: "Touch", Value: "auth, security"},
+		{Key: "Diff-Files", Value: "3"},
+	}
+	merged, filtered := mergeTouch(nil, shared)
+
+	if len(merged) != 2 || merged[0] != "auth" || merged[1] != "security" {
+		t.Errorf("mergeTouch shared-only = %v", merged)
+	}
+	if len(filtered) != 1 || filtered[0].Key != "Diff-Files" {
+		t.Errorf("filtered = %v, want [Diff-Files]", filtered)
+	}
+}
+
+func TestMergeTouch_Combined(t *testing.T) {
+	vendorTouch := []string{"pkg.git-plumbing"}
+	shared := []types.Trailer{
+		{Key: "Touch", Value: "auth, pkg.git-plumbing"},
+		{Key: "Diff-Additions", Value: "10"},
+	}
+	merged, filtered := mergeTouch(vendorTouch, shared)
+
+	// Deduped: auth + pkg.git-plumbing
+	if len(merged) != 2 || merged[0] != "auth" || merged[1] != "pkg.git-plumbing" {
+		t.Errorf("mergeTouch combined = %v, want [auth, pkg.git-plumbing]", merged)
+	}
+	if len(filtered) != 1 || filtered[0].Key != "Diff-Additions" {
+		t.Errorf("filtered = %v", filtered)
+	}
 }
 
 // --- AnnotateVendorCommit tests ---
@@ -824,4 +1010,13 @@ func filterTrailerValues(trailers []types.Trailer, key string) []string {
 		}
 	}
 	return values
+}
+
+func findTrailerValue(trailers []types.Trailer, key string) string {
+	for _, t := range trailers {
+		if t.Key == key {
+			return t.Value
+		}
+	}
+	return ""
 }

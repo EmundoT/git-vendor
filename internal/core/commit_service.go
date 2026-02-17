@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -37,6 +38,121 @@ type VendorNoteEntry struct {
 	SourceVersionTag string            `json:"source_version_tag,omitempty"`
 	FileHashes       map[string]string `json:"file_hashes,omitempty"`
 	Paths            []string          `json:"paths,omitempty"` // Destination paths affected
+}
+
+// ExtractVendorTouch derives Touch area tags from vendor destination paths.
+// ExtractVendorTouch converts directory paths to dot-separated area identifiers:
+//
+//	"pkg/git-plumbing/hook.go"    → "pkg.git-plumbing"
+//	".claude/hooks/guard.sh"      → "claude.hooks"
+//	"internal/core/engine.go"     → "internal.core"
+//	"root.go"                     → "" (no directory = no area)
+//
+// Results are deduplicated and sorted for deterministic trailer output.
+// #vendor.touch #commit-schema
+func ExtractVendorTouch(specs []*types.VendorSpec) []string {
+	areaSet := make(map[string]struct{})
+	for _, spec := range specs {
+		for _, bs := range spec.Specs {
+			for _, m := range bs.Mapping {
+				dest := m.To
+				if dest == "" {
+					dest = filepath.Base(m.From)
+				}
+				// Strip position specifier before extracting area
+				destFile, _, err := types.ParsePathPosition(dest)
+				if err != nil {
+					destFile = dest
+				}
+				area := pathToTouchArea(destFile)
+				if area != "" {
+					areaSet[area] = struct{}{}
+				}
+			}
+		}
+	}
+
+	areas := make([]string, 0, len(areaSet))
+	for a := range areaSet {
+		areas = append(areas, a)
+	}
+	sort.Strings(areas)
+	return areas
+}
+
+// pathToTouchArea converts a file path to a dot-separated touch area tag.
+// pathToTouchArea strips the filename, uses the directory components, strips
+// leading dots from segments, and joins with dots. Returns "" for root-level
+// files (no directory). Tag grammar compliance: segments are lowercased and
+// must start with a letter.
+//
+// Examples:
+//
+//	"pkg/git-plumbing/hook.go"    → "pkg.git-plumbing"
+//	".claude/hooks/guard.sh"      → "claude.hooks"
+//	"a/b/c/d.go"                  → "a.b.c"
+//	"root.go"                     → ""
+//
+// #vendor.touch
+func pathToTouchArea(path string) string {
+	normalized := strings.ReplaceAll(path, "\\", "/")
+	dir := normalized
+	if lastSlash := strings.LastIndex(normalized, "/"); lastSlash >= 0 {
+		dir = normalized[:lastSlash]
+	} else {
+		return "" // Root-level file, no directory
+	}
+
+	segments := strings.Split(dir, "/")
+	clean := make([]string, 0, len(segments))
+	for _, s := range segments {
+		s = strings.TrimLeft(s, ".")
+		s = strings.ToLower(s)
+		if s == "" {
+			continue
+		}
+		// Tag segments must start with a letter per commit-schema tag grammar
+		if s[0] < 'a' || s[0] > 'z' {
+			continue
+		}
+		clean = append(clean, s)
+	}
+	if len(clean) == 0 {
+		return ""
+	}
+	return strings.Join(clean, ".")
+}
+
+// mergeTouch combines Touch values from vendor path extraction and SharedTrailers.
+// mergeTouch deduplicates and sorts the combined set.
+// #vendor.touch #commit-schema
+func mergeTouch(vendorTouch []string, sharedTrailers []types.Trailer) ([]string, []types.Trailer) {
+	touchSet := make(map[string]struct{}, len(vendorTouch))
+	for _, t := range vendorTouch {
+		touchSet[t] = struct{}{}
+	}
+
+	// Extract existing Touch from shared trailers, merge, and remove the original
+	var filteredShared []types.Trailer
+	for _, tr := range sharedTrailers {
+		if tr.Key == "Touch" {
+			for _, tag := range strings.Split(tr.Value, ", ") {
+				tag = strings.TrimSpace(tag)
+				if tag != "" {
+					touchSet[tag] = struct{}{}
+				}
+			}
+			continue // Remove original Touch — merged version replaces it
+		}
+		filteredShared = append(filteredShared, tr)
+	}
+
+	merged := make([]string, 0, len(touchSet))
+	for t := range touchSet {
+		merged = append(merged, t)
+	}
+	sort.Strings(merged)
+	return merged, filteredShared
 }
 
 // VendorTrailers builds COMMIT-SCHEMA v1 vendor/v1 trailers for one or more lock entries.
@@ -193,16 +309,36 @@ func CommitVendorChanges(ctx context.Context, gitClient GitClient, configStore C
 	subject := VendorCommitSubject(matchedLocks, operation)
 	trailers := VendorTrailers(matchedLocks)
 
+	// Collect matched specs for vendor Touch extraction
+	matchedSpecs := make([]*types.VendorSpec, 0, len(matchedLocks))
+	for _, lock := range matchedLocks {
+		if spec, ok := specMap[lock.Name]; ok {
+			matchedSpecs = append(matchedSpecs, spec)
+		}
+	}
+	vendorTouch := ExtractVendorTouch(matchedSpecs)
+
 	// Compute shared trailers (Touch, Diff-*, Diff-Surface) via git-plumbing.
 	// The programmatic commit path bypasses git hooks, so enrichment
 	// that hooks would normally provide must be computed here.
 	// Failures are non-fatal — missing enrichment does not block the commit.
 	sharedTrailers, sharedErr := git.SharedTrailers(ctx, rootDir)
+
+	// Merge vendor path-based Touch with #tag-based Touch from SharedTrailers.
+	// Vendor Touch provides area coverage from destination paths (e.g., pkg.git-plumbing).
+	// SharedTrailers Touch provides #tag coverage from file content.
+	var sharedTyped []types.Trailer
 	if sharedErr == nil {
 		for _, t := range sharedTrailers {
-			trailers = append(trailers, types.Trailer{Key: t.Key, Value: t.Value})
+			sharedTyped = append(sharedTyped, types.Trailer{Key: t.Key, Value: t.Value})
 		}
 	}
+
+	mergedTouch, filteredShared := mergeTouch(vendorTouch, sharedTyped)
+	if len(mergedTouch) > 0 {
+		trailers = append(trailers, types.Trailer{Key: "Touch", Value: strings.Join(mergedTouch, ", ")})
+	}
+	trailers = append(trailers, filteredShared...)
 
 	if err := gitClient.Commit(ctx, rootDir, types.CommitOptions{
 		Message:  subject,
