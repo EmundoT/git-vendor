@@ -87,9 +87,16 @@ Commit-Schema: <namespace>/v<N>
 
 | Namespace | Owner | Description |
 | ----------- | ------- | ------------- |
-| agent | git-agent | LLM/agent-authored commits |
+| agent | git-agent | Commits composed by git-agent binary |
 | vendor | git-vendor | Dependency vendor/update |
+| assisted | (shared) | LLM-authored commits enriched by hooks |
 | manual | (shared) | Human commits opting into tags |
+
+The `assisted` namespace identifies commits where an LLM authored
+the message (detected via `Co-Authored-By` containing a known AI
+provider) but the hook performed trailer enrichment. This
+distinguishes LLM-via-hook commits from both human manual commits
+and programmatic git-agent commits.
 
 Future tools register new namespaces. Conflicts resolved by the
 git-plumbing maintainer.
@@ -122,7 +129,7 @@ author (human or LLM). See Tag System for tag syntax.
 | Field | Value |
 | ------- | ------- |
 | Key | Tags |
-| Required | REQUIRED (agent), OPTIONAL (vendor, manual) |
+| Required | REQUIRED (agent), OPTIONAL (vendor, assisted, manual) |
 | Auto | No — requires author judgment |
 | Format | Comma-separated tag list |
 
@@ -311,11 +318,24 @@ association. The Nth `Vendor-Name` corresponds to the Nth
 `Vendor-Ref` and `Vendor-Commit`. Parsers use `TrailerValues(key)`
 to retrieve all values in order.
 
-### 4.3 Manual Namespace (Commit-Schema: manual/v1)
+### 4.3 Assisted Namespace (Commit-Schema: assisted/v1)
+
+No namespace-specific trailers required. Auto-set by the
+prepare-commit-msg hook when the commit message contains a
+`Co-Authored-By` trailer matching a known AI provider (e.g.,
+Claude, GPT, Copilot). Indicates an LLM composed the message
+but hooks performed trailer enrichment (Tags, Touch, Diff-*).
+
+This is the most common namespace in practice: LLM agents using
+`git commit -m` via Claude Code go through the hook path, not
+through git-agent's programmatic commit API.
+
+### 4.4 Manual Namespace (Commit-Schema: manual/v1)
 
 No namespace-specific trailers required. Exists so human commits
 can enter the tag graph with minimal friction. Auto-added by
-prepare-commit-msg hook when no schema is present.
+prepare-commit-msg hook when no `Co-Authored-By` from an AI
+provider is detected.
 
 Humans benefit from auto-enrichment: Touch, Diff metrics, and
 Diff-Surface are computed by hooks even on manual commits. A

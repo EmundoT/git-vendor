@@ -75,8 +75,17 @@ for f in $STAGED; do
 done
 TOUCH=$(echo "$TOUCH_TAGS" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
 
+# Detect AI-authored commits via Co-Authored-By trailer.
+# assisted/v1 = LLM composed the message, hook enriched it.
+# manual/v1   = human commit, hook enriched it.
+if echo "$MSG" | grep -qiE '^Co-Authored-By:.*\b(Claude|GPT|Copilot|Gemini)\b'; then
+  SCHEMA_NS="assisted/v1"
+else
+  SCHEMA_NS="manual/v1"
+fi
+
 # Build trailer block
-TRAILERS="Commit-Schema: manual/v1"
+TRAILERS="Commit-Schema: $SCHEMA_NS"
 if [ -n "$TAGS" ] && ! echo "$MSG" | grep -q "^Tags:"; then
   TRAILERS="$TRAILERS
 Tags: $TAGS"
