@@ -2,9 +2,9 @@ schema_version: "1.3"
 vendors:
     - name: git-ecosystem
       ref: main
-      commit_hash: e998026ddd2e5f7308316d0fd015c0f77cb27392
+      commit_hash: 2ebe0bcaae83dcb7dfc20aecaa6b9296f8c89072
       license_path: .git-vendor\licenses\git-ecosystem.txt
-      updated: "2026-02-17T15:54:35Z"
+      updated: "2026-02-17T19:47:19Z"
       file_hashes:
         .claude/hooks/env.sh: e7d5524e4d4540ac4d5844a88c8e0d15d75e6fabdbdba225fe2f5ad0429d48f2
         .claude/hooks/go-format.sh: 73020d916c670d2cb77088f3be4a502e040fb93cffaafec7672de0a593db0304
@@ -20,13 +20,13 @@ vendors:
         .claude/skills/nominate/SKILL.md: bd528ed45ac6fa2f8f1cbfac0d34fa4a27ef0c4302d2de07b514954c051ca3af
         .githooks/commit-msg: d7e7569973647d1824e29f6eddb6c6c1e387e9769314e7d874fa320c1256a6a6
         .githooks/pre-commit: 8777807936321a2ccbff55c5de11638a4049688741422fada8da6a53b101a728
-        .githooks/prepare-commit-msg: f0c5585397f4f4c1c186a9a96970f97a538aa9c134d6ed96478a027cef96591f
+        .githooks/prepare-commit-msg: 50e5bf8f5b26cf76825b9e26be6f125e4f0cfb6d193f759ef910f9022131d5ce
         .github/workflows/commit-schema-validate.yml: 3eacdf925390d9c5b128865225ef2c94f4303275bde87a723cabdcbd60ca7b36
         docs/COMMIT-COOKBOOK.md: e954cc547f0d2e61867983eadd6d949c7ddc1f148465025586610e53f50000c1
-        docs/COMMIT-SCHEMA.md: 313ec2bb5f6868382f4133fc17977a6a456dac644f19c5c6dcd6daba74c615b2
+        docs/COMMIT-SCHEMA.md: 4d572252e442ee022fe8b618247118f9d8a6796d8f698aa228454e2869e03343
       vendored_at: "2026-02-11T19:49:11Z"
       vendored_by: EmundoT <emtheredia@gmail.com>
-      last_synced_at: "2026-02-17T15:54:35Z"
+      last_synced_at: "2026-02-17T19:47:19Z"
     - name: git-plumbing
       ref: main
       commit_hash: 77eca252ca5e897042f8edf5e0e903c57bcc6c34
