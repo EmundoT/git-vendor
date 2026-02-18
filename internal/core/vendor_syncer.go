@@ -595,6 +595,13 @@ func (s *VendorSyncer) Outdated(ctx context.Context, opts OutdatedOptions) (*typ
 	return s.outdatedSvc.Outdated(ctx, opts)
 }
 
+// Status runs the unified status command combining verify and outdated checks.
+// ctx controls cancellation of verify and ls-remote operations.
+func (s *VendorSyncer) Status(ctx context.Context, opts StatusOptions) (*types.StatusResult, error) {
+	svc := NewStatusService(s.verifyService, s.outdatedSvc, s.configStore, s.lockStore)
+	return svc.Status(ctx, opts)
+}
+
 // MigrateLockfile updates an existing lockfile to add missing metadata fields.
 // For fields that can't be computed (VendoredAt, VendoredBy), it uses best guesses.
 // Returns the number of entries migrated and any error.
