@@ -407,6 +407,107 @@ vendors: []
 	}
 }
 
+// TestCascade_ExecutionFailsGracefully exercises the Cascade execution loop
+// (non-dry-run) with projects that have valid vendor.yml but no real git repos.
+// TestCascade_ExecutionFailsGracefully verifies that:
+//   - Projects are walked in topological order
+//   - Pull failures are captured in result.Failed
+//   - The result contains correct project names and failure counts
+func TestCascade_ExecutionFailsGracefully(t *testing.T) {
+	root := t.TempDir()
+
+	// Create three projects: gamma depends on beta depends on alpha
+	mkVendorYML(t, root, "alpha", `
+vendors: []
+`)
+
+	mkVendorYML(t, root, "beta", `
+vendors:
+  - name: alpha
+    url: https://github.com/myorg/alpha
+    license: MIT
+    specs:
+      - ref: main
+        mapping:
+          - from: shared.go
+            to: vendored/shared.go
+`)
+
+	mkVendorYML(t, root, "gamma", `
+vendors:
+  - name: beta
+    url: https://github.com/myorg/beta
+    license: MIT
+    specs:
+      - ref: main
+        mapping:
+          - from: lib.go
+            to: vendored/lib.go
+`)
+
+	svc := NewCascadeService(root)
+	result, err := svc.Cascade(context.Background(), CascadeOptions{})
+	if err != nil {
+		t.Fatalf("Cascade returned top-level error: %v", err)
+	}
+
+	// Verify topological order: alpha before beta, beta before gamma
+	if len(result.Order) != 3 {
+		t.Fatalf("Cascade order has %d items, want 3", len(result.Order))
+	}
+	indexOf := make(map[string]int)
+	for i, name := range result.Order {
+		indexOf[name] = i
+	}
+	if indexOf["alpha"] >= indexOf["beta"] {
+		t.Errorf("alpha (index %d) must come before beta (index %d)", indexOf["alpha"], indexOf["beta"])
+	}
+	if indexOf["beta"] >= indexOf["gamma"] {
+		t.Errorf("beta (index %d) must come before gamma (index %d)", indexOf["beta"], indexOf["gamma"])
+	}
+
+	// All three projects should be present in ProjectResults
+	for _, name := range []string{"alpha", "beta", "gamma"} {
+		if _, ok := result.ProjectResults[name]; !ok {
+			t.Errorf("ProjectResults missing project %s", name)
+		}
+	}
+
+	// Pull will fail for projects with external vendor URLs (no real git repos).
+	// alpha has no vendors so it succeeds; beta and gamma reference non-existent repos.
+	// alpha should be in Updated or Current (not Failed).
+	failedProjects := make(map[string]bool)
+	for _, f := range result.Failed {
+		failedProjects[f.Project] = true
+		if f.Phase != "pull" {
+			t.Errorf("expected phase 'pull' for failed project %s, got %q", f.Project, f.Phase)
+		}
+	}
+
+	// beta and gamma should fail because they reference remote URLs that
+	// cannot be fetched in a temp directory with no network/git setup
+	if !failedProjects["beta"] {
+		t.Errorf("expected beta to be in Failed (cannot pull from non-existent remote)")
+	}
+	if !failedProjects["gamma"] {
+		t.Errorf("expected gamma to be in Failed (cannot pull from non-existent remote)")
+	}
+
+	// alpha has no vendors, so pull succeeds with 0 updates — should be in Current
+	if failedProjects["alpha"] {
+		t.Errorf("alpha should not be in Failed (no vendors to pull)")
+	}
+	foundAlphaCurrent := false
+	for _, name := range result.Current {
+		if name == "alpha" {
+			foundAlphaCurrent = true
+		}
+	}
+	if !foundAlphaCurrent {
+		t.Errorf("alpha should be in Current (no vendors updated), Updated=%v Current=%v", result.Updated, result.Current)
+	}
+}
+
 // mkVendorYML creates a project directory with .git-vendor/vendor.yml
 // at root/name/.git-vendor/vendor.yml with the given YAML content.
 func mkVendorYML(t *testing.T, root, name, yamlContent string) {
