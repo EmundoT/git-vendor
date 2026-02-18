@@ -17,6 +17,7 @@ type CopyStats struct {
 	ByteCount int64
 	Positions []positionRecord // Position-extracted mappings (for lockfile tracking)
 	Warnings  []string         // Non-fatal warnings generated during copy
+	Removed   []string         // Destination paths removed because upstream source was deleted
 }
 
 // positionRecord tracks a single position extraction during copy
@@ -26,12 +27,13 @@ type positionRecord struct {
 	SourceHash string // SHA-256 hash of extracted content
 }
 
-// Add adds another CopyStats to this one
+// Add adds another CopyStats to CopyStats, merging all fields.
 func (s *CopyStats) Add(other CopyStats) {
 	s.FileCount += other.FileCount
 	s.ByteCount += other.ByteCount
 	s.Positions = append(s.Positions, other.Positions...)
 	s.Warnings = append(s.Warnings, other.Warnings...)
+	s.Removed = append(s.Removed, other.Removed...)
 }
 
 // FileSystem abstracts file system operations for testing.

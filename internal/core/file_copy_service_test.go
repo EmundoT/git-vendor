@@ -241,6 +241,9 @@ func TestCopyMappings_DirectoryCopy(t *testing.T) {
 	}
 }
 
+// TestCopyMappings_PathNotFound verifies that when a source path is not found
+// during sync, the operation continues gracefully (VFY-003) instead of aborting.
+// The missing source is treated as an upstream removal.
 func TestCopyMappings_PathNotFound(t *testing.T) {
 	ctrl, git, fs, config, lock, license := setupMocks(t)
 	defer ctrl.Finish()
@@ -257,20 +260,24 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 	git.EXPECT().GetHeadHash(gomock.Any(), "/tmp/test-12345").Return("abc123def", nil)
 	git.EXPECT().GetTagForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return("", nil).AnyTimes()
 
-	// Mock: Stat returns error (path not found)
+	// Mock: Stat returns error (path not found) for source file lookup
 	fs.EXPECT().Stat(gomock.Any()).Return(nil, fmt.Errorf("path not found")).AnyTimes()
+	// Mock: Remove called by handleMissingSource to delete local dest
+	fs.EXPECT().Remove(gomock.Any()).Return(nil).AnyTimes()
+	// Mock: MkdirAll and CopyFile for license copy
+	fs.EXPECT().MkdirAll(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fs.EXPECT().CopyFile(gomock.Any(), gomock.Any()).Return(CopyStats{FileCount: 1, ByteCount: 100}, nil).AnyTimes()
 
 	syncer := createMockSyncer(git, fs, config, lock, license)
 
-	// Execute
-	_, _, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
+	// Execute — VFY-003: should succeed (graceful removal) instead of erroring
+	_, stats, err := syncer.sync.SyncVendor(context.Background(), &vendor, nil, SyncOptions{})
 
-	// Verify
-	if err == nil {
-		t.Fatal("Expected error (path not found), got nil")
+	if err != nil {
+		t.Fatalf("Expected success (VFY-003 graceful removal), got error: %v", err)
 	}
-	if !contains(err.Error(), "not found") {
-		t.Errorf("Expected 'not found' error, got: %v", err)
+	if len(stats.Removed) != 1 {
+		t.Errorf("Removed = %d, want 1", len(stats.Removed))
 	}
 }
 
@@ -279,7 +286,8 @@ func TestCopyMappings_PathNotFound(t *testing.T) {
 // ============================================================================
 
 // TestCopyMappings_PositionNonexistentSource verifies that a position mapping
-// with a nonexistent source file propagates an error.
+// with a nonexistent source file is handled gracefully as an upstream removal
+// (VFY-003) instead of propagating an error.
 func TestCopyMappings_PositionNonexistentSource(t *testing.T) {
 	repoDir := t.TempDir() // Empty "clone" directory — no source files
 	workDir := t.TempDir()
@@ -301,12 +309,15 @@ func TestCopyMappings_PositionNonexistentSource(t *testing.T) {
 		},
 	}
 
-	_, err = svc.CopyMappings(repoDir, vendor, spec)
-	if err == nil {
-		t.Fatal("expected error for nonexistent source file with position spec")
+	stats, err := svc.CopyMappings(repoDir, vendor, spec)
+	if err != nil {
+		t.Fatalf("expected graceful removal for nonexistent source with position spec, got error: %v", err)
 	}
-	if !contains(err.Error(), "not found") {
-		t.Errorf("error = %q, want 'not found' message", err.Error())
+	if len(stats.Removed) != 1 {
+		t.Fatalf("Removed = %d, want 1", len(stats.Removed))
+	}
+	if stats.Removed[0] != "dest.go" {
+		t.Errorf("Removed[0] = %q, want %q", stats.Removed[0], "dest.go")
 	}
 }
 
@@ -901,5 +912,285 @@ func TestComputeDestPath_ExplicitDestPreserved(t *testing.T) {
 	got := svc.computeDestPath(mapping, spec, vendor)
 	if got != "lib/api.go:L10-L25" {
 		t.Errorf("computeDestPath should preserve explicit dest, got %q", got)
+	}
+}
+
+// ============================================================================
+// VFY-003: Upstream Removal Handling Tests
+// ============================================================================
+
+// TestCopyMappings_UpstreamFileRemoved verifies that when a source file is missing
+// from the upstream clone, CopyMappings deletes the local destination file, records
+// the removal in CopyStats.Removed, and does NOT return an error.
+func TestCopyMappings_UpstreamFileRemoved(t *testing.T) {
+	repoDir := t.TempDir() // Empty "clone" — simulates upstream deletion
+	workDir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldDir) }()
+
+	// Pre-create the local destination file (previously synced)
+	destPath := filepath.Join(workDir, "lib/file.go")
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destPath, []byte("old content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewFileCopyService(NewOSFileSystem())
+	vendor := &types.VendorSpec{Name: "test-vendor"}
+	spec := types.BranchSpec{
+		Ref: "main",
+		Mapping: []types.PathMapping{
+			{From: "src/file.go", To: "lib/file.go"},
+		},
+	}
+
+	stats, err := svc.CopyMappings(repoDir, vendor, spec)
+	if err != nil {
+		t.Fatalf("CopyMappings should not return error for upstream removal, got: %v", err)
+	}
+
+	// Verify removal is recorded
+	if len(stats.Removed) != 1 {
+		t.Fatalf("Removed = %d, want 1", len(stats.Removed))
+	}
+	if stats.Removed[0] != "lib/file.go" {
+		t.Errorf("Removed[0] = %q, want %q", stats.Removed[0], "lib/file.go")
+	}
+
+	// Verify local file was deleted
+	if _, err := os.Stat(destPath); err == nil {
+		t.Error("local destination file should have been deleted")
+	}
+
+	// Verify warning was emitted
+	if len(stats.Warnings) == 0 {
+		t.Error("expected a warning about upstream removal")
+	}
+	if len(stats.Warnings) > 0 && !contains(stats.Warnings[0], "upstream file") {
+		t.Errorf("warning = %q, want 'upstream file' message", stats.Warnings[0])
+	}
+}
+
+// TestCopyMappings_UpstreamRemovalLocalAlreadyGone verifies graceful handling when
+// both the upstream source and the local destination are already missing.
+func TestCopyMappings_UpstreamRemovalLocalAlreadyGone(t *testing.T) {
+	repoDir := t.TempDir() // Empty "clone"
+	workDir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldDir) }()
+
+	// No local file created — simulates already-deleted local copy
+
+	svc := NewFileCopyService(NewOSFileSystem())
+	vendor := &types.VendorSpec{Name: "test-vendor"}
+	spec := types.BranchSpec{
+		Ref: "main",
+		Mapping: []types.PathMapping{
+			{From: "src/gone.go", To: "lib/gone.go"},
+		},
+	}
+
+	stats, err := svc.CopyMappings(repoDir, vendor, spec)
+	if err != nil {
+		t.Fatalf("CopyMappings should not return error when both source and dest are gone, got: %v", err)
+	}
+
+	// Still recorded as removed (for lock pruning)
+	if len(stats.Removed) != 1 {
+		t.Fatalf("Removed = %d, want 1", len(stats.Removed))
+	}
+}
+
+// TestCopyMappings_RemovalPreservesOtherFiles verifies that removing one file
+// does not affect other files in the same CopyMappings call.
+func TestCopyMappings_RemovalPreservesOtherFiles(t *testing.T) {
+	repoDir := t.TempDir()
+	workDir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldDir) }()
+
+	// Create one source file but not the other (simulate partial upstream removal)
+	if err := os.WriteFile(filepath.Join(repoDir, "kept.go"), []byte("kept content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// "removed.go" does NOT exist in repoDir
+
+	// Pre-create local destination for the removed file
+	removedDest := filepath.Join(workDir, "lib/removed.go")
+	if err := os.MkdirAll(filepath.Dir(removedDest), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(removedDest, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewFileCopyService(NewOSFileSystem())
+	vendor := &types.VendorSpec{Name: "test-vendor"}
+	spec := types.BranchSpec{
+		Ref: "main",
+		Mapping: []types.PathMapping{
+			{From: "kept.go", To: "lib/kept.go"},
+			{From: "removed.go", To: "lib/removed.go"},
+		},
+	}
+
+	stats, err := svc.CopyMappings(repoDir, vendor, spec)
+	if err != nil {
+		t.Fatalf("CopyMappings should succeed with partial removal, got: %v", err)
+	}
+
+	// Verify the kept file was copied
+	got, err := os.ReadFile(filepath.Join(workDir, "lib/kept.go"))
+	if err != nil {
+		t.Fatalf("kept file not copied: %v", err)
+	}
+	if string(got) != "kept content\n" {
+		t.Errorf("kept content = %q, want %q", string(got), "kept content\n")
+	}
+
+	// Verify the removed file was deleted
+	if _, err := os.Stat(removedDest); err == nil {
+		t.Error("removed destination should have been deleted")
+	}
+
+	// Verify stats
+	if stats.FileCount != 1 {
+		t.Errorf("FileCount = %d, want 1 (only the kept file)", stats.FileCount)
+	}
+	if len(stats.Removed) != 1 {
+		t.Fatalf("Removed = %d, want 1", len(stats.Removed))
+	}
+	if stats.Removed[0] != "lib/removed.go" {
+		t.Errorf("Removed[0] = %q, want %q", stats.Removed[0], "lib/removed.go")
+	}
+}
+
+// TestCopyMappings_RemovalSummaryCount verifies that CopyStats.Removed accurately
+// counts multiple removals across several mappings.
+func TestCopyMappings_RemovalSummaryCount(t *testing.T) {
+	repoDir := t.TempDir() // Empty clone — all files removed upstream
+	workDir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldDir) }()
+
+	svc := NewFileCopyService(NewOSFileSystem())
+	vendor := &types.VendorSpec{Name: "multi-remove"}
+	spec := types.BranchSpec{
+		Ref: "main",
+		Mapping: []types.PathMapping{
+			{From: "a.go", To: "out/a.go"},
+			{From: "b.go", To: "out/b.go"},
+			{From: "c.go", To: "out/c.go"},
+		},
+	}
+
+	stats, err := svc.CopyMappings(repoDir, vendor, spec)
+	if err != nil {
+		t.Fatalf("CopyMappings should not error for all-removed, got: %v", err)
+	}
+
+	if len(stats.Removed) != 3 {
+		t.Errorf("Removed count = %d, want 3", len(stats.Removed))
+	}
+	if stats.FileCount != 0 {
+		t.Errorf("FileCount = %d, want 0 (no files actually copied)", stats.FileCount)
+	}
+}
+
+// TestCopyMappings_PositionUpstreamRemoved verifies that position-based mappings
+// also handle upstream removal gracefully (source file with position spec is gone).
+func TestCopyMappings_PositionUpstreamRemoved(t *testing.T) {
+	repoDir := t.TempDir() // Empty clone
+	workDir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldDir) }()
+
+	// Pre-create the local destination
+	destPath := filepath.Join(workDir, "dest.go")
+	if err := os.WriteFile(destPath, []byte("old position content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewFileCopyService(NewOSFileSystem())
+	vendor := &types.VendorSpec{Name: "pos-remove"}
+	spec := types.BranchSpec{
+		Ref: "main",
+		Mapping: []types.PathMapping{
+			{From: "missing.go:L1-L5", To: "dest.go"},
+		},
+	}
+
+	stats, err := svc.CopyMappings(repoDir, vendor, spec)
+	if err != nil {
+		t.Fatalf("CopyMappings should handle position removal gracefully, got: %v", err)
+	}
+
+	if len(stats.Removed) != 1 {
+		t.Fatalf("Removed = %d, want 1", len(stats.Removed))
+	}
+	if stats.Removed[0] != "dest.go" {
+		t.Errorf("Removed[0] = %q, want %q", stats.Removed[0], "dest.go")
+	}
+
+	// Verify local file was deleted
+	if _, err := os.Stat(destPath); err == nil {
+		t.Error("local destination file should have been deleted for position removal")
+	}
+}
+
+// TestCopyStats_Add_Removed verifies that CopyStats.Add correctly merges
+// the Removed field from two CopyStats values.
+func TestCopyStats_Add_Removed(t *testing.T) {
+	a := CopyStats{
+		FileCount: 2,
+		Removed:   []string{"file1.go"},
+	}
+	b := CopyStats{
+		FileCount: 1,
+		Removed:   []string{"file2.go", "file3.go"},
+	}
+
+	a.Add(b)
+
+	if a.FileCount != 3 {
+		t.Errorf("FileCount = %d, want 3", a.FileCount)
+	}
+	if len(a.Removed) != 3 {
+		t.Fatalf("Removed = %d, want 3", len(a.Removed))
+	}
+	if a.Removed[0] != "file1.go" || a.Removed[1] != "file2.go" || a.Removed[2] != "file3.go" {
+		t.Errorf("Removed = %v, want [file1.go file2.go file3.go]", a.Removed)
 	}
 }
