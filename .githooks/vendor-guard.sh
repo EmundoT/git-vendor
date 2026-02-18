@@ -41,56 +41,103 @@ fi
 # Strategy: look for drift_details entries where accepted is false.
 # Two parsing paths: jq (preferred) and grep/awk (fallback).
 
+BLOCK=0
+
 if command -v jq >/dev/null 2>&1; then
     # --- jq path: precise JSON parsing ---
-    UNACKED=$(printf '%s' "$STATUS_JSON" | jq -r '
-        [.vendors[]? | .drift_details[]? | select(.accepted == false)]
+
+    # Check policy violations first (GRD-002). Only "error" severity blocks.
+    POLICY_ERRORS=$(printf '%s' "$STATUS_JSON" | jq -r '
+        [.policy_violations[]? | select(.severity == "error")]
         | if length == 0 then empty
-          else .[] | "\(.path)\t\(.lock_hash)\t\(.disk_hash)"
+          else .[] | "\(.vendor_name)\t\(.type)\t\(.message)"
           end
     ' 2>/dev/null)
 
-    if [ -z "$UNACKED" ]; then
-        exit 0
+    if [ -n "$POLICY_ERRORS" ]; then
+        echo "[git-vendor] Policy violation(s) detected:" >&2
+        printf '%s\n' "$POLICY_ERRORS" | while IFS="$(printf '\t')" read -r vendor vtype msg; do
+            echo "  [$vtype] $msg" >&2
+        done
+        BLOCK=1
     fi
 
-    # --- Block commit with actionable message ---
-    echo "[git-vendor] Lock mismatch detected:" >&2
-    printf '%s\n' "$UNACKED" | while IFS="$(printf '\t')" read -r path lock_hash disk_hash; do
-        echo "  $path" >&2
-        lock_short=$(printf '%s' "$lock_hash" | cut -c1-10)
-        disk_short=$(printf '%s' "$disk_hash" | cut -c1-10)
-        echo "    lock:  $lock_short..." >&2
-        echo "    disk:  $disk_short..." >&2
-    done
+    # Show warnings (non-blocking)
+    POLICY_WARNINGS=$(printf '%s' "$STATUS_JSON" | jq -r '
+        [.policy_violations[]? | select(.severity == "warning")]
+        | if length == 0 then empty
+          else .[] | "\(.vendor_name)\t\(.type)\t\(.message)"
+          end
+    ' 2>/dev/null)
+
+    if [ -n "$POLICY_WARNINGS" ]; then
+        echo "[git-vendor] Policy warning(s):" >&2
+        printf '%s\n' "$POLICY_WARNINGS" | while IFS="$(printf '\t')" read -r vendor vtype msg; do
+            echo "  [$vtype] $msg" >&2
+        done
+    fi
+
+    # If no policy violations block, fall back to legacy unacknowledged drift check.
+    # Policy may set block_on_drift=false for some vendors, so only check vendors
+    # that have "error" severity drift violations.
+    if [ "$BLOCK" -eq 0 ]; then
+        # Legacy path: check for any unacknowledged drift (pre-policy behavior).
+        # With policy active, drift-type errors are already caught above.
+        # This handles the no-policy case where block_on_drift defaults to true.
+        HAS_POLICY=$(printf '%s' "$STATUS_JSON" | jq -r '.policy_violations // [] | length' 2>/dev/null)
+        if [ "${HAS_POLICY:-0}" -eq 0 ]; then
+            UNACKED=$(printf '%s' "$STATUS_JSON" | jq -r '
+                [.vendors[]? | .drift_details[]? | select(.accepted == false)]
+                | if length == 0 then empty
+                  else .[] | "\(.path)\t\(.lock_hash)\t\(.disk_hash)"
+                  end
+            ' 2>/dev/null)
+
+            if [ -n "$UNACKED" ]; then
+                echo "[git-vendor] Lock mismatch detected:" >&2
+                printf '%s\n' "$UNACKED" | while IFS="$(printf '\t')" read -r path lock_hash disk_hash; do
+                    echo "  $path" >&2
+                    lock_short=$(printf '%s' "$lock_hash" | cut -c1-10)
+                    disk_short=$(printf '%s' "$disk_hash" | cut -c1-10)
+                    echo "    lock:  $lock_short..." >&2
+                    echo "    disk:  $disk_short..." >&2
+                done
+                BLOCK=1
+            fi
+        fi
+    fi
 else
     # --- grep/awk fallback: pattern-match JSON text ---
-    # Look for "modified_paths" with entries that aren't in "accepted_paths".
-    # Simpler heuristic: if summary.modified > 0 and summary.accepted < summary.modified,
-    # there are unacknowledged modifications.
+    # Check for policy error violations (GRD-002)
+    POLICY_ERROR_COUNT=$(printf '%s' "$STATUS_JSON" | grep -c '"severity"[[:space:]]*:[[:space:]]*"error"' 2>/dev/null)
+    POLICY_ERROR_COUNT=${POLICY_ERROR_COUNT:-0}
 
-    MODIFIED=$(printf '%s' "$STATUS_JSON" | grep -o '"modified":[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
-    ACCEPTED=$(printf '%s' "$STATUS_JSON" | grep -o '"accepted":[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
-
-    MODIFIED=${MODIFIED:-0}
-    ACCEPTED=${ACCEPTED:-0}
-
-    if [ "$MODIFIED" -eq 0 ] 2>/dev/null; then
-        exit 0
+    if [ "$POLICY_ERROR_COUNT" -gt 0 ] 2>/dev/null; then
+        echo "[git-vendor] Policy violation(s) detected (run 'git vendor status' for details)" >&2
+        BLOCK=1
     fi
 
-    if [ "$MODIFIED" -le "$ACCEPTED" ] 2>/dev/null; then
-        exit 0
+    # Fallback drift check (no-policy case)
+    if [ "$BLOCK" -eq 0 ]; then
+        MODIFIED=$(printf '%s' "$STATUS_JSON" | grep -o '"modified":[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
+        ACCEPTED=$(printf '%s' "$STATUS_JSON" | grep -o '"accepted":[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
+
+        MODIFIED=${MODIFIED:-0}
+        ACCEPTED=${ACCEPTED:-0}
+
+        if [ "$MODIFIED" -gt 0 ] 2>/dev/null && [ "$MODIFIED" -gt "$ACCEPTED" ] 2>/dev/null; then
+            echo "[git-vendor] Lock mismatch detected:" >&2
+            printf '%s' "$STATUS_JSON" | grep -o '"modified_paths"[[:space:]]*:[[:space:]]*\[[^]]*\]' | \
+                grep -o '"[^"]*"' | sed 's/"//g' | while read -r path; do
+                echo "  $path" >&2
+            done
+            BLOCK=1
+        fi
     fi
+fi
 
-    # --- Block commit ---
-    echo "[git-vendor] Lock mismatch detected:" >&2
-
-    # Extract modified paths from JSON (best-effort line-by-line grep)
-    printf '%s' "$STATUS_JSON" | grep -o '"modified_paths"[[:space:]]*:[[:space:]]*\[[^]]*\]' | \
-        grep -o '"[^"]*"' | sed 's/"//g' | while read -r path; do
-        echo "  $path" >&2
-    done
+if [ "$BLOCK" -eq 0 ]; then
+    exit 0
 fi
 
 echo "" >&2

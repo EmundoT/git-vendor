@@ -3,22 +3,90 @@
 //nolint:revive // Package name "types" is standard and appropriate
 package types
 
+// VendorPolicy defines commit guard and status policy for vendor drift and staleness.
+// Pointer types distinguish "not set" (nil) from "explicitly false/0" so that
+// per-vendor overrides only replace fields they explicitly declare.
+//
+// Defaults (when nil): BlockOnDrift=true, BlockOnStale=false, MaxStalenessDays=0 (no limit).
+type VendorPolicy struct {
+	BlockOnDrift     *bool `yaml:"block_on_drift,omitempty" json:"block_on_drift,omitempty"`
+	BlockOnStale     *bool `yaml:"block_on_stale,omitempty" json:"block_on_stale,omitempty"`
+	MaxStalenessDays *int  `yaml:"max_staleness_days,omitempty" json:"max_staleness_days,omitempty"`
+}
+
+// PolicyViolation represents a single policy rule that a vendor has violated.
+// PolicyViolation is produced by policy evaluation and surfaced in StatusResult
+// and commit guard output.
+type PolicyViolation struct {
+	VendorName string `json:"vendor_name"`
+	Type       string `json:"type"`     // "drift" or "stale"
+	Message    string `json:"message"`
+	Severity   string `json:"severity"` // "error" (blocks commit) or "warning" (report only)
+}
+
+// ResolvedPolicy merges a per-vendor VendorPolicy into a global VendorPolicy,
+// with per-vendor fields winning when non-nil. Returns a fully-populated
+// VendorPolicy with no nil pointers.
+//
+// Defaults: BlockOnDrift=true, BlockOnStale=false, MaxStalenessDays=0.
+func ResolvedPolicy(global, perVendor *VendorPolicy) VendorPolicy {
+	defaultTrue := true
+	defaultFalse := false
+	defaultZero := 0
+
+	resolved := VendorPolicy{
+		BlockOnDrift:     &defaultTrue,
+		BlockOnStale:     &defaultFalse,
+		MaxStalenessDays: &defaultZero,
+	}
+
+	// Apply global overrides
+	if global != nil {
+		if global.BlockOnDrift != nil {
+			resolved.BlockOnDrift = global.BlockOnDrift
+		}
+		if global.BlockOnStale != nil {
+			resolved.BlockOnStale = global.BlockOnStale
+		}
+		if global.MaxStalenessDays != nil {
+			resolved.MaxStalenessDays = global.MaxStalenessDays
+		}
+	}
+
+	// Apply per-vendor overrides (wins over global)
+	if perVendor != nil {
+		if perVendor.BlockOnDrift != nil {
+			resolved.BlockOnDrift = perVendor.BlockOnDrift
+		}
+		if perVendor.BlockOnStale != nil {
+			resolved.BlockOnStale = perVendor.BlockOnStale
+		}
+		if perVendor.MaxStalenessDays != nil {
+			resolved.MaxStalenessDays = perVendor.MaxStalenessDays
+		}
+	}
+
+	return resolved
+}
+
 // VendorConfig represents the root configuration file (vendor.yml) structure.
 type VendorConfig struct {
-	Vendors []VendorSpec `yaml:"vendors"`
+	Policy  *VendorPolicy `yaml:"policy,omitempty" json:"policy,omitempty"` // Global policy defaults
+	Vendors []VendorSpec  `yaml:"vendors"`
 }
 
 // VendorSpec defines a single vendored dependency with source repository URL and path mappings.
 type VendorSpec struct {
-	Name       string       `yaml:"name"`
-	URL        string       `yaml:"url"`
-	Mirrors    []string     `yaml:"mirrors,omitempty"`    // Fallback URLs, tried in declaration order after URL
-	License    string       `yaml:"license"`
-	Groups     []string     `yaml:"groups,omitempty"`     // Optional groups for batch operations
-	Hooks      *HookConfig  `yaml:"hooks,omitempty"`      // Optional pre/post sync hooks
-	Source     string       `yaml:"source,omitempty"`     // "" (external, default) or "internal"
-	Compliance string       `yaml:"compliance,omitempty"` // "" (source-canonical) or "bidirectional"
-	Specs      []BranchSpec `yaml:"specs"`
+	Name       string        `yaml:"name"`
+	URL        string        `yaml:"url"`
+	Mirrors    []string      `yaml:"mirrors,omitempty"`    // Fallback URLs, tried in declaration order after URL
+	License    string        `yaml:"license"`
+	Groups     []string      `yaml:"groups,omitempty"`     // Optional groups for batch operations
+	Hooks      *HookConfig   `yaml:"hooks,omitempty"`      // Optional pre/post sync hooks
+	Policy     *VendorPolicy `yaml:"policy,omitempty"`     // Per-vendor policy overrides
+	Source     string        `yaml:"source,omitempty"`     // "" (external, default) or "internal"
+	Compliance string        `yaml:"compliance,omitempty"` // "" (source-canonical) or "bidirectional"
+	Specs      []BranchSpec  `yaml:"specs"`
 }
 
 // BranchSpec defines mappings for a specific Git ref (branch, tag, or commit).
@@ -340,13 +408,18 @@ type VendorStatusDetail struct {
 	UpstreamHash    string `json:"upstream_hash,omitempty"`
 	UpstreamStale   *bool  `json:"upstream_stale,omitempty"`   // nil = not checked
 	UpstreamSkipped bool   `json:"upstream_skipped,omitempty"` // true = ls-remote failed
+
+	// Policy violations for this vendor (GRD-002).
+	// Populated when policy section is present in vendor.yml.
+	PolicyViolations []PolicyViolation `json:"policy_violations,omitempty"`
 }
 
 // StatusResult holds the combined output of the status command (verify + outdated).
 // StatusResult is the top-level return type for Manager.Status / VendorSyncer.Status.
 type StatusResult struct {
-	Vendors []VendorStatusDetail `json:"vendors"`
-	Summary StatusSummary        `json:"summary"`
+	Vendors          []VendorStatusDetail `json:"vendors"`
+	Summary          StatusSummary        `json:"summary"`
+	PolicyViolations []PolicyViolation    `json:"policy_violations,omitempty"` // All violations across vendors (GRD-002)
 }
 
 // StatusSummary contains aggregate statistics across all vendors for the status command.
