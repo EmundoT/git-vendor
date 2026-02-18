@@ -95,7 +95,7 @@ All in `internal/core/`. Mock with gomock for tests.
 |-----------|------|------|
 | `GitClient` | `SystemGitClient` | git_operations.go |
 | `FileSystem` | `OSFileSystem` | filesystem.go |
-| `LicenseChecker` | `GitHubLicenseChecker` | github_client.go |
+| `LicenseChecker` | `MultiPlatformLicenseChecker` | license_multiplatform.go |
 | `ConfigStore` | `YAMLConfigStore` | config_store.go |
 | `LockStore` | `YAMLLockStore` | lock_store.go |
 | `HookExecutor` | `ShellHookExecutor` | hook_service.go |
