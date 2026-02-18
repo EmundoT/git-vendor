@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/EmundoT/git-vendor/internal/types"
@@ -271,6 +272,131 @@ func TestStatusService_RemoteOnlySkipsDisk(t *testing.T) {
 	// No disk checks ran, so verified should be 0
 	if result.Summary.Verified != 0 {
 		t.Errorf("expected 0 verified in remote-only mode, got %d", result.Summary.Verified)
+	}
+}
+
+func TestStatusService_DriftDetails_ModifiedAndAccepted(t *testing.T) {
+	vendor1 := "mylib"
+	lockHash := "sha256:aaa111"
+	modifiedHash := "sha256:bbb222"
+	acceptedHash := "sha256:ccc333"
+
+	svc := NewStatusService(
+		&statusStubVerify{
+			result: &types.VerifyResult{
+				Summary: types.VerifySummary{TotalFiles: 3, Verified: 1, Modified: 1, Accepted: 1, Result: "FAIL"},
+				Files: []types.FileStatus{
+					{Path: "a.go", Vendor: &vendor1, Status: "verified", Type: "file"},
+					{Path: "b.go", Vendor: &vendor1, Status: "modified", Type: "file",
+						ExpectedHash: &lockHash, ActualHash: &modifiedHash},
+					{Path: "c.go", Vendor: &vendor1, Status: "accepted", Type: "file",
+						ExpectedHash: &lockHash, ActualHash: &acceptedHash},
+				},
+			},
+		},
+		&statusStubOutdated{
+			result: &types.OutdatedResult{
+				Dependencies: []types.UpdateCheckResult{
+					{VendorName: "mylib", Ref: "main", CurrentHash: "abc", LatestHash: "abc", UpToDate: true},
+				},
+				TotalChecked: 1, UpToDate: 1,
+			},
+		},
+		nil,
+		&statusStubLockStore{
+			lock: types.VendorLock{Vendors: []types.LockDetails{{Name: "mylib", Ref: "main", CommitHash: "abc"}}},
+		},
+	)
+
+	result, err := svc.Status(context.Background(), StatusOptions{Offline: true})
+	if err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+
+	v := result.Vendors[0]
+	if len(v.DriftDetails) != 2 {
+		t.Fatalf("expected 2 drift details, got %d", len(v.DriftDetails))
+	}
+
+	// First drift detail: modified file (not accepted)
+	d0 := v.DriftDetails[0]
+	if d0.Path != "b.go" {
+		t.Errorf("drift_details[0].path = %q, want %q", d0.Path, "b.go")
+	}
+	if d0.LockHash != lockHash {
+		t.Errorf("drift_details[0].lock_hash = %q, want %q", d0.LockHash, lockHash)
+	}
+	if d0.DiskHash != modifiedHash {
+		t.Errorf("drift_details[0].disk_hash = %q, want %q", d0.DiskHash, modifiedHash)
+	}
+	if d0.Accepted {
+		t.Error("drift_details[0].accepted should be false")
+	}
+
+	// Second drift detail: accepted file
+	d1 := v.DriftDetails[1]
+	if d1.Path != "c.go" {
+		t.Errorf("drift_details[1].path = %q, want %q", d1.Path, "c.go")
+	}
+	if d1.LockHash != lockHash {
+		t.Errorf("drift_details[1].lock_hash = %q, want %q", d1.LockHash, lockHash)
+	}
+	if d1.DiskHash != acceptedHash {
+		t.Errorf("drift_details[1].disk_hash = %q, want %q", d1.DiskHash, acceptedHash)
+	}
+	if !d1.Accepted {
+		t.Error("drift_details[1].accepted should be true")
+	}
+}
+
+func TestStatusService_DriftDetails_AllClean(t *testing.T) {
+	vendor1 := "mylib"
+	svc := NewStatusService(
+		&statusStubVerify{
+			result: &types.VerifyResult{
+				Summary: types.VerifySummary{TotalFiles: 1, Verified: 1, Result: "PASS"},
+				Files: []types.FileStatus{
+					{Path: "a.go", Vendor: &vendor1, Status: "verified", Type: "file"},
+				},
+			},
+		},
+		&statusStubOutdated{err: errForTest},
+		nil,
+		&statusStubLockStore{
+			lock: types.VendorLock{Vendors: []types.LockDetails{{Name: "mylib", Ref: "main", CommitHash: "abc"}}},
+		},
+	)
+
+	result, err := svc.Status(context.Background(), StatusOptions{Offline: true})
+	if err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+
+	// No modified or accepted files => no drift details
+	if len(result.Vendors[0].DriftDetails) != 0 {
+		t.Errorf("expected 0 drift details for clean vendor, got %d", len(result.Vendors[0].DriftDetails))
+	}
+}
+
+func TestStatusService_DriftDetails_JSONOutput(t *testing.T) {
+	// Verify DriftDetail serializes to expected JSON field names for hook parsing.
+	d := types.DriftDetail{
+		Path:     ".claude/skills/nominate/SKILL.md",
+		LockHash: "sha256:bd528ed",
+		DiskHash: "sha256:9a3f17c",
+		Accepted: false,
+	}
+
+	data, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	s := string(data)
+	for _, key := range []string{`"path"`, `"lock_hash"`, `"disk_hash"`, `"accepted"`} {
+		if !contains(s, key) {
+			t.Errorf("JSON output missing key %s: %s", key, s)
+		}
 	}
 }
 
