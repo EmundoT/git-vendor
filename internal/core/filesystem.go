@@ -15,6 +15,7 @@ import (
 type CopyStats struct {
 	FileCount int
 	ByteCount int64
+	Excluded  int              // Files skipped due to exclude patterns
 	Positions []positionRecord // Position-extracted mappings (for lockfile tracking)
 	Warnings  []string         // Non-fatal warnings generated during copy
 	Removed   []string         // Destination paths removed because upstream source was deleted
@@ -31,6 +32,7 @@ type positionRecord struct {
 func (s *CopyStats) Add(other CopyStats) {
 	s.FileCount += other.FileCount
 	s.ByteCount += other.ByteCount
+	s.Excluded += other.Excluded
 	s.Positions = append(s.Positions, other.Positions...)
 	s.Warnings = append(s.Warnings, other.Warnings...)
 	s.Removed = append(s.Removed, other.Removed...)
