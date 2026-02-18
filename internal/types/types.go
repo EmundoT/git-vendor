@@ -304,6 +304,16 @@ type FileStatus struct {
 	Position     *PositionDetail `json:"position,omitempty"` // Present only for type="position"
 }
 
+// DriftDetail provides per-file hash comparison for drift detection (GRD-001).
+// DriftDetail is included in VendorStatusDetail JSON output so pre-commit hooks
+// can display lock vs disk hash mismatches without re-computing hashes.
+type DriftDetail struct {
+	Path     string `json:"path"`
+	LockHash string `json:"lock_hash"`
+	DiskHash string `json:"disk_hash"`
+	Accepted bool   `json:"accepted"`
+}
+
 // VendorStatusDetail holds combined verify + outdated information for a single vendor/ref pair.
 // VendorStatusDetail is produced by the status command to merge offline (disk) and remote checks.
 type VendorStatusDetail struct {
@@ -321,6 +331,10 @@ type VendorStatusDetail struct {
 	AddedPaths    []string `json:"added_paths,omitempty"`
 	DeletedPaths  []string `json:"deleted_paths,omitempty"`
 	AcceptedPaths []string `json:"accepted_paths,omitempty"`
+
+	// Per-file drift details with hash comparison (GRD-001).
+	// Populated for modified and accepted files when offline checks run.
+	DriftDetails []DriftDetail `json:"drift_details,omitempty"`
 
 	// Remote (outdated) results — nil when --offline
 	UpstreamHash    string `json:"upstream_hash,omitempty"`
