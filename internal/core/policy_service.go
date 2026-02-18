@@ -2,6 +2,8 @@ package core
 
 import (
 	"fmt"
+	"math"
+	"time"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )
@@ -29,8 +31,13 @@ func NewPolicyService() *PolicyService {
 // Severity mapping:
 //   - BlockOnDrift=true + drift present  -> severity "error"
 //   - BlockOnDrift=false + drift present -> severity "warning"
-//   - BlockOnStale=true + stale          -> severity "error"
 //   - BlockOnStale=false + stale         -> severity "warning"
+//   - BlockOnStale=true + stale + MaxStalenessDays=0 -> severity "error" (no grace)
+//   - BlockOnStale=true + stale + age > MaxStalenessDays -> severity "error"
+//   - BlockOnStale=true + stale + age <= MaxStalenessDays -> severity "warning" (within grace)
+//   - BlockOnStale=true + stale + unknown age -> severity "error" (conservative)
+//
+// #guard #policy #drift-detection #staleness
 func (p *PolicyService) EvaluatePolicy(config *types.VendorConfig, statusResult *types.StatusResult) []types.PolicyViolation {
 	if statusResult == nil {
 		return nil
@@ -75,20 +82,68 @@ func (p *PolicyService) EvaluatePolicy(config *types.VendorConfig, statusResult 
 			})
 		}
 
-		// Check staleness: upstream is ahead
+		// Check staleness: upstream is ahead (GRD-003).
+		// When MaxStalenessDays > 0, staleness within the grace window produces a
+		// "warning" even if BlockOnStale is true. Beyond the window (or when the
+		// lock age is unknown) the severity follows BlockOnStale.
 		if v.UpstreamStale != nil && *v.UpstreamStale {
-			severity := "warning"
-			if *resolved.BlockOnStale {
-				severity = "error"
+			severity := staleSeverity(resolved, v.LastUpdated)
+			msg := fmt.Sprintf("%s is behind upstream", v.Name)
+			if days := lockAgeDays(v.LastUpdated); days >= 0 && *resolved.MaxStalenessDays > 0 {
+				msg = fmt.Sprintf("%s is behind upstream (lock age: %d days, threshold: %d days)",
+					v.Name, days, *resolved.MaxStalenessDays)
 			}
 			violations = append(violations, types.PolicyViolation{
 				VendorName: v.Name,
 				Type:       "stale",
-				Message:    fmt.Sprintf("%s is behind upstream", v.Name),
+				Message:    msg,
 				Severity:   severity,
 			})
 		}
 	}
 
 	return violations
+}
+
+// staleSeverity determines the violation severity for a stale vendor based on
+// the resolved policy and the lock entry's age. staleSeverity implements the
+// MaxStalenessDays grace window: when a positive threshold is set and the lock
+// age is within the window, severity is "warning" even if BlockOnStale is true.
+// #guard #policy #staleness
+func staleSeverity(resolved types.VendorPolicy, lastUpdated string) string {
+	if !*resolved.BlockOnStale {
+		return "warning"
+	}
+
+	maxDays := *resolved.MaxStalenessDays
+	if maxDays <= 0 {
+		// No grace period configured — block immediately.
+		return "error"
+	}
+
+	days := lockAgeDays(lastUpdated)
+	if days < 0 {
+		// Unknown age (unparseable or empty LastUpdated) — conservative: block.
+		return "error"
+	}
+
+	if days <= maxDays {
+		return "warning"
+	}
+	return "error"
+}
+
+// lockAgeDays parses an RFC3339 timestamp and returns the number of whole days
+// since that timestamp. lockAgeDays returns -1 if the timestamp is empty or
+// unparseable (caller should treat unknown age conservatively).
+// #guard #staleness
+func lockAgeDays(lastUpdated string) int {
+	if lastUpdated == "" {
+		return -1
+	}
+	t, err := time.Parse(time.RFC3339, lastUpdated)
+	if err != nil {
+		return -1
+	}
+	return int(math.Floor(time.Since(t).Hours() / 24))
 }

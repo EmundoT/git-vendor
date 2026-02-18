@@ -72,9 +72,10 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 		entry := &lock.Vendors[i]
 		key := entry.Name + "@" + entry.Ref
 		vendorMap[key] = &types.VendorStatusDetail{
-			Name:       entry.Name,
-			Ref:        entry.Ref,
-			CommitHash: entry.CommitHash,
+			Name:        entry.Name,
+			Ref:         entry.Ref,
+			CommitHash:  entry.CommitHash,
+			LastUpdated: entry.Updated,
 		}
 		vendorOrder = append(vendorOrder, key)
 	}

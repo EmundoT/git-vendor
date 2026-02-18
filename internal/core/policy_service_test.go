@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 	"gopkg.in/yaml.v3"
@@ -290,6 +291,199 @@ func TestEvaluatePolicy_DeletedFilesCountAsDrift(t *testing.T) {
 	}
 	if violations[0].Type != "drift" {
 		t.Errorf("expected drift violation for deleted files, got %s", violations[0].Type)
+	}
+}
+
+// --- GRD-003: Staleness with max_staleness_days threshold ---
+
+func TestEvaluatePolicy_StaleWithinGracePeriod_Warning(t *testing.T) {
+	svc := NewPolicyService()
+	tr := true
+	days := 30
+	config := &types.VendorConfig{
+		Policy:  &types.VendorPolicy{BlockOnStale: &tr, MaxStalenessDays: &days},
+		Vendors: []types.VendorSpec{{Name: "mylib"}},
+	}
+	stale := true
+	// Lock updated 5 days ago — within the 30-day grace window
+	recentUpdate := time.Now().UTC().Add(-5 * 24 * time.Hour).Format(time.RFC3339)
+	status := &types.StatusResult{
+		Vendors: []types.VendorStatusDetail{
+			{Name: "mylib", Ref: "main", UpstreamStale: &stale, LastUpdated: recentUpdate},
+		},
+	}
+
+	violations := svc.EvaluatePolicy(config, status)
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(violations))
+	}
+	if violations[0].Severity != "warning" {
+		t.Errorf("expected warning severity within grace period, got %s", violations[0].Severity)
+	}
+	if violations[0].Type != "stale" {
+		t.Errorf("expected stale violation, got %s", violations[0].Type)
+	}
+}
+
+func TestEvaluatePolicy_StaleBeyondGracePeriod_Error(t *testing.T) {
+	svc := NewPolicyService()
+	tr := true
+	days := 7
+	config := &types.VendorConfig{
+		Policy:  &types.VendorPolicy{BlockOnStale: &tr, MaxStalenessDays: &days},
+		Vendors: []types.VendorSpec{{Name: "mylib"}},
+	}
+	stale := true
+	// Lock updated 15 days ago — beyond the 7-day grace window
+	oldUpdate := time.Now().UTC().Add(-15 * 24 * time.Hour).Format(time.RFC3339)
+	status := &types.StatusResult{
+		Vendors: []types.VendorStatusDetail{
+			{Name: "mylib", Ref: "main", UpstreamStale: &stale, LastUpdated: oldUpdate},
+		},
+	}
+
+	violations := svc.EvaluatePolicy(config, status)
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(violations))
+	}
+	if violations[0].Severity != "error" {
+		t.Errorf("expected error severity beyond grace period, got %s", violations[0].Severity)
+	}
+}
+
+func TestEvaluatePolicy_StaleNoGracePeriod_ImmediateError(t *testing.T) {
+	svc := NewPolicyService()
+	tr := true
+	config := &types.VendorConfig{
+		Policy:  &types.VendorPolicy{BlockOnStale: &tr},
+		Vendors: []types.VendorSpec{{Name: "mylib"}},
+	}
+	stale := true
+	// Lock updated recently, but max_staleness_days=0 (default, no grace)
+	recentUpdate := time.Now().UTC().Add(-1 * 24 * time.Hour).Format(time.RFC3339)
+	status := &types.StatusResult{
+		Vendors: []types.VendorStatusDetail{
+			{Name: "mylib", Ref: "main", UpstreamStale: &stale, LastUpdated: recentUpdate},
+		},
+	}
+
+	violations := svc.EvaluatePolicy(config, status)
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(violations))
+	}
+	if violations[0].Severity != "error" {
+		t.Errorf("expected error severity with no grace period (max_staleness_days=0), got %s", violations[0].Severity)
+	}
+}
+
+func TestEvaluatePolicy_StaleUnknownAge_Error(t *testing.T) {
+	svc := NewPolicyService()
+	tr := true
+	days := 30
+	config := &types.VendorConfig{
+		Policy:  &types.VendorPolicy{BlockOnStale: &tr, MaxStalenessDays: &days},
+		Vendors: []types.VendorSpec{{Name: "mylib"}},
+	}
+	stale := true
+	// No LastUpdated (old lock entry without timestamp)
+	status := &types.StatusResult{
+		Vendors: []types.VendorStatusDetail{
+			{Name: "mylib", Ref: "main", UpstreamStale: &stale, LastUpdated: ""},
+		},
+	}
+
+	violations := svc.EvaluatePolicy(config, status)
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(violations))
+	}
+	if violations[0].Severity != "error" {
+		t.Errorf("expected error severity for unknown lock age (conservative), got %s", violations[0].Severity)
+	}
+}
+
+func TestEvaluatePolicy_StaleNotBlocked_AlwaysWarning(t *testing.T) {
+	svc := NewPolicyService()
+	days := 7
+	config := &types.VendorConfig{
+		// BlockOnStale defaults to false
+		Policy:  &types.VendorPolicy{MaxStalenessDays: &days},
+		Vendors: []types.VendorSpec{{Name: "mylib"}},
+	}
+	stale := true
+	// Lock updated 15 days ago — beyond threshold, but block_on_stale=false
+	oldUpdate := time.Now().UTC().Add(-15 * 24 * time.Hour).Format(time.RFC3339)
+	status := &types.StatusResult{
+		Vendors: []types.VendorStatusDetail{
+			{Name: "mylib", Ref: "main", UpstreamStale: &stale, LastUpdated: oldUpdate},
+		},
+	}
+
+	violations := svc.EvaluatePolicy(config, status)
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(violations))
+	}
+	if violations[0].Severity != "warning" {
+		t.Errorf("expected warning severity when block_on_stale=false regardless of age, got %s", violations[0].Severity)
+	}
+}
+
+func TestEvaluatePolicy_StaleMessageIncludesAge(t *testing.T) {
+	svc := NewPolicyService()
+	tr := true
+	days := 7
+	config := &types.VendorConfig{
+		Policy:  &types.VendorPolicy{BlockOnStale: &tr, MaxStalenessDays: &days},
+		Vendors: []types.VendorSpec{{Name: "mylib"}},
+	}
+	stale := true
+	oldUpdate := time.Now().UTC().Add(-15 * 24 * time.Hour).Format(time.RFC3339)
+	status := &types.StatusResult{
+		Vendors: []types.VendorStatusDetail{
+			{Name: "mylib", Ref: "main", UpstreamStale: &stale, LastUpdated: oldUpdate},
+		},
+	}
+
+	violations := svc.EvaluatePolicy(config, status)
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(violations))
+	}
+	if !contains(violations[0].Message, "lock age:") {
+		t.Errorf("expected message to include lock age info, got %q", violations[0].Message)
+	}
+	if !contains(violations[0].Message, "threshold:") {
+		t.Errorf("expected message to include threshold info, got %q", violations[0].Message)
+	}
+}
+
+// --- lockAgeDays unit tests ---
+
+func TestLockAgeDays_ValidTimestamp(t *testing.T) {
+	ts := time.Now().UTC().Add(-10 * 24 * time.Hour).Format(time.RFC3339)
+	days := lockAgeDays(ts)
+	if days < 9 || days > 11 {
+		t.Errorf("expected ~10 days, got %d", days)
+	}
+}
+
+func TestLockAgeDays_EmptyString(t *testing.T) {
+	days := lockAgeDays("")
+	if days != -1 {
+		t.Errorf("expected -1 for empty string, got %d", days)
+	}
+}
+
+func TestLockAgeDays_InvalidFormat(t *testing.T) {
+	days := lockAgeDays("not-a-date")
+	if days != -1 {
+		t.Errorf("expected -1 for invalid format, got %d", days)
+	}
+}
+
+func TestLockAgeDays_ZeroDays(t *testing.T) {
+	ts := time.Now().UTC().Format(time.RFC3339)
+	days := lockAgeDays(ts)
+	if days != 0 {
+		t.Errorf("expected 0 for just-now timestamp, got %d", days)
 	}
 }
 
