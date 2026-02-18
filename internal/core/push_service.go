@@ -23,12 +23,12 @@ type PushOptions struct {
 
 // PushResult summarizes what a push operation did or would do.
 type PushResult struct {
-	FilesModified      []string // Local paths with modifications relative to lockfile
-	ReverseMapping     map[string]string // local path -> source repo path
-	BranchName         string   // Branch created in source repo
-	PRUrl              string   // URL of created PR (empty if manual fallback)
-	ManualInstructions string   // Manual git instructions when gh CLI unavailable
-	DryRun             bool     // Whether this was a dry-run
+	FilesModified      []string          `json:"files_modified,omitempty"`      // Local paths with modifications relative to lockfile
+	ReverseMapping     map[string]string `json:"reverse_mapping,omitempty"`     // local path -> source repo path
+	BranchName         string            `json:"branch_name,omitempty"`         // Branch created in source repo
+	PRUrl              string            `json:"pr_url,omitempty"`              // URL of created PR (empty if manual fallback)
+	ManualInstructions string            `json:"manual_instructions,omitempty"` // Manual git instructions when gh CLI unavailable
+	DryRun             bool              `json:"dry_run"`                       // Whether this was a dry-run
 }
 
 // PushVendor detects locally modified vendored files, clones the source repo,

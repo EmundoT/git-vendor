@@ -278,6 +278,11 @@ func TestBuildPRURL(t *testing.T) {
 			branchName: "vendor-push/proj/2026-02-18",
 			want:       "https://gitlab.com/user/repo/-/merge_requests/new?merge_request[source_branch]=vendor-push/proj/2026-02-18",
 		},
+		{
+			repoURL:    "https://git.mycompany.internal/team/repo.git",
+			branchName: "vendor-push/proj/2026-02-18",
+			want:       "https://git.mycompany.internal/team/repo (branch: vendor-push/proj/2026-02-18)",
+		},
 	}
 
 	for _, tt := range tests {

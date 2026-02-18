@@ -28,30 +28,30 @@ type CascadeOptions struct {
 
 // CascadeResult summarizes the outcome of a cascade operation.
 type CascadeResult struct {
-	Order     []string              // Topological order of projects walked
-	Updated   []string              // Projects that had files updated by pull
-	Current   []string              // Projects that were already current (no changes)
-	Failed    []CascadeFailure      // Projects that encountered errors
-	Skipped   []string              // Projects skipped (no vendor.yml)
-	ProjectResults map[string]*CascadeProjectResult // Per-project details keyed by project name
+	Order          []string                         `json:"order"`                    // Topological order of projects walked
+	Updated        []string                         `json:"updated,omitempty"`        // Projects that had files updated by pull
+	Current        []string                         `json:"current,omitempty"`        // Projects that were already current (no changes)
+	Failed         []CascadeFailure                 `json:"failed,omitempty"`         // Projects that encountered errors
+	Skipped        []string                         `json:"skipped,omitempty"`        // Projects skipped (no vendor.yml)
+	ProjectResults map[string]*CascadeProjectResult `json:"project_results,omitempty"` // Per-project details keyed by project name
 }
 
 // CascadeProjectResult holds the pull outcome for a single project in the cascade.
 type CascadeProjectResult struct {
-	Name          string   // Project directory name
-	Dir           string   // Absolute path to the project directory
-	PullResult    *PullResult // Result from pull operation (nil if skipped/failed)
-	VerifyPassed  bool     // Whether verify command succeeded (false if not run)
-	VerifyOutput  string   // Stdout/stderr from verify command
-	PRInfo        string   // PR URL or manual instructions (populated when --pr is used)
-	Error         error    // Non-nil if pull or verify failed
+	Name         string      `json:"name"`                    // Project directory name
+	Dir          string      `json:"dir"`                     // Absolute path to the project directory
+	PullResult   *PullResult `json:"pull_result,omitempty"`   // Result from pull operation (nil if skipped/failed)
+	VerifyPassed bool        `json:"verify_passed"`           // Whether verify command succeeded (false if not run)
+	VerifyOutput string      `json:"verify_output,omitempty"` // Stdout/stderr from verify command
+	PRInfo       string      `json:"pr_info,omitempty"`       // PR URL or manual instructions (populated when --pr is used)
+	Error        error       `json:"-"`                       // Non-nil if pull or verify failed (excluded from JSON; use Failed slice)
 }
 
 // CascadeFailure records a project that failed during cascade.
 type CascadeFailure struct {
-	Project string // Project directory name
-	Phase   string // "pull", "verify", "commit", or "push"
-	Error   string // Error message
+	Project string `json:"project"` // Project directory name
+	Phase   string `json:"phase"`   // "pull", "verify", "commit", or "push"
+	Error   string `json:"error"`   // Error message
 }
 
 // CascadeConfig represents the optional cascade section in vendor.yml.
@@ -213,17 +213,6 @@ func matchSiblingByURL[T any](url string, projects map[string]T) string {
 // TopologicalSort expects graph to contain all projects as keys, even if
 // they have no dependencies (nil/empty slice).
 func TopologicalSort(graph map[string][]string) ([]string, error) {
-	// Compute in-degree for each node
-	inDegree := make(map[string]int)
-	for node := range graph {
-		if _, ok := inDegree[node]; !ok {
-			inDegree[node] = 0
-		}
-		for _, dep := range graph[node] {
-			inDegree[dep] = inDegree[dep] // ensure dep exists
-		}
-	}
-
 	// Edges go from dependent -> dependency, but for Kahn's we need
 	// to process nodes with no incoming edges first. Here "incoming edge"
 	// means some other project depends on this one.
@@ -245,8 +234,8 @@ func TopologicalSort(graph map[string][]string) ([]string, error) {
 	// Our graph has edges from dependent to dependency (A depends on B: A -> B).
 	// We need B before A, so we reverse edges: B -> A.
 
-	// Recompute: in the reversed graph, in-degree = number of dependencies
-	inDegree = make(map[string]int)
+	// Compute in-degree: in the reversed graph, in-degree = number of dependencies
+	inDegree := make(map[string]int)
 	reverseAdj := make(map[string][]string) // dependency -> list of dependents
 
 	for node := range graph {
@@ -499,7 +488,7 @@ func cascadeCommitInProject(ctx context.Context, dir string) error {
 // cascadePRInProject records the PR URL or manual instructions in
 // CascadeProjectResult.PRInfo and appends failures to CascadeResult.Failed.
 func cascadePRInProject(ctx context.Context, dir, name string, pullResult *PullResult, projResult *CascadeProjectResult, result *CascadeResult) {
-	branchName := fmt.Sprintf("vendor-cascade/%s", time.Now().Format("2006-01-02"))
+	branchName := fmt.Sprintf("vendor-cascade/%s/%s", filepath.Base(dir), time.Now().Format("2006-01-02"))
 
 	// Save current branch name to restore later
 	origBranch, err := runGitInDir(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD")
@@ -584,6 +573,10 @@ func (cs *CascadeService) runPullInProject(ctx context.Context, dir string) (*Pu
 
 	ui := &SilentUICallback{}
 
+	// Pull-only path: licenseChecker is nil because PullVendors never calls
+	// CheckCompliance. LicenseService wraps the nil checker and is only invoked
+	// during AddVendor (which requires an explicit license check). Cascade pull
+	// only fetches and copies files for already-configured vendors.
 	syncer := NewVendorSyncer(configStore, lockStore, gitClient, fs, nil, vendorDir, ui, nil)
 	mgr := NewManagerWithSyncer(syncer)
 
