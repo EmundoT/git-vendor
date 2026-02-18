@@ -281,6 +281,13 @@ func (m *Manager) Outdated(ctx context.Context, opts OutdatedOptions) (*types.Ou
 	return m.syncer.Outdated(ctx, opts)
 }
 
+// Status runs the unified status command, combining verify (offline/disk) and
+// outdated (remote/upstream) checks into a single per-vendor report.
+// ctx controls cancellation of verify and ls-remote operations.
+func (m *Manager) Status(ctx context.Context, opts StatusOptions) (*types.StatusResult, error) {
+	return m.syncer.Status(ctx, opts)
+}
+
 // Drift detects drift between vendored files and their origin.
 // ctx controls cancellation of git operations (clone, fetch, checkout).
 func (m *Manager) Drift(ctx context.Context, opts DriftOptions) (*types.DriftResult, error) {
