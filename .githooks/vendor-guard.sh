@@ -29,7 +29,7 @@ if [ ! -f ".git-vendor/vendor.yml" ]; then
 fi
 
 # --- Pass 1: Offline check (fast, no network) ---
-STATUS_JSON=$(git-vendor status --offline --format=json --yes 2>/dev/null)
+STATUS_JSON=$(git-vendor status --offline --format=json 2>/dev/null)
 
 # If status command produced no output, skip guard (fatal error).
 if [ -z "$STATUS_JSON" ]; then
@@ -47,12 +47,14 @@ if command -v jq >/dev/null 2>&1; then
     :
 fi
 # Both jq and non-jq paths use the same grep heuristic on vendor.yml.
-if grep -q 'block_on_stale:[[:space:]]*true' ".git-vendor/vendor.yml" 2>/dev/null; then
+# Filter out YAML comment lines before matching to avoid false positives (I5).
+if grep -v '^[[:space:]]*#' ".git-vendor/vendor.yml" 2>/dev/null | \
+   grep -q 'block_on_stale:[[:space:]]*true'; then
     NEEDS_REMOTE=1
 fi
 
 if [ "$NEEDS_REMOTE" -eq 1 ]; then
-    FULL_JSON=$(git-vendor status --format=json --yes 2>/dev/null)
+    FULL_JSON=$(git-vendor status --format=json 2>/dev/null)
     if [ -n "$FULL_JSON" ]; then
         STATUS_JSON="$FULL_JSON"
     fi
@@ -161,9 +163,35 @@ fi
 
 echo "" >&2
 echo "Resolve with:" >&2
-echo "  git vendor pull     # discard local changes, get latest" >&2
-echo "  git vendor push     # propose changes upstream" >&2
-echo "  git vendor accept   # acknowledge drift, update lock" >&2
+
+# Check if there are deleted files (I6). Deleted files cannot be accepted or pushed;
+# they can only be restored via pull or removed from vendor.yml.
+HAS_DELETED=0
+if command -v jq >/dev/null 2>&1; then
+    DELETED_COUNT=$(printf '%s' "$STATUS_JSON" | jq -r '.summary.deleted // 0' 2>/dev/null)
+    DELETED_COUNT=${DELETED_COUNT:-0}
+    if [ "$DELETED_COUNT" -gt 0 ] 2>/dev/null; then
+        HAS_DELETED=1
+    fi
+else
+    DELETED_COUNT=$(printf '%s' "$STATUS_JSON" | grep -o '"deleted":[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
+    DELETED_COUNT=${DELETED_COUNT:-0}
+    if [ "$DELETED_COUNT" -gt 0 ] 2>/dev/null; then
+        HAS_DELETED=1
+    fi
+fi
+
+echo "  git vendor pull     # restore upstream files and get latest" >&2
+if [ "$HAS_DELETED" -eq 0 ]; then
+    echo "  git vendor push     # propose changes upstream" >&2
+    echo "  git vendor accept   # acknowledge drift, update lock" >&2
+else
+    echo "  git vendor push     # propose modified files upstream (not applicable to deletions)" >&2
+    echo "  git vendor accept   # acknowledge modified files (not applicable to deletions)" >&2
+    echo "" >&2
+    echo "For deleted vendored files, use 'git vendor pull' to restore or remove" >&2
+    echo "the mapping from vendor.yml if the file is no longer needed." >&2
+fi
 echo "" >&2
 echo "Commit blocked." >&2
 exit 1

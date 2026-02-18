@@ -81,6 +81,7 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 	}
 
 	result := &types.StatusResult{}
+	var verifySummary *types.VerifySummary
 
 	// Phase 1: Offline checks (verify)
 	if !opts.RemoteOnly {
@@ -118,10 +119,15 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 					v.FilesAccepted++
 					v.AcceptedPaths = append(v.AcceptedPaths, f.Path)
 					v.DriftDetails = append(v.DriftDetails, buildDriftDetail(f, true))
+				case "stale", "orphaned":
+					// Coherence issues are counted in the summary (I2),
+					// not in per-vendor file counts.
 				}
 				break // one match per file
 			}
 		}
+
+		verifySummary = &verifyResult.Summary
 	}
 
 	// Phase 2: Remote checks (outdated)
@@ -187,13 +193,15 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 	}
 
 	// Compute summary
-	result.Summary = computeStatusSummary(result.Vendors, opts)
+	result.Summary = computeStatusSummary(result.Vendors, opts, verifySummary)
 
 	return result, nil
 }
 
 // computeStatusSummary aggregates per-vendor details into a StatusSummary.
-func computeStatusSummary(vendors []types.VendorStatusDetail, opts StatusOptions) types.StatusSummary {
+// verifySummary is non-nil when offline checks ran; its Stale/Orphaned counts
+// are propagated to StatusSummary.StaleConfigs/OrphanedLock for coherence reporting (I2/VFY-001).
+func computeStatusSummary(vendors []types.VendorStatusDetail, opts StatusOptions, verifySummary *types.VerifySummary) types.StatusSummary {
 	s := types.StatusSummary{
 		TotalVendors: len(vendors),
 	}
@@ -213,6 +221,12 @@ func computeStatusSummary(vendors []types.VendorStatusDetail, opts StatusOptions
 		}
 	}
 
+	// Propagate config/lock coherence issues from verify result (I2/VFY-001).
+	if verifySummary != nil {
+		s.StaleConfigs = verifySummary.Stale
+		s.OrphanedLock = verifySummary.Orphaned
+	}
+
 	// Determine result code
 	hasFail := s.Modified > 0 || s.Deleted > 0
 	if !opts.RemoteOnly {
@@ -225,7 +239,7 @@ func computeStatusSummary(vendors []types.VendorStatusDetail, opts StatusOptions
 	switch {
 	case hasFail:
 		s.Result = "FAIL"
-	case s.Added > 0:
+	case s.Added > 0 || s.Accepted > 0:
 		s.Result = "WARN"
 	default:
 		s.Result = "PASS"

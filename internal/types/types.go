@@ -40,29 +40,35 @@ func ResolvedPolicy(global, perVendor *VendorPolicy) VendorPolicy {
 		MaxStalenessDays: &defaultZero,
 	}
 
-	// Apply global overrides
+	// Apply global overrides (copy values to avoid aliasing the caller's pointers).
 	if global != nil {
 		if global.BlockOnDrift != nil {
-			resolved.BlockOnDrift = global.BlockOnDrift
+			v := *global.BlockOnDrift
+			resolved.BlockOnDrift = &v
 		}
 		if global.BlockOnStale != nil {
-			resolved.BlockOnStale = global.BlockOnStale
+			v := *global.BlockOnStale
+			resolved.BlockOnStale = &v
 		}
 		if global.MaxStalenessDays != nil {
-			resolved.MaxStalenessDays = global.MaxStalenessDays
+			v := *global.MaxStalenessDays
+			resolved.MaxStalenessDays = &v
 		}
 	}
 
-	// Apply per-vendor overrides (wins over global)
+	// Apply per-vendor overrides (wins over global). Same copy-value pattern.
 	if perVendor != nil {
 		if perVendor.BlockOnDrift != nil {
-			resolved.BlockOnDrift = perVendor.BlockOnDrift
+			v := *perVendor.BlockOnDrift
+			resolved.BlockOnDrift = &v
 		}
 		if perVendor.BlockOnStale != nil {
-			resolved.BlockOnStale = perVendor.BlockOnStale
+			v := *perVendor.BlockOnStale
+			resolved.BlockOnStale = &v
 		}
 		if perVendor.MaxStalenessDays != nil {
-			resolved.MaxStalenessDays = perVendor.MaxStalenessDays
+			v := *perVendor.MaxStalenessDays
+			resolved.MaxStalenessDays = &v
 		}
 	}
 
@@ -436,8 +442,10 @@ type StatusSummary struct {
 	Modified       int    `json:"modified"`
 	Added          int    `json:"added"`
 	Deleted        int    `json:"deleted"`
-	Accepted       int    `json:"accepted"`       // Files with accepted drift (CLI-003)
-	Stale          int    `json:"stale"`          // Vendors behind upstream
-	UpstreamErrors int    `json:"upstream_errors"` // Vendors where ls-remote failed
-	Result         string `json:"result"`          // PASS, FAIL, WARN
+	Accepted       int    `json:"accepted"`        // Files with accepted drift (CLI-003)
+	Stale          int    `json:"stale"`            // Vendors behind upstream
+	UpstreamErrors int    `json:"upstream_errors"`  // Vendors where ls-remote failed
+	StaleConfigs   int    `json:"stale_configs"`    // Config mapping dests with no lock FileHashes entry (VFY-001)
+	OrphanedLock   int    `json:"orphaned_lock"`    // Lock FileHashes entries with no config mapping dest (VFY-001)
+	Result         string `json:"result"`           // PASS, FAIL, WARN
 }

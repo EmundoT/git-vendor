@@ -400,6 +400,84 @@ func TestStatusService_DriftDetails_JSONOutput(t *testing.T) {
 	}
 }
 
+// TestStatusService_AcceptedOnly_WARN verifies that accepted-only drift produces
+// a WARN result (exit code 2 semantics), not PASS. This is C5 from review findings.
+func TestStatusService_AcceptedOnly_WARN(t *testing.T) {
+	vendor1 := "mylib"
+	lockHash := "sha256:aaa111"
+	acceptedHash := "sha256:bbb222"
+
+	svc := NewStatusService(
+		&statusStubVerify{
+			result: &types.VerifyResult{
+				Summary: types.VerifySummary{TotalFiles: 2, Verified: 1, Accepted: 1, Result: "WARN"},
+				Files: []types.FileStatus{
+					{Path: "a.go", Vendor: &vendor1, Status: "verified", Type: "file"},
+					{Path: "b.go", Vendor: &vendor1, Status: "accepted", Type: "file",
+						ExpectedHash: &lockHash, ActualHash: &acceptedHash},
+				},
+			},
+		},
+		&statusStubOutdated{err: errForTest},
+		nil,
+		&statusStubLockStore{
+			lock: types.VendorLock{Vendors: []types.LockDetails{{Name: "mylib", Ref: "main", CommitHash: "abc"}}},
+		},
+	)
+
+	result, err := svc.Status(context.Background(), StatusOptions{Offline: true})
+	if err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+
+	if result.Summary.Result != "WARN" {
+		t.Errorf("expected WARN for accepted-only drift, got %s", result.Summary.Result)
+	}
+	if result.Summary.Accepted != 1 {
+		t.Errorf("expected 1 accepted, got %d", result.Summary.Accepted)
+	}
+	if result.Summary.Modified != 0 {
+		t.Errorf("expected 0 modified, got %d", result.Summary.Modified)
+	}
+}
+
+// TestStatusService_CoherenceIssues_Propagated verifies that coherence
+// counts (stale configs, orphaned lock entries) from verify are propagated
+// to StatusSummary (I2/VFY-001).
+func TestStatusService_CoherenceIssues_Propagated(t *testing.T) {
+	vendor1 := "mylib"
+	svc := NewStatusService(
+		&statusStubVerify{
+			result: &types.VerifyResult{
+				Summary: types.VerifySummary{
+					TotalFiles: 2, Verified: 1, Stale: 1, Orphaned: 2, Result: "WARN",
+				},
+				Files: []types.FileStatus{
+					{Path: "a.go", Vendor: &vendor1, Status: "verified", Type: "file"},
+					{Path: "b.go", Vendor: &vendor1, Status: "stale", Type: "coherence"},
+				},
+			},
+		},
+		&statusStubOutdated{err: errForTest},
+		nil,
+		&statusStubLockStore{
+			lock: types.VendorLock{Vendors: []types.LockDetails{{Name: "mylib", Ref: "main", CommitHash: "abc"}}},
+		},
+	)
+
+	result, err := svc.Status(context.Background(), StatusOptions{Offline: true})
+	if err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+
+	if result.Summary.StaleConfigs != 1 {
+		t.Errorf("expected StaleConfigs=1, got %d", result.Summary.StaleConfigs)
+	}
+	if result.Summary.OrphanedLock != 2 {
+		t.Errorf("expected OrphanedLock=2, got %d", result.Summary.OrphanedLock)
+	}
+}
+
 // errForTest is a sentinel error for asserting a stub was not called.
 var errForTest = &testSentinelError{msg: "should not be called"}
 
