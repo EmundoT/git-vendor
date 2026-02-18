@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -376,6 +377,107 @@ func TestBackupRestore_RoundTrip(t *testing.T) {
 	}
 	if string(afterContent) != string(originalContent) {
 		t.Errorf("restore did not preserve content.\nExpected: %q\nGot: %q", originalContent, afterContent)
+	}
+}
+
+// TestPullVendors_SyncFailure_PropagatesError verifies that PullVendors propagates
+// errors from the sync phase when update succeeds but sync fails.
+func TestPullVendors_SyncFailure_PropagatesError(t *testing.T) {
+	env := setupPullTestEnv(t)
+	env.syncSvc.syncErr = fmt.Errorf("network timeout during sync")
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	env.writeConfig(createTestConfig(vendor))
+	env.writeLock(testLock())
+
+	_, err := env.syncer.PullVendors(context.Background(), PullOptions{})
+	if err == nil {
+		t.Fatal("Expected error from sync failure, got nil")
+	}
+
+	if env.updateSvc.callCount != 1 {
+		t.Errorf("Expected update called once, got %d", env.updateSvc.callCount)
+	}
+	if !contains(err.Error(), "pull sync phase") {
+		t.Errorf("Expected 'pull sync phase' in error, got: %v", err)
+	}
+}
+
+// TestPullVendors_ClearsAcceptedDrift verifies that PullVendors clears
+// accepted_drift entries for synced vendors after overwriting files (GAP-A1).
+func TestPullVendors_ClearsAcceptedDrift(t *testing.T) {
+	env := setupPullTestEnv(t)
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	env.writeConfig(createTestConfig(vendor))
+	env.writeLock(types.VendorLock{
+		SchemaVersion: "1.1",
+		Vendors: []types.LockDetails{
+			{
+				Name:       "test-vendor",
+				Ref:        "main",
+				CommitHash: "abc123",
+				Updated:    "2024-01-01T00:00:00Z",
+				FileHashes: map[string]string{"lib/file.go": "deadbeef"},
+				AcceptedDrift: map[string]string{"lib/file.go": "localmod123"},
+			},
+		},
+	})
+
+	result, err := env.syncer.PullVendors(context.Background(), PullOptions{})
+	if err != nil {
+		t.Fatalf("PullVendors returned error: %v", err)
+	}
+
+	if result.DriftCleared != 1 {
+		t.Errorf("Expected DriftCleared=1, got %d", result.DriftCleared)
+	}
+
+	// Verify lock was updated
+	lock, err := env.syncer.lockStore.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lock.Vendors[0].AcceptedDrift != nil {
+		t.Errorf("Expected AcceptedDrift to be nil after pull, got %v", lock.Vendors[0].AcceptedDrift)
+	}
+}
+
+// TestPullVendors_WarnsOnAcceptedDrift verifies that PullVendors emits warnings
+// before overwriting files with accepted drift (GAP-P4).
+func TestPullVendors_WarnsOnAcceptedDrift(t *testing.T) {
+	env := setupPullTestEnv(t)
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	env.writeConfig(createTestConfig(vendor))
+	env.writeLock(types.VendorLock{
+		SchemaVersion: "1.1",
+		Vendors: []types.LockDetails{
+			{
+				Name:       "test-vendor",
+				Ref:        "main",
+				CommitHash: "abc123",
+				Updated:    "2024-01-01T00:00:00Z",
+				FileHashes: map[string]string{"lib/file.go": "deadbeef"},
+				AcceptedDrift: map[string]string{"lib/file.go": "localmod123"},
+			},
+		},
+	})
+
+	result, err := env.syncer.PullVendors(context.Background(), PullOptions{})
+	if err != nil {
+		t.Fatalf("PullVendors returned error: %v", err)
+	}
+
+	foundWarning := false
+	for _, w := range result.Warnings {
+		if contains(w, "accepted drift") && contains(w, "lib/file.go") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Errorf("Expected warning about accepted drift for lib/file.go, got warnings: %v", result.Warnings)
 	}
 }
 
