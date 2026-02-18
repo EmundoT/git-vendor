@@ -605,7 +605,9 @@ func TestVerify_IntegrationWithRealFiles(t *testing.T) {
 	configStore := NewMockConfigStore(ctrl)
 	lockStore := NewMockLockStore(ctrl)
 
-	// Mock config
+	// Mock config — use absolute testFile path to match lock FileHashes keys.
+	// Coherence detection (VFY-001) cross-references config destinations against
+	// lock FileHashes; mismatched path forms would produce false stale/orphaned results.
 	configStore.EXPECT().Load().Return(types.VendorConfig{
 		Vendors: []types.VendorSpec{
 			{
@@ -615,7 +617,7 @@ func TestVerify_IntegrationWithRealFiles(t *testing.T) {
 					{
 						Ref: "main",
 						Mapping: []types.PathMapping{
-							{From: "src/file.go", To: filepath.Join("lib", "test-vendor", "file.go")},
+							{From: "src/file.go", To: testFile},
 						},
 					},
 				},
@@ -664,7 +666,7 @@ func TestVerify_IntegrationWithRealFiles(t *testing.T) {
 					{
 						Ref: "main",
 						Mapping: []types.PathMapping{
-							{From: "src/file.go", To: filepath.Join("lib", "test-vendor", "file.go")},
+							{From: "src/file.go", To: testFile},
 						},
 					},
 				},
@@ -1766,5 +1768,461 @@ func TestVerify_PositionExtraction_EmptyToProducesDeleted(t *testing.T) {
 	}
 	if result.Summary.Deleted != 1 {
 		t.Errorf("Expected 1 deleted (empty-path position), got %d", result.Summary.Deleted)
+	}
+}
+
+// ============================================================================
+// Config/Lock Coherence Tests (VFY-001)
+// ============================================================================
+
+func TestVerify_StaleMapping(t *testing.T) {
+	// Config has a mapping destination that does not appear in lock FileHashes.
+	// This means the mapping was added to config but never synced.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// One file is synced (in both config and lock)
+	cache.files["lib/test-vendor/file.go"] = "abc123hash"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "test-vendor",
+				URL:  "https://github.com/owner/repo",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "src/file.go", To: "lib/test-vendor/file.go"},
+							{From: "src/new.go", To: "lib/test-vendor/new.go"}, // stale: not in lock
+						},
+					},
+				},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "test-vendor",
+				Ref:        "main",
+				CommitHash: "abc123def",
+				FileHashes: map[string]string{
+					"lib/test-vendor/file.go": "abc123hash",
+					// "lib/test-vendor/new.go" is NOT here — stale
+				},
+			},
+		},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/test-vendor/file.go").Return(&mockFileInfo{isDir: false}, nil)
+	fs.EXPECT().Stat("lib/test-vendor/new.go").Return(nil, os.ErrNotExist)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "WARN" {
+		t.Errorf("Expected WARN for stale mapping, got %s", result.Summary.Result)
+	}
+
+	if result.Summary.Stale != 1 {
+		t.Errorf("Expected 1 stale, got %d", result.Summary.Stale)
+	}
+
+	if result.Summary.Verified != 1 {
+		t.Errorf("Expected 1 verified, got %d", result.Summary.Verified)
+	}
+
+	// Verify stale entry details
+	found := false
+	for _, f := range result.Files {
+		if f.Status == "stale" {
+			found = true
+			if f.Path != "lib/test-vendor/new.go" {
+				t.Errorf("Expected stale path 'lib/test-vendor/new.go', got '%s'", f.Path)
+			}
+			if f.Type != "coherence" {
+				t.Errorf("Expected type 'coherence', got '%s'", f.Type)
+			}
+			if f.Vendor == nil || *f.Vendor != "test-vendor" {
+				t.Errorf("Expected vendor 'test-vendor' on stale entry")
+			}
+		}
+	}
+	if !found {
+		t.Error("Expected a stale entry in results")
+	}
+}
+
+func TestVerify_OrphanedLockEntry(t *testing.T) {
+	// Lock has a FileHashes entry for a path not referenced by any config mapping.
+	// This means the mapping was removed from config but lock was not regenerated.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	cache.files["lib/test-vendor/file.go"] = "abc123hash"
+	cache.files["lib/test-vendor/old.go"] = "oldhash"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "test-vendor",
+				URL:  "https://github.com/owner/repo",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							{From: "src/file.go", To: "lib/test-vendor/file.go"},
+							// "lib/test-vendor/old.go" is NOT in config anymore
+						},
+					},
+				},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "test-vendor",
+				Ref:        "main",
+				CommitHash: "abc123def",
+				FileHashes: map[string]string{
+					"lib/test-vendor/file.go": "abc123hash",
+					"lib/test-vendor/old.go":  "oldhash", // orphaned: not in config
+				},
+			},
+		},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/test-vendor/file.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "WARN" {
+		t.Errorf("Expected WARN for orphaned lock entry, got %s", result.Summary.Result)
+	}
+
+	if result.Summary.Orphaned != 1 {
+		t.Errorf("Expected 1 orphaned, got %d", result.Summary.Orphaned)
+	}
+
+	if result.Summary.Verified != 2 {
+		t.Errorf("Expected 2 verified (both files exist with correct hash), got %d", result.Summary.Verified)
+	}
+
+	// Verify orphaned entry details
+	found := false
+	for _, f := range result.Files {
+		if f.Status == "orphaned" {
+			found = true
+			if f.Path != "lib/test-vendor/old.go" {
+				t.Errorf("Expected orphaned path 'lib/test-vendor/old.go', got '%s'", f.Path)
+			}
+			if f.Type != "coherence" {
+				t.Errorf("Expected type 'coherence', got '%s'", f.Type)
+			}
+			if f.Vendor == nil || *f.Vendor != "test-vendor" {
+				t.Errorf("Expected vendor 'test-vendor' on orphaned entry")
+			}
+		}
+	}
+	if !found {
+		t.Error("Expected an orphaned entry in results")
+	}
+}
+
+func TestVerify_CoherenceClean(t *testing.T) {
+	// Config and lock are perfectly aligned — no stale or orphaned entries.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	cache.files["lib/vendor-a/file.go"] = "hashA"
+	cache.files["lib/vendor-b/util.go"] = "hashB"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "vendor-a", URL: "https://github.com/a/repo", Specs: []types.BranchSpec{{
+				Ref: "main", Mapping: []types.PathMapping{{From: "src/file.go", To: "lib/vendor-a/file.go"}},
+			}}},
+			{Name: "vendor-b", URL: "https://github.com/b/repo", Specs: []types.BranchSpec{{
+				Ref: "main", Mapping: []types.PathMapping{{From: "src/util.go", To: "lib/vendor-b/util.go"}},
+			}}},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{Name: "vendor-a", Ref: "main", CommitHash: "aaa", FileHashes: map[string]string{"lib/vendor-a/file.go": "hashA"}},
+			{Name: "vendor-b", Ref: "main", CommitHash: "bbb", FileHashes: map[string]string{"lib/vendor-b/util.go": "hashB"}},
+		},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/vendor-a/file.go").Return(&mockFileInfo{isDir: false}, nil)
+	fs.EXPECT().Stat("lib/vendor-b/util.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "PASS" {
+		t.Errorf("Expected PASS for coherent config/lock, got %s", result.Summary.Result)
+	}
+
+	if result.Summary.Stale != 0 {
+		t.Errorf("Expected 0 stale, got %d", result.Summary.Stale)
+	}
+
+	if result.Summary.Orphaned != 0 {
+		t.Errorf("Expected 0 orphaned, got %d", result.Summary.Orphaned)
+	}
+
+	if result.Summary.Verified != 2 {
+		t.Errorf("Expected 2 verified, got %d", result.Summary.Verified)
+	}
+}
+
+func TestVerify_CoherenceWithPositions(t *testing.T) {
+	// Config has a position-spec destination (e.g., "lib/config.go:L5-L10").
+	// The position spec should be stripped before comparing against lock FileHashes
+	// which use bare file paths.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	cache.files["lib/config.go"] = "confighash"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "test-vendor",
+				URL:  "https://github.com/owner/repo",
+				Specs: []types.BranchSpec{
+					{
+						Ref: "main",
+						Mapping: []types.PathMapping{
+							// Position spec on destination: should strip ":L5-L10" for coherence check
+							{From: "src/constants.go:L1-L5", To: "lib/config.go:L5-L10"},
+						},
+					},
+				},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "test-vendor",
+				Ref:        "main",
+				CommitHash: "abc123",
+				FileHashes: map[string]string{
+					"lib/config.go": "confighash", // bare path matches after stripping position spec
+				},
+				Positions: []types.PositionLock{{
+					From:       "src/constants.go:L1-L5",
+					To:         "lib/config.go:L5-L10",
+					SourceHash: "sha256:abc",
+				}},
+			},
+		},
+	}, nil)
+
+	// fs.Stat for findAddedFiles
+	fs.EXPECT().Stat("lib/config.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// No stale or orphaned — position spec stripped correctly
+	if result.Summary.Stale != 0 {
+		t.Errorf("Expected 0 stale (position spec stripped), got %d", result.Summary.Stale)
+	}
+
+	if result.Summary.Orphaned != 0 {
+		t.Errorf("Expected 0 orphaned, got %d", result.Summary.Orphaned)
+	}
+}
+
+func TestVerify_CoherenceBothStaleAndOrphaned(t *testing.T) {
+	// Config has a mapping not in lock (stale) AND lock has an entry not in config (orphaned).
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	cache.files["lib/vendor/common.go"] = "commonhash"
+	cache.files["lib/vendor/removed.go"] = "removedhash"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "my-vendor",
+				URL:  "https://github.com/owner/repo",
+				Specs: []types.BranchSpec{{
+					Ref: "main",
+					Mapping: []types.PathMapping{
+						{From: "src/common.go", To: "lib/vendor/common.go"},
+						{From: "src/brand-new.go", To: "lib/vendor/brand-new.go"}, // stale
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "my-vendor",
+				Ref:        "main",
+				CommitHash: "aaa",
+				FileHashes: map[string]string{
+					"lib/vendor/common.go":  "commonhash",
+					"lib/vendor/removed.go": "removedhash", // orphaned
+				},
+			},
+		},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/vendor/common.go").Return(&mockFileInfo{isDir: false}, nil)
+	fs.EXPECT().Stat("lib/vendor/brand-new.go").Return(nil, os.ErrNotExist)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "WARN" {
+		t.Errorf("Expected WARN, got %s", result.Summary.Result)
+	}
+
+	if result.Summary.Stale != 1 {
+		t.Errorf("Expected 1 stale, got %d", result.Summary.Stale)
+	}
+
+	if result.Summary.Orphaned != 1 {
+		t.Errorf("Expected 1 orphaned, got %d", result.Summary.Orphaned)
+	}
+
+	if result.Summary.Verified != 2 {
+		t.Errorf("Expected 2 verified, got %d", result.Summary.Verified)
+	}
+}
+
+func TestVerify_CoherenceJSON(t *testing.T) {
+	// Verify stale/orphaned fields appear in JSON output
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	cache.files["lib/v/file.go"] = "hash1"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{{
+			Name: "v", URL: "https://github.com/o/r",
+			Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{
+				{From: "src/file.go", To: "lib/v/file.go"},
+				{From: "src/new.go", To: "lib/v/new.go"}, // stale
+			}}},
+		}},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{{
+			Name: "v", Ref: "main", CommitHash: "abc",
+			FileHashes: map[string]string{
+				"lib/v/file.go": "hash1",
+				"lib/v/old.go":  "hash2", // orphaned
+			},
+		}},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/v/file.go").Return(&mockFileInfo{isDir: false}, nil)
+	fs.EXPECT().Stat("lib/v/new.go").Return(nil, os.ErrNotExist)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	jsonBytes, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Failed to marshal JSON: %v", err)
+	}
+
+	var parsed types.VerifyResult
+	if err := json.Unmarshal(jsonBytes, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal JSON: %v", err)
+	}
+
+	if parsed.Summary.Stale != 1 {
+		t.Errorf("Expected stale=1 in JSON roundtrip, got %d", parsed.Summary.Stale)
+	}
+
+	if parsed.Summary.Orphaned != 1 {
+		t.Errorf("Expected orphaned=1 in JSON roundtrip, got %d", parsed.Summary.Orphaned)
+	}
+
+	// Verify coherence-type entries exist in Files
+	staleFound, orphanedFound := false, false
+	for _, f := range parsed.Files {
+		if f.Status == "stale" && f.Type == "coherence" {
+			staleFound = true
+		}
+		if f.Status == "orphaned" && f.Type == "coherence" {
+			orphanedFound = true
+		}
+	}
+	if !staleFound {
+		t.Error("Expected a stale coherence entry in JSON output")
+	}
+	if !orphanedFound {
+		t.Error("Expected an orphaned coherence entry in JSON output")
 	}
 }

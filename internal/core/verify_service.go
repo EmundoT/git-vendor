@@ -186,12 +186,15 @@ func (s *VerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 		result.Summary.Added++
 	}
 
+	// Detect config/lock coherence issues (VFY-001)
+	s.detectCoherenceIssues(config, lock, result)
+
 	// Compute totals and result
 	result.Summary.TotalFiles = len(result.Files)
 	switch {
 	case result.Summary.Modified > 0 || result.Summary.Deleted > 0:
 		result.Summary.Result = "FAIL"
-	case result.Summary.Added > 0:
+	case result.Summary.Added > 0 || result.Summary.Stale > 0 || result.Summary.Orphaned > 0:
 		result.Summary.Result = "WARN"
 	default:
 		result.Summary.Result = "PASS"
@@ -380,6 +383,103 @@ func (s *VerifyService) verifyInternalEntries(lock types.VendorLock, config type
 					Action:            action,
 				})
 			}
+		}
+	}
+}
+
+// detectCoherenceIssues cross-references config mapping destinations against
+// lock FileHashes to find two categories of incoherence:
+//   - Stale: destination path in config mappings with no lock FileHashes entry
+//     (config references files that were never synced or whose lock entry was removed)
+//   - Orphaned: lock FileHashes entry with no corresponding config mapping destination
+//     (lock has entries for files no longer referenced by any config mapping)
+//
+// Position specs (e.g., ":L5-L10") are stripped from config destination paths
+// before comparison, since lock FileHashes keys are bare file paths.
+// Internal vendor entries (Source == "internal") are excluded from orphan detection
+// because their FileHashes track destination files keyed differently.
+func (s *VerifyService) detectCoherenceIssues(config types.VendorConfig, lock types.VendorLock, result *types.VerifyResult) {
+	// Build set of destination paths from config mappings.
+	// Key: bare file path (position spec stripped). Value: vendor name.
+	configDests := make(map[string]string)
+	for _, vendor := range config.Vendors {
+		for _, spec := range vendor.Specs {
+			for _, mapping := range spec.Mapping {
+				if mapping.To == "" {
+					continue
+				}
+				destFile, _, parseErr := types.ParsePathPosition(mapping.To)
+				if parseErr != nil {
+					destFile = mapping.To
+				}
+				configDests[destFile] = vendor.Name
+			}
+		}
+	}
+
+	// Build set of all lock FileHashes paths across all vendors.
+	// Key: file path. Value: vendor name.
+	// Track which vendors have FileHashes populated (vs cache-fallback scenarios).
+	lockPaths := make(map[string]string)
+	vendorsWithHashes := make(map[string]bool)
+	for i := range lock.Vendors {
+		lockEntry := &lock.Vendors[i]
+		if len(lockEntry.FileHashes) > 0 {
+			vendorsWithHashes[lockEntry.Name] = true
+			for path := range lockEntry.FileHashes {
+				lockPaths[path] = lockEntry.Name
+			}
+		}
+	}
+
+	// Skip coherence detection entirely when no lock vendors have FileHashes.
+	// This happens during cache-fallback scenarios where the lock hasn't been
+	// populated with hashes yet — coherence detection is not meaningful.
+	if len(lockPaths) == 0 {
+		return
+	}
+
+	// Stale: in config but not in lock.
+	// Only flag a config dest as stale when its vendor has FileHashes populated
+	// in the lock. If the vendor has no FileHashes, its entries were resolved
+	// via cache fallback and stale detection would produce false positives.
+	for destPath, vendorName := range configDests {
+		if !vendorsWithHashes[vendorName] {
+			continue
+		}
+		if _, inLock := lockPaths[destPath]; !inLock {
+			vn := vendorName
+			result.Files = append(result.Files, types.FileStatus{
+				Path:   destPath,
+				Vendor: &vn,
+				Status: "stale",
+				Type:   "coherence",
+			})
+			result.Summary.Stale++
+		}
+	}
+
+	// Orphaned: in lock but not in config (skip internal vendors)
+	internalVendors := make(map[string]bool)
+	for i := range lock.Vendors {
+		if lock.Vendors[i].Source == SourceInternal {
+			internalVendors[lock.Vendors[i].Name] = true
+		}
+	}
+
+	for lockPath, vendorName := range lockPaths {
+		if internalVendors[vendorName] {
+			continue
+		}
+		if _, inConfig := configDests[lockPath]; !inConfig {
+			vn := vendorName
+			result.Files = append(result.Files, types.FileStatus{
+				Path:   lockPath,
+				Vendor: &vn,
+				Status: "orphaned",
+				Type:   "coherence",
+			})
+			result.Summary.Orphaned++
 		}
 	}
 }

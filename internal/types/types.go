@@ -263,14 +263,19 @@ type VerifyResult struct {
 	InternalStatus []ComplianceEntry `json:"internal_status,omitempty"` // Spec 070: internal vendor drift
 }
 
-// VerifySummary contains aggregate statistics for verification
+// VerifySummary contains aggregate statistics for verification.
+// Stale and Orphaned track config/lock coherence issues (VFY-001):
+//   - Stale: config mapping destinations with no corresponding lock FileHashes entry
+//   - Orphaned: lock FileHashes entries with no corresponding config mapping destination
 type VerifySummary struct {
 	TotalFiles int    `json:"total_files"`
 	Verified   int    `json:"verified"`
 	Modified   int    `json:"modified"`
 	Added      int    `json:"added"`
 	Deleted    int    `json:"deleted"`
-	Result     string `json:"result"` // PASS, FAIL, WARN
+	Stale      int    `json:"stale"`    // Config mappings not present in lock FileHashes
+	Orphaned   int    `json:"orphaned"` // Lock FileHashes entries not present in config mappings
+	Result     string `json:"result"`   // PASS, FAIL, WARN
 }
 
 // PositionDetail provides position-level metadata for FileStatus entries
@@ -285,8 +290,8 @@ type PositionDetail struct {
 type FileStatus struct {
 	Path         string          `json:"path"`
 	Vendor       *string         `json:"vendor"`
-	Status       string          `json:"status"`             // verified, modified, added, deleted
-	Type         string          `json:"type"`               // "file" or "position"
+	Status       string          `json:"status"`             // verified, modified, added, deleted, stale, orphaned
+	Type         string          `json:"type"`               // "file", "position", or "coherence"
 	ExpectedHash *string         `json:"expected_hash,omitempty"`
 	ActualHash   *string         `json:"actual_hash,omitempty"`
 	Position     *PositionDetail `json:"position,omitempty"` // Present only for type="position"
