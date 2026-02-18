@@ -8,8 +8,10 @@ import (
 
 // StatusOptions configures the status command behavior.
 type StatusOptions struct {
-	Offline    bool // Skip remote checks (only lock-vs-disk)
-	RemoteOnly bool // Skip disk checks (only lock-vs-upstream)
+	Offline            bool   // Skip remote checks (only lock-vs-disk)
+	RemoteOnly         bool   // Skip disk checks (only lock-vs-upstream)
+	StrictOnly         bool   // Only check vendors with enforcement=strict (Spec 075)
+	ComplianceOverride string // Override all vendors to this enforcement level (Spec 075)
 }
 
 // StatusServiceInterface defines the contract for the unified status command.
@@ -171,10 +173,13 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 		result.Vendors = append(result.Vendors, *vendorMap[key])
 	}
 
-	// Phase 3: Policy evaluation (GRD-002)
+	// Phase 3: Policy evaluation (GRD-002) + Enforcement resolution (Spec 075)
+	var enforcementMap map[string]string
+	var enfSvc *EnforcementService
 	if s.configStore != nil {
 		config, configErr := s.configStore.Load()
 		if configErr == nil {
+			// Policy evaluation (GRD-002)
 			policySvc := NewPolicyService()
 			violations := policySvc.EvaluatePolicy(&config, result)
 			result.PolicyViolations = violations
@@ -189,11 +194,74 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 					}
 				}
 			}
+
+			// Enforcement resolution (Spec 075)
+			effectiveConfig := &config
+			if opts.ComplianceOverride != "" {
+				// CLI --compliance=<level> creates a synthetic override config
+				effectiveConfig = &types.VendorConfig{
+					Compliance: &types.ComplianceConfig{
+						Default: opts.ComplianceOverride,
+						Mode:    ComplianceModeOverride,
+					},
+					Vendors: config.Vendors,
+				}
+			}
+
+			enfSvc = NewEnforcementService()
+			enforcementMap = enfSvc.ResolveVendorEnforcement(effectiveConfig)
+
+			// Annotate per-vendor enforcement level and expose config
+			for ri := range result.Vendors {
+				if level, ok := enforcementMap[result.Vendors[ri].Name]; ok {
+					result.Vendors[ri].Enforcement = level
+				}
+			}
+			if effectiveConfig.Compliance != nil {
+				result.ComplianceConfig = effectiveConfig.Compliance
+			}
+
+			// Filter to strict-only vendors when requested
+			if opts.StrictOnly {
+				var filtered []types.VendorStatusDetail
+				for _, v := range result.Vendors {
+					if v.Enforcement == EnforcementStrict {
+						filtered = append(filtered, v)
+					}
+				}
+				result.Vendors = filtered
+			}
 		}
 	}
 
 	// Compute summary
 	result.Summary = computeStatusSummary(result.Vendors, opts, verifySummary)
+
+	// Override exit code via enforcement when compliance config is present (Spec 075).
+	// Enforcement overrides drift-based results but MUST NOT mask non-drift failures
+	// (upstream stale, coherence issues). The Stale count is the sentinel: if Stale > 0,
+	// a FAIL was caused by upstream staleness and MUST be preserved.
+	if enforcementMap != nil {
+		exitCode := enfSvc.ComputeExitCode(result.Vendors, enforcementMap)
+		switch exitCode {
+		case 0:
+			// Info: downgrade drift-based FAIL/WARN to PASS (preserve upstream stale FAIL)
+			if result.Summary.Result == "FAIL" && result.Summary.Stale == 0 {
+				result.Summary.Result = "PASS"
+			} else if result.Summary.Result == "WARN" {
+				result.Summary.Result = "PASS"
+			}
+		case 1:
+			result.Summary.Result = "FAIL"
+		case 2:
+			// Lenient: downgrade drift-based FAIL to WARN (preserve upstream stale FAIL)
+			if result.Summary.Result == "FAIL" && result.Summary.Stale == 0 {
+				result.Summary.Result = "WARN"
+			} else if result.Summary.Result != "FAIL" {
+				result.Summary.Result = "WARN"
+			}
+		}
+	}
 
 	return result, nil
 }

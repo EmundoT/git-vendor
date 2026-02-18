@@ -75,10 +75,20 @@ func ResolvedPolicy(global, perVendor *VendorPolicy) VendorPolicy {
 	return resolved
 }
 
+// ComplianceConfig defines the global compliance enforcement block in vendor.yml.
+// ComplianceConfig controls how per-vendor compliance levels are resolved:
+//   - Default: the fallback enforcement level for vendors without explicit compliance
+//   - Mode: "default" lets per-vendor override global; "override" forces global for all
+type ComplianceConfig struct {
+	Default string `yaml:"default,omitempty" json:"default,omitempty"` // "strict", "lenient", or "info" (default: "lenient")
+	Mode    string `yaml:"mode,omitempty" json:"mode,omitempty"`      // "default" or "override" (default: "default")
+}
+
 // VendorConfig represents the root configuration file (vendor.yml) structure.
 type VendorConfig struct {
-	Policy  *VendorPolicy `yaml:"policy,omitempty" json:"policy,omitempty"` // Global policy defaults
-	Vendors []VendorSpec  `yaml:"vendors"`
+	Policy     *VendorPolicy    `yaml:"policy,omitempty" json:"policy,omitempty"`     // Global policy defaults
+	Compliance *ComplianceConfig `yaml:"compliance,omitempty" json:"compliance,omitempty"` // Global compliance enforcement (Spec 075)
+	Vendors    []VendorSpec     `yaml:"vendors"`
 }
 
 // VendorSpec defines a single vendored dependency with source repository URL and path mappings.
@@ -90,9 +100,10 @@ type VendorSpec struct {
 	Groups     []string      `yaml:"groups,omitempty"`     // Optional groups for batch operations
 	Hooks      *HookConfig   `yaml:"hooks,omitempty"`      // Optional pre/post sync hooks
 	Policy     *VendorPolicy `yaml:"policy,omitempty"`     // Per-vendor policy overrides
-	Source     string        `yaml:"source,omitempty"`     // "" (external, default) or "internal"
-	Compliance string        `yaml:"compliance,omitempty"` // "" (source-canonical) or "bidirectional"
-	Specs      []BranchSpec  `yaml:"specs"`
+	Source      string        `yaml:"source,omitempty"`      // "" (external, default) or "internal"
+	Direction   string        `yaml:"direction,omitempty"`   // "" (source-canonical) or "bidirectional" (Spec 070 sync direction)
+	Enforcement string        `yaml:"compliance,omitempty"`  // "" (inherits global) or "strict"/"lenient"/"info" (Spec 075)
+	Specs       []BranchSpec  `yaml:"specs"`
 }
 
 // BranchSpec defines mappings for a specific Git ref (branch, tag, or commit).
@@ -391,9 +402,10 @@ type DriftDetail struct {
 // VendorStatusDetail holds combined verify + outdated information for a single vendor/ref pair.
 // VendorStatusDetail is produced by the status command to merge offline (disk) and remote checks.
 type VendorStatusDetail struct {
-	Name       string `json:"name"`
-	Ref        string `json:"ref"`
-	CommitHash string `json:"commit_hash"`
+	Name        string `json:"name"`
+	Ref         string `json:"ref"`
+	CommitHash  string `json:"commit_hash"`
+	Enforcement string `json:"enforcement,omitempty"` // Resolved compliance level: "strict", "lenient", or "info" (Spec 075)
 
 	// Offline (verify) results
 	FilesVerified int      `json:"files_verified"`
@@ -432,6 +444,7 @@ type StatusResult struct {
 	Vendors          []VendorStatusDetail `json:"vendors"`
 	Summary          StatusSummary        `json:"summary"`
 	PolicyViolations []PolicyViolation    `json:"policy_violations,omitempty"` // All violations across vendors (GRD-002)
+	ComplianceConfig *ComplianceConfig    `json:"compliance_config,omitempty"` // Global compliance config (Spec 075)
 }
 
 // StatusSummary contains aggregate statistics across all vendors for the status command.

@@ -22,12 +22,25 @@ Main configuration file defining all vendor dependencies.
 ### Basic Structure
 
 ```yaml
+# Global compliance enforcement (Spec 075, optional)
+compliance:
+  default: lenient                  # strict | lenient | info (default: lenient)
+  mode: default                     # default | override (default: default)
+
+# Global policy defaults (optional)
+policy:
+  block_on_drift: true
+  block_on_stale: false
+  max_staleness_days: 0
+
 vendors:
   - name: string                    # Required
     url: string                     # Required
     mirrors: []string               # Optional (schema v1.3+)
     license: string                 # Auto-detected
     groups: []string                # Optional
+    compliance: string              # Optional: strict | lenient | info (Spec 075)
+    direction: string               # Optional: source-canonical | bidirectional (internal vendors)
     hooks:                          # Optional
       pre_sync: string
       post_sync: string
@@ -38,6 +51,50 @@ vendors:
           - from: string            # Required
             to: string              # Optional (empty=auto)
 ```
+
+### Compliance Enforcement (Spec 075)
+
+The `compliance` block controls enforcement levels for vendor drift:
+
+```yaml
+compliance:
+  default: lenient    # Default level for all vendors
+  mode: default       # How per-vendor overrides work
+```
+
+| Field | Values | Default | Description |
+|-------|--------|---------|-------------|
+| `default` | `strict`, `lenient`, `info` | `lenient` | Fallback enforcement level |
+| `mode` | `default`, `override` | `default` | Per-vendor override behavior |
+
+**Enforcement levels:**
+
+| Level | Exit code on drift | Commit gate | Build gate | Use case |
+|-------|-------------------|-------------|------------|----------|
+| `strict` | 1 (FAIL) | Blocks | Blocks | Security-critical code |
+| `lenient` | 2 (WARN) | Blocks | Passes | Documentation, non-critical files |
+| `info` | 0 (PASS) | Passes | Passes | Experimental vendors |
+
+**Mode semantics:**
+
+| Mode | Behavior |
+|------|----------|
+| `default` | Per-vendor `compliance` field overrides global default. Vendors without it inherit global. |
+| `override` | Global `compliance.default` wins for ALL vendors regardless of per-vendor setting. |
+
+**Per-vendor override:**
+
+```yaml
+vendors:
+  - name: security-lib
+    compliance: strict    # Escalates this vendor to strict
+    # ...
+  - name: readme-sync
+    compliance: info      # Demotes this vendor to info
+    # ...
+```
+
+When no `compliance` block exists, all vendors default to `lenient` (backward compatible with existing `BlockOnDrift`/`BlockOnStale` policy behavior).
 
 ### Complete Example
 

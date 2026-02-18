@@ -43,6 +43,20 @@ func (s *ValidationService) ValidateConfig() error {
 		return fmt.Errorf("no vendors configured. Run 'git-vendor add' to add your first dependency")
 	}
 
+	// Validate global compliance config (Spec 075)
+	if config.Compliance != nil {
+		if config.Compliance.Default != "" && config.Compliance.Default != EnforcementStrict &&
+			config.Compliance.Default != EnforcementLenient && config.Compliance.Default != EnforcementInfo {
+			return fmt.Errorf("compliance.default must be %q, %q, or %q",
+				EnforcementStrict, EnforcementLenient, EnforcementInfo)
+		}
+		if config.Compliance.Mode != "" && config.Compliance.Mode != ComplianceModeDefault &&
+			config.Compliance.Mode != ComplianceModeOverride {
+			return fmt.Errorf("compliance.mode must be %q or %q",
+				ComplianceModeDefault, ComplianceModeOverride)
+		}
+	}
+
 	// Check for duplicate vendor names and validate name safety
 	names := make(map[string]bool)
 	for _, vendor := range config.Vendors {
@@ -100,6 +114,14 @@ func (s *ValidationService) validateVendor(vendor *types.VendorSpec) error {
 		if err := ValidateVendorURL(mirror); err != nil {
 			return fmt.Errorf("vendor %s: mirror[%d]: %w", vendor.Name, i, err)
 		}
+	}
+
+	// Validate per-vendor enforcement level (Spec 075)
+	if vendor.Enforcement != "" && vendor.Enforcement != EnforcementStrict &&
+		vendor.Enforcement != EnforcementLenient && vendor.Enforcement != EnforcementInfo {
+		return NewValidationError(vendor.Name, "", "compliance",
+			fmt.Sprintf("compliance must be empty, %q, %q, or %q",
+				EnforcementStrict, EnforcementLenient, EnforcementInfo))
 	}
 
 	// Validate vendor has at least one spec
@@ -286,9 +308,16 @@ func (s *ValidationService) validateInternalVendor(vendor *types.VendorSpec) err
 	if vendor.Hooks != nil {
 		return NewValidationError(vendor.Name, "", "hooks", "internal vendors MUST NOT have hooks")
 	}
-	if vendor.Compliance != "" && vendor.Compliance != ComplianceSourceCanonical && vendor.Compliance != ComplianceBidirectional {
+	if vendor.Direction != "" && vendor.Direction != ComplianceSourceCanonical && vendor.Direction != ComplianceBidirectional {
+		return NewValidationError(vendor.Name, "", "direction",
+			fmt.Sprintf("direction must be empty, %q, or %q", ComplianceSourceCanonical, ComplianceBidirectional))
+	}
+	// Validate per-vendor enforcement level (Spec 075)
+	if vendor.Enforcement != "" && vendor.Enforcement != EnforcementStrict &&
+		vendor.Enforcement != EnforcementLenient && vendor.Enforcement != EnforcementInfo {
 		return NewValidationError(vendor.Name, "", "compliance",
-			fmt.Sprintf("compliance must be empty, %q, or %q", ComplianceSourceCanonical, ComplianceBidirectional))
+			fmt.Sprintf("compliance must be empty, %q, %q, or %q",
+				EnforcementStrict, EnforcementLenient, EnforcementInfo))
 	}
 	if len(vendor.Specs) == 0 {
 		return fmt.Errorf("vendor %s has no specs configured", vendor.Name)

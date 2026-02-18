@@ -71,6 +71,7 @@ internal/
     cascade_service.go           # Cascade command: transitive graph pull across sibling projects (CLI-006)
     status_service.go            # Status command: unified verify+outdated inspection (CLI-001)
     policy_service.go            # Policy engine: vendor.yml policy evaluation for commit guard (GRD-002)
+    enforcement_service.go       # Compliance enforcement: resolve levels + exit codes (Spec 075)
     config_commands.go           # LLM-friendly CLI (Spec 072) + mirror management
     cli_response.go              # JSON output types for Spec 072
     remote_fallback.go           # Multi-remote: ResolveVendorURLs + FetchWithFallback
@@ -122,7 +123,8 @@ Internal vendors track files **within the same repository** for consistency enfo
 | VendorSpec Field | Purpose |
 |-----------------|---------|
 | `Source` | `""` (external, default) or `"internal"` |
-| `Compliance` | `""` (source-canonical, default) or `"bidirectional"` |
+| `Direction` | `""` (source-canonical, default) or `"bidirectional"` (YAML: `direction`) |
+| `Enforcement` | `""` (inherits global) or `"strict"`/`"lenient"`/`"info"` (YAML: `compliance`) |
 
 | LockDetails Field | Purpose |
 |------------------|---------|
@@ -166,6 +168,17 @@ Policy lives in `vendor.yml` at top level (global defaults) with per-vendor over
 - `max_staleness_days` (int, optional): grace window before staleness becomes blocking
 
 Per-vendor policy inherits from global and overrides specific fields. Implementation: `policy_service.go` (PolicyService, VendorPolicy, PolicyViolation, ResolvedPolicy).
+
+## Compliance Enforcement (Spec 075)
+
+Three enforcement levels control how drift affects exit codes and commit gates:
+- `strict`: drift → exit 1 (FAIL), blocks commits AND builds
+- `lenient`: drift → exit 2 (WARN), blocks commits only
+- `info`: drift → exit 0 (PASS), reported but blocks nothing
+
+Configuration in vendor.yml via `compliance:` block (global) and per-vendor `compliance:` field. Modes: `default` (per-vendor overrides global) and `override` (global wins for all). Implementation: `enforcement_service.go` (EnforcementService, ResolveVendorEnforcement, ComputeExitCode).
+
+CLI: `status --strict-only` filters to strict vendors. `status --compliance=<level>` overrides all vendors. `compliance` command shows effective levels.
 
 ## Lock Conflict Detection
 

@@ -45,7 +45,7 @@ func makeInternalConfig(name, compliance, srcPath, destPath string) types.Vendor
 			{
 				Name:       name,
 				Source:     SourceInternal,
-				Compliance: compliance,
+				Direction: compliance,
 				Specs: []types.BranchSpec{
 					{
 						Ref: RefLocal,
@@ -507,7 +507,7 @@ func TestCompliancePositionUpdate_LineRangeExpandsWithDelta(t *testing.T) {
 			{
 				Name:       "pos-vendor",
 				Source:     SourceInternal,
-				Compliance: ComplianceSourceCanonical,
+				Direction: ComplianceSourceCanonical,
 				Specs: []types.BranchSpec{
 					{
 						Ref: RefLocal,
@@ -592,7 +592,7 @@ func TestCompliancePositionUpdate_ToEOFNoChange(t *testing.T) {
 			{
 				Name:       "pos-vendor",
 				Source:     SourceInternal,
-				Compliance: ComplianceSourceCanonical,
+				Direction: ComplianceSourceCanonical,
 				Specs: []types.BranchSpec{
 					{Ref: RefLocal, Mapping: []types.PathMapping{
 						{From: srcFile, To: destFile},
@@ -659,7 +659,7 @@ func TestCompliancePositionUpdate_NegativeDeltaShrinksPastStartLine(t *testing.T
 			{
 				Name:       "shrink-vendor",
 				Source:     SourceInternal,
-				Compliance: ComplianceSourceCanonical,
+				Direction: ComplianceSourceCanonical,
 				Specs: []types.BranchSpec{
 					{Ref: RefLocal, Mapping: []types.PathMapping{
 						{From: srcFile, To: destFile},
@@ -718,8 +718,8 @@ func TestComplianceCheck_DefaultsToSourceCanonical(t *testing.T) {
 	}
 
 	entry := result.Entries[0]
-	if entry.Compliance != ComplianceSourceCanonical {
-		t.Errorf("expected compliance source-canonical, got %q", entry.Compliance)
+	if entry.SyncDirection != ComplianceSourceCanonical {
+		t.Errorf("expected compliance source-canonical, got %q", entry.SyncDirection)
 	}
 	if entry.Action != "warning: dest modified (source-canonical)" {
 		t.Errorf("expected warning action, got %q", entry.Action)
@@ -801,7 +801,7 @@ func TestValidateInternalVendor_ValidConfig(t *testing.T) {
 			{
 				Name:       "internal-lib",
 				Source:     SourceInternal,
-				Compliance: ComplianceSourceCanonical,
+				Direction: ComplianceSourceCanonical,
 				Specs: []types.BranchSpec{
 					{
 						Ref: RefLocal,
@@ -888,7 +888,7 @@ func TestValidateInternalVendor_RejectsInvalidCompliance(t *testing.T) {
 			{
 				Name:       "bad-compliance",
 				Source:     SourceInternal,
-				Compliance: "invalid-mode",
+				Direction: "invalid-mode",
 				Specs:      []types.BranchSpec{{Ref: RefLocal, Mapping: []types.PathMapping{{From: "src.go", To: "dest.go"}}}},
 			},
 		},
@@ -898,6 +898,98 @@ func TestValidateInternalVendor_RejectsInvalidCompliance(t *testing.T) {
 	err := svc.ValidateConfig()
 	if err == nil {
 		t.Fatal("expected error for invalid compliance mode")
+	}
+	if !contains(err.Error(), "compliance") {
+		t.Errorf("expected compliance validation error, got: %v", err)
+	}
+}
+
+// ============================================================================
+// Global ComplianceConfig Validation Tests (Spec 075)
+// ============================================================================
+
+func TestValidateConfig_RejectsInvalidComplianceDefault(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Compliance: &types.ComplianceConfig{Default: "bogus"},
+		Vendors: []types.VendorSpec{
+			{Name: "lib-a", URL: "https://example.com/a",
+				Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "a.go", To: "a.go"}}}}},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid compliance.default")
+	}
+	if !contains(err.Error(), "compliance.default") {
+		t.Errorf("expected compliance.default validation error, got: %v", err)
+	}
+}
+
+func TestValidateConfig_RejectsInvalidComplianceMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Compliance: &types.ComplianceConfig{Mode: "bogus"},
+		Vendors: []types.VendorSpec{
+			{Name: "lib-a", URL: "https://example.com/a",
+				Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "a.go", To: "a.go"}}}}},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid compliance.mode")
+	}
+	if !contains(err.Error(), "compliance.mode") {
+		t.Errorf("expected compliance.mode validation error, got: %v", err)
+	}
+}
+
+func TestValidateConfig_AcceptsValidComplianceConfig(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Compliance: &types.ComplianceConfig{Default: EnforcementStrict, Mode: ComplianceModeOverride},
+		Vendors: []types.VendorSpec{
+			{Name: "lib-a", URL: "https://example.com/a", Enforcement: EnforcementInfo,
+				Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "a.go", To: "a.go"}}}}},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err != nil {
+		t.Errorf("expected valid compliance config to pass, got: %v", err)
+	}
+}
+
+func TestValidateConfig_RejectsInvalidPerVendorEnforcement(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockConfig := NewMockConfigStore(ctrl)
+
+	mockConfig.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{Name: "lib-a", URL: "https://example.com/a", Enforcement: "invalid-level",
+				Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "a.go", To: "a.go"}}}}},
+		},
+	}, nil)
+
+	svc := NewValidationService(mockConfig)
+	err := svc.ValidateConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid per-vendor enforcement level")
 	}
 	if !contains(err.Error(), "compliance") {
 		t.Errorf("expected compliance validation error, got: %v", err)
@@ -1061,7 +1153,7 @@ func TestVerifyInternalEntries_DetectsDrift(t *testing.T) {
 			{
 				Name:       "internal-lib",
 				Source:     SourceInternal,
-				Compliance: ComplianceSourceCanonical,
+				Direction: ComplianceSourceCanonical,
 				Specs: []types.BranchSpec{
 					{Ref: RefLocal, Mapping: []types.PathMapping{{From: "src.go", To: "dest.go"}}},
 				},
@@ -1235,7 +1327,7 @@ func TestVerifyInternalEntries_MixedInternalExternal(t *testing.T) {
 			{
 				Name:       "internal-lib",
 				Source:     SourceInternal,
-				Compliance: ComplianceBidirectional,
+				Direction: ComplianceBidirectional,
 				Specs: []types.BranchSpec{
 					{Ref: RefLocal, Mapping: []types.PathMapping{{From: "src.go", To: "dest.go"}}},
 				},
@@ -1296,8 +1388,8 @@ func TestVerifyInternalEntries_MixedInternalExternal(t *testing.T) {
 	if entry.Direction != types.DriftSynced {
 		t.Errorf("expected synced, got %s", entry.Direction)
 	}
-	if entry.Compliance != ComplianceBidirectional {
-		t.Errorf("expected bidirectional compliance, got %q", entry.Compliance)
+	if entry.SyncDirection != ComplianceBidirectional {
+		t.Errorf("expected bidirectional compliance, got %q", entry.SyncDirection)
 	}
 }
 

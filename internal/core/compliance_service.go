@@ -94,7 +94,7 @@ func (s *ComplianceService) Check(opts ComplianceOptions) (*types.ComplianceResu
 			continue
 		}
 
-		compliance := vendorConfig.Compliance
+		compliance := vendorConfig.Direction
 		if compliance == "" {
 			compliance = ComplianceSourceCanonical
 		}
@@ -171,7 +171,7 @@ func (s *ComplianceService) checkLockEntry(lockEntry *types.LockDetails, complia
 				VendorName:        lockEntry.Name,
 				FromPath:          srcPath,
 				ToPath:            destPath,
-				Compliance:        compliance,
+				SyncDirection:     compliance,
 				SourceHashLocked:  lockedSrcHash,
 				SourceHashCurrent: hashOrError(currentSrcHash, srcErr),
 				DestHashLocked:    lockedDestHash,
@@ -213,7 +213,7 @@ func (s *ComplianceService) propagateEntry(entry *types.ComplianceEntry, opts Co
 	case types.DriftSourceDrift:
 		src, dest = entry.FromPath, entry.ToPath
 	case types.DriftDestDrift:
-		if entry.Compliance == ComplianceBidirectional || opts.Reverse {
+		if entry.SyncDirection == ComplianceBidirectional || opts.Reverse {
 			src, dest = entry.ToPath, entry.FromPath
 		} else {
 			// Source-canonical without --reverse: warn only, no copy

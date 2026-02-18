@@ -335,7 +335,7 @@ Found 2 conflict(s)
 
 ### status
 
-Check if local files are in sync with the lock file.
+Unified inspection command: merges verify (offline) and outdated (remote) checks into a single per-vendor report.
 
 **Usage:**
 
@@ -345,50 +345,91 @@ git-vendor status [options]
 
 **Options:**
 
-| Flag          | Description                          |
-| ------------- | ------------------------------------ |
-| `--json`      | Output in JSON format for automation |
-| `--quiet, -q` | No output, exit code only            |
+| Flag                      | Description                                                      |
+| ------------------------- | ---------------------------------------------------------------- |
+| `--json`                  | Output in JSON format for automation                             |
+| `--quiet, -q`             | No output, exit code only                                        |
+| `--offline`               | Skip remote checks (lock-vs-disk only)                           |
+| `--remote-only`           | Skip disk checks (lock-vs-upstream only)                         |
+| `--strict-only`           | Only check vendors with `compliance: strict` (Spec 075)          |
+| `--compliance=<level>`    | Override all vendors to given enforcement level for this run      |
+| `--format=<table\|json>`  | Output format (default: table)                                   |
 
 **This command verifies:**
 
 - All vendored files exist at their configured paths
 - Files haven't been manually modified since sync
 - Lock file entries have corresponding local files
+- Upstream staleness (unless `--offline`)
+- Policy violations (drift blocking, staleness thresholds)
+- Compliance enforcement levels (when configured)
 
 **Examples:**
 
 ```bash
-# Check sync status (normal output)
+# Full status (offline + remote)
 git-vendor status
 
+# Offline only (fast, no network)
+git-vendor status --offline
+
 # JSON output for automation
-git-vendor status --json
+git-vendor status --format json
+
+# Only check strict-compliance vendors
+git-vendor status --strict-only
+
+# Override all vendors to strict for this run
+git-vendor status --compliance=strict
 
 # Quiet mode (exit code only)
 git-vendor status --quiet
 ```
 
+**Exit codes:**
+
+- `0` - PASS (everything matches, or only info-level drift)
+- `1` - FAIL (strict drift, modified/deleted files, upstream stale)
+- `2` - WARN (lenient drift, added files, accepted drift)
+
+When compliance enforcement is configured, exit codes reflect the highest-severity enforcement level among drifted vendors: strict drift → 1, lenient drift → 2, info drift → 0.
+
+---
+
+### compliance
+
+Show effective compliance enforcement levels for all vendors. Resolves global defaults, per-vendor overrides, and mode settings into the effective level each vendor is enforced at.
+
+**Usage:**
+
+```bash
+git-vendor compliance
+```
+
 **Example output:**
 
 ```text
-✔ All vendors synced
+Global default: lenient
+Mode: default
 
-# Or if out of sync:
-! Vendors Need Syncing
-2 vendors out of sync
-
-⚠ my-vendor @ main
-  • Missing: lib/utils.go
-  • Missing: lib/types.go
-
-Run 'git-vendor sync' to fix.
+Vendor                         Configured      Effective
+charmbracelet-huh              (inherited)     lenient
+security-lib                   strict          strict
+readme-sync                    info            info
 ```
 
-**Exit codes:**
+With override mode:
 
-- `0` - All vendors are synced
-- `1` - Some vendors need syncing
+```text
+Global default: strict
+Mode: override
+  Note: override mode — all vendors enforced at strict
+
+Vendor                         Configured      Effective
+charmbracelet-huh              (inherited)     strict
+security-lib                   strict          strict
+readme-sync                    info            strict  <- overridden
+```
 
 ---
 

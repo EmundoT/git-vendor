@@ -25,6 +25,7 @@ var commands = []string{
 	"watch",
 	"completion",
 	"help",
+	"compliance",
 	// LLM-friendly commands (Spec 072)
 	"create",
 	"delete",
@@ -75,8 +76,11 @@ _git_vendor_completions() {
         remove)
             opts="--yes -y --quiet -q --json"
             ;;
-        list|validate|status|check-updates)
+        list|validate|check-updates)
             opts="--quiet -q --json"
+            ;;
+        status)
+            opts="--quiet -q --json --offline --remote-only --strict-only --compliance= --format"
             ;;
         completion)
             opts="bash zsh fish powershell"
@@ -107,6 +111,9 @@ _git_vendor_completions() {
             ;;
         config)
             opts="get set list --json"
+            ;;
+        compliance)
+            opts=""
             ;;
     esac
 
@@ -183,11 +190,22 @@ _git_vendor() {
                         '-q[Minimal output]' \
                         '--json[JSON output]'
                     ;;
-                list|validate|status|check-updates)
+                list|validate|check-updates)
                     _arguments \
                         '--quiet[Minimal output]' \
                         '-q[Minimal output]' \
                         '--json[JSON output]'
+                    ;;
+                status)
+                    _arguments \
+                        '--quiet[Minimal output]' \
+                        '-q[Minimal output]' \
+                        '--json[JSON output]' \
+                        '--offline[Skip remote checks]' \
+                        '--remote-only[Skip disk checks]' \
+                        '--strict-only[Only check strict vendors]' \
+                        '--compliance=[Override compliance level]:level:(strict lenient info)' \
+                        '--format=[Output format]:format:(table json)'
                     ;;
                 completion)
                     _arguments '1:shell:(bash zsh fish powershell)'
@@ -228,6 +246,8 @@ _git_vendor() {
                     ;;
                 config)
                     _arguments '1:subcommand:(get set list)'
+                    ;;
+                compliance)
                     ;;
             esac
             ;;
@@ -279,9 +299,16 @@ func GenerateFishCompletion() string {
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from remove' -l quiet -s q -d 'Minimal output'")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from remove' -l json -d 'JSON output'")
 
-	completions = append(completions, "# list/validate/status/check-updates flags")
-	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from list validate status check-updates' -l quiet -s q -d 'Minimal output'")
-	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from list validate status check-updates' -l json -d 'JSON output'")
+	completions = append(completions, "# list/validate/check-updates flags")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from list validate check-updates' -l quiet -s q -d 'Minimal output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from list validate check-updates' -l json -d 'JSON output'")
+	completions = append(completions, "# status command flags")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from status' -l quiet -s q -d 'Minimal output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from status' -l json -d 'JSON output'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from status' -l offline -d 'Skip remote checks'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from status' -l remote-only -d 'Skip disk checks'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from status' -l strict-only -d 'Only check strict vendors'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from status' -l compliance -d 'Override compliance level' -r")
 
 	completions = append(completions, "# completion command shells")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from completion' -f -a 'bash zsh fish powershell'")
@@ -356,8 +383,14 @@ Register-ArgumentCompleter -Native -CommandName git-vendor -ScriptBlock {
                         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
                     }
             }
-            { $_ -in 'list','validate','status','check-updates' } {
+            { $_ -in 'list','validate','check-updates' } {
                 @('--quiet', '-q', '--json') |
+                    Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                    }
+            }
+            'status' {
+                @('--quiet', '-q', '--json', '--offline', '--remote-only', '--strict-only', '--compliance=', '--format') |
                     Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
                     }
@@ -441,6 +474,7 @@ func getCommandDescription(cmd string) string {
 		"show":           "Show vendor details",
 		"check":          "Check vendor sync status",
 		"preview":        "Preview what would be synced",
+		"compliance":     "Show effective compliance levels",
 		"config":         "Get or set configuration values",
 	}
 

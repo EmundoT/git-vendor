@@ -117,12 +117,21 @@ func parseCommonFlags(args []string) (core.NonInteractiveFlags, []string) {
 // printStatusHuman renders a StatusResult in the human-readable format specified
 // by CLI-REDESIGN.md. Groups output by vendor, showing verify + outdated info.
 func printStatusHuman(result *types.StatusResult) {
+	// Show override mode notice when applicable (Spec 075)
+	if result.ComplianceConfig != nil && result.ComplianceConfig.Mode == core.ComplianceModeOverride {
+		fmt.Printf("  Note: override mode active — all vendors enforced at %s\n\n", result.ComplianceConfig.Default)
+	}
+
 	for _, v := range result.Vendors {
 		shortHash := v.CommitHash
 		if len(shortHash) > 7 {
 			shortHash = shortHash[:7]
 		}
-		fmt.Printf("  %s (%s @ %s)\n", v.Name, v.Ref, shortHash)
+		enfLabel := ""
+		if v.Enforcement != "" {
+			enfLabel = fmt.Sprintf(" (%s)", v.Enforcement)
+		}
+		fmt.Printf("  %s (%s @ %s)%s\n", v.Name, v.Ref, shortHash, enfLabel)
 
 		// Offline results
 		totalChecked := v.FilesVerified + v.FilesModified + v.FilesDeleted
@@ -1019,6 +1028,8 @@ func main() {
 		format := "table"
 		offline := false
 		remoteOnly := false
+		strictOnly := false
+		complianceOverride := ""
 
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
@@ -1036,6 +1047,13 @@ func main() {
 				offline = true
 			case arg == "--remote-only":
 				remoteOnly = true
+			case arg == "--strict-only":
+				strictOnly = true
+			case strings.HasPrefix(arg, "--compliance="):
+				complianceOverride = strings.TrimPrefix(arg, "--compliance=")
+			case arg == "--compliance" && i+1 < len(args):
+				i++
+				complianceOverride = args[i]
 			}
 		}
 
@@ -1058,8 +1076,10 @@ func main() {
 		defer stop()
 
 		result, err := manager.Status(ctx, core.StatusOptions{
-			Offline:    offline,
-			RemoteOnly: remoteOnly,
+			Offline:            offline,
+			RemoteOnly:         remoteOnly,
+			StrictOnly:         strictOnly,
+			ComplianceOverride: complianceOverride,
 		})
 		if err != nil {
 			callback.ShowError("Status Failed", err.Error())
@@ -1086,6 +1106,56 @@ func main() {
 			os.Exit(2)
 		default: // FAIL
 			os.Exit(1)
+		}
+
+	case "compliance":
+		// Show effective compliance levels for all vendors (Spec 075)
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		configStore := core.NewFileConfigStore(".")
+		config, err := configStore.Load()
+		if err != nil {
+			tui.PrintError("Config Load Failed", err.Error())
+			os.Exit(1)
+		}
+
+		enfSvc := core.NewEnforcementService()
+		enfMap := enfSvc.ResolveVendorEnforcement(&config)
+
+		// Print global settings
+		globalDefault := core.EnforcementLenient
+		mode := core.ComplianceModeDefault
+		if config.Compliance != nil {
+			if config.Compliance.Default != "" {
+				globalDefault = config.Compliance.Default
+			}
+			if config.Compliance.Mode != "" {
+				mode = config.Compliance.Mode
+			}
+		}
+		fmt.Printf("Global default: %s\n", globalDefault)
+		fmt.Printf("Mode: %s\n", mode)
+		if mode == core.ComplianceModeOverride {
+			fmt.Printf("  Note: override mode — all vendors enforced at %s\n", globalDefault)
+		}
+		fmt.Println()
+
+		// Print table
+		fmt.Printf("%-30s %-15s %s\n", "Vendor", "Configured", "Effective")
+		for _, vendor := range config.Vendors {
+			configured := "(inherited)"
+			if vendor.Enforcement != "" {
+				configured = vendor.Enforcement
+			}
+			effective := enfMap[vendor.Name]
+			fmt.Printf("%-30s %-15s %s", vendor.Name, configured, effective)
+			if mode == core.ComplianceModeOverride && vendor.Enforcement != "" && vendor.Enforcement != effective {
+				fmt.Print("  <- overridden")
+			}
+			fmt.Println()
 		}
 
 	case "scan":

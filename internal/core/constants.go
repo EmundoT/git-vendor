@@ -55,6 +55,24 @@ const (
 	ComplianceBidirectional = "bidirectional"
 )
 
+// Enforcement levels for vendor compliance (Spec 075).
+const (
+	// EnforcementStrict means drift blocks builds AND commits (exit code 1).
+	EnforcementStrict = "strict"
+	// EnforcementLenient means drift blocks commits but NOT builds (exit code 2).
+	EnforcementLenient = "lenient"
+	// EnforcementInfo means drift is reported but blocks nothing (exit code 0).
+	EnforcementInfo = "info"
+)
+
+// Compliance mode constants for ComplianceConfig.Mode (Spec 075).
+const (
+	// ComplianceModeDefault lets per-vendor compliance override global default.
+	ComplianceModeDefault = "default"
+	// ComplianceModeOverride forces global compliance.default for ALL vendors.
+	ComplianceModeOverride = "override"
+)
+
 // AllowedLicenses defines the list of open-source licenses permitted by default.
 // AllowedLicenses uses SPDX license identifiers.
 var AllowedLicenses = []string{

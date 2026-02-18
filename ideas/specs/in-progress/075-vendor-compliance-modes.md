@@ -1,6 +1,6 @@
 # Spec 075: Vendor Compliance Modes
 
-> **Status:** Draft
+> **Status:** Implemented (hook install deferred)
 > **Priority:** P1 - Enforcement Foundation
 > **Effort:** 1-2 weeks
 > **Dependencies:** 002 (Verify Hardening)

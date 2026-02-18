@@ -340,7 +340,7 @@ func (s *VerifyService) verifyInternalEntries(lock types.VendorLock, config type
 			continue
 		}
 
-		compliance := vendorConfig.Compliance
+		compliance := vendorConfig.Direction
 		if compliance == "" {
 			compliance = ComplianceSourceCanonical
 		}
@@ -391,7 +391,7 @@ func (s *VerifyService) verifyInternalEntries(lock types.VendorLock, config type
 					FromPath:          srcPath,
 					ToPath:            destPath,
 					Direction:         direction,
-					Compliance:        compliance,
+					SyncDirection:     compliance,
 					SourceHashLocked:  lockedSrcHash,
 					SourceHashCurrent: currentSrcDisplay,
 					DestHashLocked:    lockedDestHash,

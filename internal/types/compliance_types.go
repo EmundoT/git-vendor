@@ -28,7 +28,7 @@ type ComplianceEntry struct {
 	FromPath          string                   `json:"from_path"`
 	ToPath            string                   `json:"to_path"`
 	Direction         ComplianceDriftDirection `json:"direction"`
-	Compliance        string                   `json:"compliance"`           // "source-canonical" or "bidirectional"
+	SyncDirection     string                   `json:"sync_direction"`       // "source-canonical" or "bidirectional" (renamed from Compliance for Spec 075)
 	SourceHashLocked  string                   `json:"source_hash_locked"`
 	SourceHashCurrent string                   `json:"source_hash_current"`
 	DestHashLocked    string                   `json:"dest_hash_locked"`

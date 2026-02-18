@@ -2252,7 +2252,7 @@ func TestVerify_InternalVendor_SourceDrift(t *testing.T) {
 			{
 				Name:       "internal-cfg",
 				Source:     SourceInternal,
-				Compliance: ComplianceSourceCanonical,
+				Direction: ComplianceSourceCanonical,
 				Specs: []types.BranchSpec{{
 					Ref: RefLocal,
 					Mapping: []types.PathMapping{
@@ -2315,8 +2315,8 @@ func TestVerify_InternalVendor_SourceDrift(t *testing.T) {
 	if entry.Action != "propagate source → dest" {
 		t.Errorf("Expected action 'propagate source → dest', got %q", entry.Action)
 	}
-	if entry.Compliance != ComplianceSourceCanonical {
-		t.Errorf("Expected compliance %q, got %q", ComplianceSourceCanonical, entry.Compliance)
+	if entry.SyncDirection != ComplianceSourceCanonical {
+		t.Errorf("Expected compliance %q, got %q", ComplianceSourceCanonical, entry.SyncDirection)
 	}
 }
 
@@ -2341,7 +2341,7 @@ func TestVerify_InternalVendor_DestDrift(t *testing.T) {
 			{
 				Name:       "internal-util",
 				Source:     SourceInternal,
-				Compliance: ComplianceSourceCanonical,
+				Direction: ComplianceSourceCanonical,
 				Specs: []types.BranchSpec{{
 					Ref: RefLocal,
 					Mapping: []types.PathMapping{
@@ -2421,7 +2421,7 @@ func TestVerify_InternalVendor_DestDrift_Bidirectional(t *testing.T) {
 			{
 				Name:       "internal-bidir",
 				Source:     SourceInternal,
-				Compliance: ComplianceBidirectional,
+				Direction: ComplianceBidirectional,
 				Specs: []types.BranchSpec{{
 					Ref: RefLocal,
 					Mapping: []types.PathMapping{
@@ -2468,8 +2468,8 @@ func TestVerify_InternalVendor_DestDrift_Bidirectional(t *testing.T) {
 	if entry.Action != "propagate dest → source" {
 		t.Errorf("Expected bidirectional propagation action, got %q", entry.Action)
 	}
-	if entry.Compliance != ComplianceBidirectional {
-		t.Errorf("Expected compliance %q, got %q", ComplianceBidirectional, entry.Compliance)
+	if entry.SyncDirection != ComplianceBidirectional {
+		t.Errorf("Expected compliance %q, got %q", ComplianceBidirectional, entry.SyncDirection)
 	}
 }
 
