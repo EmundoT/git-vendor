@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/EmundoT/git-vendor/cmd"
 )
 
 // TestRewriteDeprecatedCommand_AllAliases verifies that each deprecated command
@@ -165,21 +167,22 @@ func TestRewriteDeprecatedCommand_NoTrailingArgs(t *testing.T) {
 	}
 }
 
-// TestDeprecatedCommandsMapCompleteness ensures every entry in the
-// deprecatedCommands map has a matching entry in the cmd.DeprecatedCommands
-// map used by shell completion, and vice versa.
+// TestDeprecatedCommandsMapCompleteness ensures the deprecatedCommands map
+// (used for arg rewriting) and cmd.DeprecatedCommands (used for shell
+// completion) stay in sync. Every rewrite alias must have a completion entry
+// and vice versa.
 func TestDeprecatedCommandsMapCompleteness(t *testing.T) {
-	for cmd := range deprecatedCommands {
-		if _, ok := deprecatedCommands[cmd]; !ok {
-			t.Errorf("deprecatedCommands has %q but deprecatedCommands map is missing it", cmd)
+	completionCmds := cmd.DeprecatedCommands
+
+	for name := range deprecatedCommands {
+		if _, ok := completionCmds[name]; !ok {
+			t.Errorf("deprecatedCommands has %q but cmd.DeprecatedCommands (shell completion) is missing it", name)
 		}
 	}
 
-	// Verify all 5 expected aliases are present
-	expected := []string{"sync", "update", "verify", "diff", "outdated"}
-	for _, cmd := range expected {
-		if _, ok := deprecatedCommands[cmd]; !ok {
-			t.Errorf("expected deprecated alias for %q, not found in deprecatedCommands", cmd)
+	for name := range completionCmds {
+		if _, ok := deprecatedCommands[name]; !ok {
+			t.Errorf("cmd.DeprecatedCommands has %q but deprecatedCommands (arg rewriting) is missing it", name)
 		}
 	}
 }

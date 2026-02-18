@@ -80,14 +80,6 @@ func rewriteDeprecatedCommand(command string) string {
 	return alias.newCommand
 }
 
-// minLen returns the smaller of a and b. Used for safe hash truncation in display output.
-func minLen(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // formatShortDate formats an RFC3339 timestamp to just the date portion
 func formatShortDate(timestamp string) string {
 	if len(timestamp) >= 10 {
@@ -289,8 +281,8 @@ func main() {
 		// Show next steps
 		fmt.Println()
 		fmt.Println("Next steps:")
-		fmt.Println("  git-vendor sync      # Download files at locked versions")
-		fmt.Println("  git vendor update    # Fetch latest commits (also works)")
+		fmt.Println("  git-vendor pull --locked  # Download files at locked versions")
+		fmt.Println("  git-vendor pull           # Fetch latest commits")
 
 	case "edit":
 		if !core.IsVendorInitialized() {
@@ -563,254 +555,6 @@ func main() {
 			}
 		}
 
-	case "sync":
-		// Parse common flags
-		flags, args := parseCommonFlags(os.Args[2:])
-
-		// Create appropriate callback
-		var callback core.UICallback
-		if flags.Yes || flags.Mode != core.OutputNormal {
-			callback = tui.NewNonInteractiveTUICallback(flags)
-		} else {
-			callback = tui.NewTUICallback()
-		}
-		manager.SetUICallback(callback)
-
-		// Parse command-specific flags
-		dryRun := false
-		force := false
-		noCache := false
-		vendorName := ""
-		groupName := ""
-		parallel := false
-		workers := 0
-		commit := false
-		internalOnly := false
-		reverse := false
-		local := false
-
-		for i := 0; i < len(args); i++ {
-			arg := args[i]
-			switch {
-			case arg == "--dry-run":
-				dryRun = true
-			case arg == "--force":
-				force = true
-			case arg == "--no-cache":
-				noCache = true
-			case arg == "--commit":
-				commit = true
-			case arg == "--parallel":
-				parallel = true
-			case arg == "--internal":
-				internalOnly = true
-			case arg == "--reverse":
-				reverse = true
-			case arg == "--local":
-				local = true
-			case arg == "--workers":
-				if i+1 < len(args) {
-					if _, err := fmt.Sscanf(args[i+1], "%d", &workers); err != nil {
-						callback.ShowError("Invalid Flag", fmt.Sprintf("--workers requires a valid number, got: %s", args[i+1]))
-						os.Exit(1)
-					}
-					i++ // Skip next arg
-				} else {
-					callback.ShowError("Invalid Flag", "--workers requires a number")
-					os.Exit(1)
-				}
-			case arg == "--group":
-				if i+1 < len(args) {
-					groupName = args[i+1]
-					i++ // Skip next arg
-				} else {
-					callback.ShowError("Invalid Flag", "--group requires a group name")
-					os.Exit(1)
-				}
-			case arg == "--verbose" || arg == "-v":
-				core.Verbose = true
-				manager.UpdateVerboseMode(true)
-			case !strings.HasPrefix(arg, "--"):
-				vendorName = arg
-			}
-		}
-
-		// --reverse requires --internal
-		if reverse && !internalOnly {
-			callback.ShowError("Invalid Options", "--reverse requires --internal")
-			os.Exit(1)
-		}
-
-		// Validate that vendor name and group are not both specified
-		if vendorName != "" && groupName != "" {
-			callback.ShowError("Invalid Options", "Cannot specify both vendor name and --group")
-			os.Exit(1)
-		}
-
-		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
-			os.Exit(1)
-		}
-
-		// Guard: --commit is incompatible with --dry-run
-		if commit && dryRun {
-			fmt.Println("Warning: --commit ignored during --dry-run")
-			commit = false
-		}
-
-		// Create signal-aware context for Ctrl+C cancellation
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
-
-		opts := core.SyncOptions{
-			DryRun:       dryRun,
-			VendorName:   vendorName,
-			GroupName:    groupName,
-			Force:        force,
-			NoCache:      noCache,
-			InternalOnly: internalOnly,
-			Reverse:      reverse,
-			Local:        local,
-		}
-		if parallel {
-			opts.Parallel = types.ParallelOptions{
-				Enabled:    true,
-				MaxWorkers: workers,
-			}
-		}
-		if err := manager.SyncWithFullOptions(ctx, opts); err != nil {
-			if dryRun {
-				callback.ShowError("Preview Failed", err.Error())
-			} else {
-				callback.ShowError("Sync Failed", err.Error())
-			}
-			os.Exit(1)
-		}
-		if dryRun {
-			if flags.Mode != core.OutputQuiet {
-				fmt.Println("This is a dry-run. No files were modified.")
-				fmt.Println("Run 'git-vendor sync' to apply changes.")
-			}
-		} else {
-			callback.ShowSuccess("Synced.")
-
-			// Auto-commit if --commit flag is set
-			if commit {
-				if err := manager.CommitVendorChanges("sync", vendorName); err != nil {
-					callback.ShowError("Commit Failed", err.Error())
-					os.Exit(1)
-				}
-				callback.ShowSuccess("Committed vendor changes.")
-			}
-		}
-
-	case "update":
-		// Parse common flags
-		flags, args := parseCommonFlags(os.Args[2:])
-
-		// Create appropriate callback
-		var callback core.UICallback
-		if flags.Yes || flags.Mode != core.OutputNormal {
-			callback = tui.NewNonInteractiveTUICallback(flags)
-		} else {
-			callback = tui.NewTUICallback()
-		}
-		manager.SetUICallback(callback)
-
-		// Parse command-specific flags
-		parallel := false
-		workers := 0
-		commit := false
-		local := false
-		vendorName := ""
-		groupName := ""
-
-		for i := 0; i < len(args); i++ {
-			arg := args[i]
-			switch {
-			case arg == "--verbose" || arg == "-v":
-				core.Verbose = true
-				manager.UpdateVerboseMode(true)
-			case arg == "--commit":
-				commit = true
-			case arg == "--parallel":
-				parallel = true
-			case arg == "--local":
-				local = true
-			case arg == "--workers":
-				if i+1 < len(args) {
-					if _, err := fmt.Sscanf(args[i+1], "%d", &workers); err != nil {
-						callback.ShowError("Invalid Flag", fmt.Sprintf("--workers requires a valid number, got: %s", args[i+1]))
-						os.Exit(1)
-					}
-					i++ // Skip next arg
-				} else {
-					callback.ShowError("Invalid Flag", "--workers requires a number")
-					os.Exit(1)
-				}
-			case arg == "--group":
-				if i+1 < len(args) {
-					groupName = args[i+1]
-					i++ // Skip next arg
-				} else {
-					callback.ShowError("Invalid Flag", "--group requires a group name")
-					os.Exit(1)
-				}
-			case !strings.HasPrefix(arg, "--"):
-				vendorName = arg
-			}
-		}
-
-		// Validate that vendor name and group are not both specified
-		if vendorName != "" && groupName != "" {
-			callback.ShowError("Invalid Options", "Cannot specify both vendor name and --group")
-			os.Exit(1)
-		}
-
-		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
-			os.Exit(1)
-		}
-
-		// Create signal-aware context for Ctrl+C cancellation
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
-
-		opts := core.UpdateOptions{
-			Local:      local,
-			VendorName: vendorName,
-			Group:      groupName,
-		}
-		if parallel {
-			opts.Parallel = types.ParallelOptions{
-				Enabled:    true,
-				MaxWorkers: workers,
-			}
-		}
-		if err := manager.UpdateAllWithOptions(ctx, opts); err != nil {
-			callback.ShowError("Update Failed", err.Error())
-			os.Exit(1)
-		}
-
-		// Tailor success message based on filter
-		switch {
-		case vendorName != "":
-			callback.ShowSuccess(fmt.Sprintf("Updated vendor '%s'.", vendorName))
-		case groupName != "":
-			callback.ShowSuccess(fmt.Sprintf("Updated group '%s'.", groupName))
-		default:
-			callback.ShowSuccess("Updated all vendors.")
-		}
-
-		// Auto-commit if --commit flag is set
-		if commit {
-			if err := manager.CommitVendorChanges("update", vendorName); err != nil {
-				callback.ShowError("Commit Failed", err.Error())
-				os.Exit(1)
-			}
-			callback.ShowSuccess("Committed vendor changes.")
-		}
-
 	case "pull":
 		// Parse common flags
 		flags, args := parseCommonFlags(os.Args[2:])
@@ -886,7 +630,6 @@ func main() {
 			NoCache:     noCache,
 			VendorName:  vendorName,
 			Local:       local,
-			Commit:      commit,
 		}
 
 		result, err := manager.Pull(ctx, pullOpts)
@@ -943,17 +686,28 @@ func main() {
 		}
 
 	case "accept":
+		// Parse common flags for --json/--quiet/--yes support
+		flags, args := parseCommonFlags(os.Args[2:])
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
-		// Parse accept-specific flags
+		// Parse accept-specific flags from remaining args
 		vendorName := ""
 		filePath := ""
 		clear := false
 		noCommit := false
-		args := os.Args[2:]
 
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
@@ -973,7 +727,7 @@ func main() {
 		}
 
 		if vendorName == "" {
-			tui.PrintError("Usage", "git-vendor accept <vendor-name> [--file <path>] [--clear] [--no-commit]")
+			callback.ShowError("Usage", "git-vendor accept <vendor-name> [--file <path>] [--clear] [--no-commit]")
 			os.Exit(1)
 		}
 
@@ -986,31 +740,51 @@ func main() {
 
 		result, err := manager.Accept(opts)
 		if err != nil {
-			tui.PrintError("Accept Failed", err.Error())
+			callback.ShowError("Accept Failed", err.Error())
 			os.Exit(1)
 		}
 
-		if clear {
-			for _, p := range result.ClearedFiles {
-				fmt.Printf("  cleared: %s\n", p)
+		// Output based on mode
+		if flags.Mode == core.OutputJSON {
+			data := map[string]interface{}{
+				"vendor_name": vendorName,
+				"clear":       clear,
 			}
-			fmt.Printf("Cleared %s accepted drift entries for %s.\n",
-				core.Pluralize(len(result.ClearedFiles), "file", "files"), vendorName)
-		} else {
-			for _, p := range result.AcceptedFiles {
-				fmt.Printf("  accepted: %s\n", p)
+			if clear {
+				data["cleared_files"] = result.ClearedFiles
+				data["cleared_count"] = len(result.ClearedFiles)
+			} else {
+				data["accepted_files"] = result.AcceptedFiles
+				data["accepted_count"] = len(result.AcceptedFiles)
 			}
-			fmt.Printf("Accepted drift for %s in %s.\n",
-				core.Pluralize(len(result.AcceptedFiles), "file", "files"), vendorName)
+			_ = callback.FormatJSON(core.JSONOutput{
+				Status:  "success",
+				Message: "Accept complete.",
+				Data:    data,
+			})
+		} else if flags.Mode != core.OutputQuiet {
+			if clear {
+				for _, p := range result.ClearedFiles {
+					fmt.Printf("  cleared: %s\n", p)
+				}
+				fmt.Printf("Cleared %s accepted drift entries for %s.\n",
+					core.Pluralize(len(result.ClearedFiles), "file", "files"), vendorName)
+			} else {
+				for _, p := range result.AcceptedFiles {
+					fmt.Printf("  accepted: %s\n", p)
+				}
+				fmt.Printf("Accepted drift for %s in %s.\n",
+					core.Pluralize(len(result.AcceptedFiles), "file", "files"), vendorName)
+			}
 		}
 
 		// Auto-commit lockfile change unless --no-commit
 		if !noCommit {
 			if err := manager.CommitVendorChanges("accept", vendorName); err != nil {
-				tui.PrintError("Commit Failed", err.Error())
+				callback.ShowError("Commit Failed", err.Error())
 				os.Exit(1)
 			}
-			tui.PrintSuccess("Committed lockfile changes.")
+			callback.ShowSuccess("Committed lockfile changes.")
 		}
 
 	case "push":
@@ -1230,11 +1004,23 @@ func main() {
 
 	case "status":
 		// Unified inspection: merges verify (offline) + outdated (remote)
+		flags, args := parseCommonFlags(os.Args[2:])
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		// Parse status-specific flags from remaining args
 		format := "table"
 		offline := false
 		remoteOnly := false
 
-		for _, arg := range os.Args[2:] {
+		for _, arg := range args {
 			switch {
 			case arg == "--format=json" || arg == "--json":
 				format = "json"
@@ -1249,13 +1035,18 @@ func main() {
 			}
 		}
 
+		// --json from parseCommonFlags also triggers JSON output
+		if flags.Mode == core.OutputJSON {
+			format = "json"
+		}
+
 		if offline && remoteOnly {
-			tui.PrintError("Invalid Flags", "--offline and --remote-only are mutually exclusive")
+			callback.ShowError("Invalid Flags", "--offline and --remote-only are mutually exclusive")
 			os.Exit(1)
 		}
 
 		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
 			os.Exit(1)
 		}
 
@@ -1267,122 +1058,23 @@ func main() {
 			RemoteOnly: remoteOnly,
 		})
 		if err != nil {
-			tui.PrintError("Status Failed", err.Error())
+			callback.ShowError("Status Failed", err.Error())
 			os.Exit(1)
 		}
 
-		switch format {
-		case "json":
+		switch {
+		case format == "json":
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(result); err != nil {
-				tui.PrintError("JSON Output Failed", err.Error())
+				callback.ShowError("JSON Output Failed", err.Error())
 				os.Exit(1)
 			}
-		default:
+		case flags.Mode != core.OutputQuiet:
 			printStatusHuman(result)
 		}
 
 		// Exit code: 0=PASS, 1=FAIL, 2=WARN
-		switch result.Summary.Result {
-		case "PASS":
-			os.Exit(0)
-		case "WARN":
-			os.Exit(2)
-		default: // FAIL
-			os.Exit(1)
-		}
-
-	case "verify":
-		// Parse command-specific flags
-		format := "table" // default format
-		for _, arg := range os.Args[2:] {
-			switch {
-			case arg == "--format=json" || arg == "--json":
-				format = "json"
-			case arg == "--format=table":
-				format = "table"
-			case strings.HasPrefix(arg, "--format="):
-				format = strings.TrimPrefix(arg, "--format=")
-			}
-		}
-
-		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
-			os.Exit(1)
-		}
-
-		// Run verification with signal-aware context for Ctrl+C cancellation
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
-		result, err := manager.Verify(ctx)
-		if err != nil {
-			tui.PrintError("Verification Failed", err.Error())
-			os.Exit(1)
-		}
-
-		// Output results based on format
-		switch format {
-		case "json":
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(result); err != nil {
-				tui.PrintError("JSON Output Failed", err.Error())
-				os.Exit(1)
-			}
-		default:
-			// Table format
-			fmt.Println("Verifying vendored dependencies...")
-			fmt.Println()
-
-			fileCount := 0
-			posCount := 0
-			for _, f := range result.Files {
-				var symbol, status string
-				switch f.Status {
-				case "verified":
-					symbol = "\u2713" // checkmark
-					status = "[OK]"
-				case "modified":
-					symbol = "\u2717" // x mark
-					status = "[MODIFIED]"
-				case "added":
-					symbol = "?"
-					status = "[ADDED]"
-				case "deleted":
-					symbol = "\u2717" // x mark
-					status = "[DELETED]"
-				}
-				typeLabel := "file"
-				if f.Type == "position" {
-					typeLabel = "pos "
-					posCount++
-				} else {
-					fileCount++
-				}
-				fmt.Printf("%s %-8s %-50s %s\n", symbol, typeLabel, f.Path, status)
-			}
-
-			fmt.Println()
-			fmt.Printf("Summary: %d checked (%s, %s)\n",
-				result.Summary.TotalFiles,
-				core.Pluralize(fileCount, "file", "files"),
-				core.Pluralize(posCount, "position", "positions"))
-			fmt.Printf("  \u2713 %d verified\n", result.Summary.Verified)
-			if result.Summary.Modified > 0 || result.Summary.Deleted > 0 {
-				fmt.Printf("  \u2717 %d errors (%d modified, %d deleted)\n",
-					result.Summary.Modified+result.Summary.Deleted,
-					result.Summary.Modified, result.Summary.Deleted)
-			}
-			if result.Summary.Added > 0 {
-				fmt.Printf("  ? %d warnings (%d added)\n", result.Summary.Added, result.Summary.Added)
-			}
-			fmt.Println()
-			fmt.Printf("Result: %s\n", result.Summary.Result)
-		}
-
-		// Exit code based on result
-		// 0=PASS, 1=FAIL, 2=WARN
 		switch result.Summary.Result {
 		case "PASS":
 			os.Exit(0)
@@ -1628,73 +1320,6 @@ func main() {
 			}
 		}
 
-	case "outdated":
-		// Parse flags: --json, --quiet, [vendor-name]
-		format := "table"
-		vendor := ""
-		quiet := false
-
-		for i := 2; i < len(os.Args); i++ {
-			arg := os.Args[i]
-			switch {
-			case arg == "--json":
-				format = "json"
-			case arg == "--quiet" || arg == "-q":
-				quiet = true
-			case !strings.HasPrefix(arg, "--"):
-				vendor = arg
-			}
-		}
-
-		if !core.IsVendorInitialized() {
-			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
-			os.Exit(1)
-		}
-
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
-		result, err := manager.Outdated(ctx, core.OutdatedOptions{Vendor: vendor})
-		if err != nil {
-			tui.PrintError("Outdated Check Failed", err.Error())
-			os.Exit(1)
-		}
-
-		switch format {
-		case "json":
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(result); err != nil {
-				tui.PrintError("JSON Output Failed", err.Error())
-				os.Exit(1)
-			}
-		default:
-			if !quiet {
-				if result.Outdated == 0 && result.Skipped == 0 {
-					fmt.Printf("All %s up to date.\n", core.Pluralize(result.TotalChecked, "vendor", "vendors"))
-				} else {
-					if result.Outdated > 0 {
-						fmt.Printf("%s outdated:\n\n", core.Pluralize(result.Outdated, "vendor", "vendors"))
-						for _, dep := range result.Dependencies {
-							if !dep.UpToDate {
-								fmt.Printf("  %s @ %s\n", dep.VendorName, dep.Ref)
-								fmt.Printf("    locked:   %s\n", dep.CurrentHash[:minLen(len(dep.CurrentHash), 12)])
-								fmt.Printf("    upstream: %s\n", dep.LatestHash[:minLen(len(dep.LatestHash), 12)])
-								fmt.Println()
-							}
-						}
-					}
-					if result.Skipped > 0 {
-						fmt.Printf("%s skipped (network error or not yet synced)\n", core.Pluralize(result.Skipped, "vendor", "vendors"))
-					}
-					fmt.Println("\nRun 'git-vendor update' to fetch latest versions.")
-				}
-			}
-		}
-
-		if result.Outdated > 0 {
-			os.Exit(1)
-		}
-
 	case "annotate":
 		// Retroactively attach vendor metadata as a git note to an existing commit
 		if !core.IsVendorInitialized() {
@@ -1762,77 +1387,6 @@ func main() {
 		}
 
 		fmt.Println(script)
-
-	case "diff":
-		// Parse common flags and diff-specific flags
-		flags, args := parseCommonFlags(os.Args[2:])
-
-		// Create appropriate callback
-		var callback core.UICallback
-		if flags.Yes || flags.Mode != core.OutputNormal {
-			callback = tui.NewNonInteractiveTUICallback(flags)
-		} else {
-			callback = tui.NewTUICallback()
-		}
-		manager.SetUICallback(callback)
-
-		// Parse diff-specific flags from remaining args
-		diffOpts := core.DiffOptions{}
-		var filteredArgs []string
-		for i := 0; i < len(args); i++ {
-			arg := args[i]
-			switch {
-			case strings.HasPrefix(arg, "--ref="):
-				diffOpts.Ref = strings.TrimPrefix(arg, "--ref=")
-			case arg == "--ref" && i+1 < len(args):
-				i++
-				diffOpts.Ref = args[i]
-			case strings.HasPrefix(arg, "--group="):
-				diffOpts.Group = strings.TrimPrefix(arg, "--group=")
-			case arg == "--group" && i+1 < len(args):
-				i++
-				diffOpts.Group = args[i]
-			default:
-				filteredArgs = append(filteredArgs, arg)
-			}
-		}
-
-		// Vendor name is optional positional arg (required when no --group)
-		if len(filteredArgs) > 0 {
-			diffOpts.VendorName = filteredArgs[0]
-		} else if diffOpts.Group == "" {
-			callback.ShowError("Usage", "git-vendor diff <vendor> [--ref <ref>] [--group <group>]")
-			os.Exit(1)
-		}
-
-		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
-			os.Exit(1)
-		}
-
-		// Get diff with options
-		diffs, err := manager.DiffVendorWithOptions(diffOpts)
-		if err != nil {
-			callback.ShowError("Diff Failed", err.Error())
-			os.Exit(1)
-		}
-
-		if len(diffs) == 0 {
-			label := diffOpts.VendorName
-			if label == "" {
-				label = "group '" + diffOpts.Group + "'"
-			} else {
-				label = "vendor '" + label + "'"
-			}
-			callback.ShowWarning("No Diffs", fmt.Sprintf("No locked versions found for %s", label))
-			os.Exit(0)
-		}
-
-		// Display diffs
-		for i := range diffs {
-			fmt.Print(core.FormatDiffOutput(&diffs[i]))
-			fmt.Println()
-		}
 
 	case "drift":
 		// Parse command-specific flags
