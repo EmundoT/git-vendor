@@ -35,6 +35,8 @@ type GitClient interface {
 	ConfigSet(ctx context.Context, dir, key, value string) error
 	ConfigGet(ctx context.Context, dir, key string) (string, error)
 	LsRemote(ctx context.Context, url, ref string) (string, error)
+	Push(ctx context.Context, dir, remote, branch string) error
+	CreateBranch(ctx context.Context, dir, name, startPoint string) error
 }
 
 // SystemGitClient implements GitClient using system git commands
@@ -218,6 +220,18 @@ func (g *SystemGitClient) ConfigGet(ctx context.Context, dir, key string) (strin
 // operates on the remote URL, but git-plumbing requires a Git instance; "." is used.
 func (g *SystemGitClient) LsRemote(ctx context.Context, url, ref string) (string, error) {
 	return g.gitFor(".").LsRemote(ctx, url, ref)
+}
+
+// Push pushes a local branch to a remote.
+// Push delegates to git-plumbing's Push method for the given directory.
+func (g *SystemGitClient) Push(ctx context.Context, dir, remote, branch string) error {
+	return g.gitFor(dir).Push(ctx, remote, branch)
+}
+
+// CreateBranch creates a new branch at the given start point without checking it out.
+// CreateBranch delegates to git-plumbing's CreateBranch method for the given directory.
+func (g *SystemGitClient) CreateBranch(ctx context.Context, dir, name, startPoint string) error {
+	return g.gitFor(dir).CreateBranch(ctx, name, startPoint)
 }
 
 // GetGitUserIdentity returns the git user identity in "Name <email>" format.

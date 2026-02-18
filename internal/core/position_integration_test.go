@@ -82,6 +82,8 @@ func (s *stubGitClient) ConfigGet(_ context.Context, _, _ string) (string, error
 func (s *stubGitClient) LsRemote(_ context.Context, _, _ string) (string, error) {
 	return "", nil
 }
+func (s *stubGitClient) Push(_ context.Context, _, _, _ string) error       { return nil }
+func (s *stubGitClient) CreateBranch(_ context.Context, _, _, _ string) error { return nil }
 
 // stubLicenseService and stubHookExecutor are defined in testhelpers_gomock_test.go.
 
