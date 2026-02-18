@@ -432,6 +432,16 @@ func (m *Manager) Pull(ctx context.Context, opts PullOptions) (*PullResult, erro
 	return m.syncer.PullVendors(ctx, opts)
 }
 
+// Push proposes local changes to vendored files back to the source repo via PR.
+// ctx controls cancellation of git clone/push operations.
+//
+// Push detects locally modified vendored files (lock hash mismatch), clones the
+// source repo, applies diffs via reverse path mapping, and creates a PR (or prints
+// manual instructions if the gh CLI is unavailable).
+func (m *Manager) Push(ctx context.Context, opts PushOptions) (*PushResult, error) {
+	return m.syncer.PushVendor(ctx, opts)
+}
+
 // UpdateVerboseMode updates the verbose flag for git operations
 func (m *Manager) UpdateVerboseMode(verbose bool) {
 	// Update the global git client

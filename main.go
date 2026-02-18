@@ -1013,6 +1013,120 @@ func main() {
 			tui.PrintSuccess("Committed lockfile changes.")
 		}
 
+	case "push":
+		// Parse common flags
+		flags, args := parseCommonFlags(os.Args[2:])
+
+		// Create appropriate callback
+		var pushCallback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			pushCallback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			pushCallback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(pushCallback)
+
+		// Parse push-specific flags
+		dryRun := false
+		filePath := ""
+		vendorName := ""
+
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+			switch {
+			case arg == "--dry-run":
+				dryRun = true
+			case arg == "--file":
+				if i+1 < len(args) {
+					filePath = args[i+1]
+					i++ // Skip next arg
+				} else {
+					pushCallback.ShowError("Invalid Flag", "--file requires a path")
+					os.Exit(1)
+				}
+			case arg == "--verbose" || arg == "-v":
+				core.Verbose = true
+				manager.UpdateVerboseMode(true)
+			case !strings.HasPrefix(arg, "--"):
+				vendorName = arg
+			}
+		}
+
+		if vendorName == "" {
+			pushCallback.ShowError("Usage", "git-vendor push <vendor-name> [--file <path>] [--dry-run]")
+			os.Exit(1)
+		}
+
+		if !core.IsVendorInitialized() {
+			pushCallback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		// Create signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		pushOpts := core.PushOptions{
+			VendorName: vendorName,
+			FilePath:   filePath,
+			DryRun:     dryRun,
+		}
+
+		result, err := manager.Push(ctx, pushOpts)
+		if err != nil {
+			pushCallback.ShowError("Push Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Display results
+		switch {
+		case flags.Mode == core.OutputJSON:
+			data := map[string]interface{}{
+				"vendor":         vendorName,
+				"files_modified": result.FilesModified,
+				"dry_run":        result.DryRun,
+			}
+			if result.BranchName != "" {
+				data["branch"] = result.BranchName
+			}
+			if result.PRUrl != "" {
+				data["pr_url"] = result.PRUrl
+			}
+			if result.ManualInstructions != "" {
+				data["manual_instructions"] = result.ManualInstructions
+			}
+			if result.ReverseMapping != nil {
+				data["reverse_mapping"] = result.ReverseMapping
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(core.JSONOutput{
+				Status:  "success",
+				Message: "Push complete.",
+				Data:    data,
+			})
+		case flags.Mode == core.OutputQuiet:
+			// No output
+		default:
+			if len(result.FilesModified) == 0 {
+				pushCallback.ShowSuccess("No locally modified vendored files found.")
+			} else if result.DryRun {
+				fmt.Printf("Dry run: %s would be pushed for vendor %q:\n", core.Pluralize(len(result.FilesModified), "file", "files"), vendorName)
+				for local, src := range result.ReverseMapping {
+					fmt.Printf("  %s -> %s\n", local, src)
+				}
+			} else {
+				pushCallback.ShowSuccess(fmt.Sprintf("Pushed %s for vendor %q.", core.Pluralize(len(result.FilesModified), "file", "files"), vendorName))
+				if result.PRUrl != "" {
+					fmt.Printf("  PR: %s\n", result.PRUrl)
+				}
+				if result.ManualInstructions != "" {
+					fmt.Println()
+					fmt.Println(result.ManualInstructions)
+				}
+			}
+		}
+
 	case "validate":
 		// Parse common flags
 		flags, _ := parseCommonFlags(os.Args[2:])

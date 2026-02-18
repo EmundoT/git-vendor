@@ -66,6 +66,7 @@ internal/
     outdated_service.go              # Lightweight staleness check via git ls-remote
     commit_service.go            # COMMIT-SCHEMA v1 trailers + git notes
     pull_service.go              # Pull command: combined update+sync orchestration
+    push_service.go              # Push command: propose local changes to source repo via PR (CLI-005)
     config_commands.go           # LLM-friendly CLI (Spec 072) + mirror management
     cli_response.go              # JSON output types for Spec 072
     remote_fallback.go           # Multi-remote: ResolveVendorURLs + FetchWithFallback
@@ -131,6 +132,7 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 - **sync**: Fetch dependencies at locked commit hashes (deterministic). Uses `--depth 1` for shallow clones. Falls back to full fetch for stale commits. With `--internal`: syncs only internal vendors (no network). With `--local`: allows `file://` and local filesystem paths in vendor URLs.
 - **update**: Fetch latest commits and regenerate lockfile. Supports `<vendor-name>` positional arg and `--group <name>` for selective updates (non-targeted vendors retain existing lock entries). With `--local`: allows `file://` and local filesystem paths in vendor URLs.
 - **pull**: Combines update + sync into one operation ("get the latest from upstream"). Default: fetch latest, update lock, copy files. `--locked`: skip fetch, use existing lock (same as sync). `--prune`: remove dead mappings from vendor.yml. `--keep-local`: detect locally modified files. `--force`/`--no-cache`: passed through to sync. Supports `<vendor-name>` positional arg and `--local`. Implementation: `pull_service.go` (PullOptions, PullResult, VendorSyncer.PullVendors).
+- **push**: Propose local changes to vendored files back upstream via PR. Detects locally modified files (lock hash mismatch), clones source repo, applies diffs via reverse path mapping (`to -> from`), creates branch `vendor-push/<project>/<YYYY-MM-DD>`, pushes, and creates PR via `gh` CLI (graceful fallback to manual instructions if `gh` unavailable). `--file <path>`: push a single file. `--dry-run`: preview without action. Internal vendors are rejected (use `--reverse`). Implementation: `push_service.go` (PushOptions, PushResult, VendorSyncer.PushVendor).
 - **diff**: Compare locked vs latest commit per vendor. Supports `<vendor-name>`, `--ref <ref>`, `--group <name>` filters. `DiffVendorWithOptions(DiffOptions)` is the primary API; `DiffVendor(name)` is a backward-compatible wrapper.
 - **outdated**: Lightweight staleness check via `git ls-remote` (1 command per vendor, no temp dirs). Read-only — does not modify lockfile. Exit code 1 = stale. CI-friendly alternative to `check-updates`.
 
