@@ -78,7 +78,10 @@ func (s *FileCopyService) copyMapping(tempDir string, vendor *types.VendorSpec, 
 	// Standard copy (no position specifier) — existing behavior
 	info, err := s.fs.Stat(srcPath)
 	if err != nil {
-		return CopyStats{}, NewPathNotFoundError(srcFile, vendor.Name, spec.Ref)
+		// VFY-003: When source file is missing during sync, handle gracefully
+		// instead of aborting. Delete the local copy if it exists and record
+		// the removal so the caller can prune the lock's FileHashes.
+		return s.handleMissingSource(destFile, srcFile, vendor.Name, spec.Ref)
 	}
 
 	if info.IsDir() {
@@ -118,7 +121,9 @@ func (s *FileCopyService) copyWithPosition(srcPath, destFile string, srcPos, des
 	content, hash, err := ExtractPosition(srcPath, srcPos)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return CopyStats{}, NewPathNotFoundError(srcClean, vendorName, ref)
+			// VFY-003: Handle missing source in position extraction the same
+			// way as whole-file copy — remove local dest and continue.
+			return s.handleMissingSource(destFile, srcClean, vendorName, ref)
 		}
 		return CopyStats{}, fmt.Errorf("extract position from %s: %w", srcClean, err)
 	}
@@ -176,6 +181,26 @@ func (s *FileCopyService) checkLocalModifications(destFile string, destPos *type
 		}
 	}
 	return ""
+}
+
+// handleMissingSource handles the case where an upstream source file no longer exists.
+// handleMissingSource deletes the local destination file (if present), emits a warning,
+// and returns a CopyStats with the destination path in the Removed list so the caller
+// can prune the lockfile's FileHashes. This prevents a single upstream deletion from
+// aborting the entire sync operation (VFY-003).
+func (s *FileCopyService) handleMissingSource(destFile, srcFile, vendorName, ref string) (CopyStats, error) {
+	warning := fmt.Sprintf("upstream file %s removed from %s@%s", srcFile, vendorName, ref)
+
+	// Delete the local copy if it exists; ignore errors if already gone
+	if err := s.fs.Remove(destFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+		// Non-trivial removal error (e.g., permission denied) — warn but continue
+		warning += fmt.Sprintf(" (local delete failed: %v)", err)
+	}
+
+	return CopyStats{
+		Removed:  []string{destFile},
+		Warnings: []string{warning},
+	}, nil
 }
 
 // cleanSourcePath removes blob/tree prefixes from source path
