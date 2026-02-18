@@ -666,7 +666,7 @@ func main() {
 				callback.ShowSuccess(fmt.Sprintf("Pulled: %d updated, %d synced, %d file(s).", result.Updated, result.Synced, result.FilesWritten))
 			}
 			if result.FilesSkipped > 0 {
-				fmt.Printf("  %d file(s) had local modifications (overwritten).\n", result.FilesSkipped)
+				fmt.Printf("  %d file(s) with local modifications preserved (--keep-local).\n", result.FilesSkipped)
 			}
 			if result.MappingsPruned > 0 {
 				fmt.Printf("  %d dead mapping(s) pruned from vendor.yml.\n", result.MappingsPruned)
@@ -1020,12 +1020,16 @@ func main() {
 		offline := false
 		remoteOnly := false
 
-		for _, arg := range args {
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
 			switch {
 			case arg == "--format=json" || arg == "--json":
 				format = "json"
 			case arg == "--format=table":
 				format = "table"
+			case arg == "--format" && i+1 < len(args):
+				i++
+				format = args[i]
 			case strings.HasPrefix(arg, "--format="):
 				format = strings.TrimPrefix(arg, "--format=")
 			case arg == "--offline":
@@ -2918,6 +2922,11 @@ func main() {
 				cascadeOpts.Push = true
 			case arg == "--pr":
 				cascadeOpts.PR = true
+			case arg == "--verify-command" && i+1 < len(args):
+				i++
+				cascadeOpts.VerifyCommand = args[i]
+			case strings.HasPrefix(arg, "--verify-command="):
+				cascadeOpts.VerifyCommand = strings.TrimPrefix(arg, "--verify-command=")
 			case arg == "--verbose" || arg == "-v":
 				core.Verbose = true
 				manager.UpdateVerboseMode(true)
