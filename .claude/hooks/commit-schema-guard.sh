@@ -5,12 +5,15 @@
 
 TOOL_INPUT="$CLAUDE_TOOL_INPUT"
 
-# Only act on git commit commands
-if ! echo "$TOOL_INPUT" | grep -q '"command"'; then
+# Only act on git commit commands — uses bash builtins (no pipes) for MSYS2 compat
+if [[ "$TOOL_INPUT" != *'"command"'* ]]; then
   exit 0
 fi
 
-COMMAND=$(echo "$TOOL_INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | head -1)
+COMMAND=""
+if [[ "$TOOL_INPUT" =~ \"command\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
+  COMMAND="${BASH_REMATCH[1]}"
+fi
 
 case "$COMMAND" in
   *"git commit"*)
@@ -26,10 +29,17 @@ case "$COMMAND" in
     if [ -f "$LOCK_FILE" ]; then
       STALE_COUNT=0
       while IFS= read -r line; do
-        if echo "$line" | grep -q "commit_hash:"; then
-          HASH=$(echo "$line" | sed 's/.*commit_hash:[[:space:]]*//' | tr -d '"')
+        if [[ "$line" == *"commit_hash:"* ]]; then
+          HASH="${line##*commit_hash:}"
+          HASH="${HASH#"${HASH%%[! ]*}"}"  # trim leading spaces
+          HASH="${HASH//\"/}"              # strip quotes
           # Check if vendor name precedes this hash
-          VENDOR_NAME=$(echo "$PREV_LINE" | sed -n 's/.*name:[[:space:]]*\(.*\)/\1/p' | tr -d '"')
+          VENDOR_NAME=""
+          if [[ "$PREV_LINE" == *"name:"* ]]; then
+            VENDOR_NAME="${PREV_LINE##*name:}"
+            VENDOR_NAME="${VENDOR_NAME#"${VENDOR_NAME%%[! ]*}"}"
+            VENDOR_NAME="${VENDOR_NAME//\"/}"
+          fi
           if [ -n "$VENDOR_NAME" ] && [ -n "$HASH" ]; then
             # Check if vendored files have been modified locally (drift detection)
             VENDOR_DIR="$PROJECT_DIR/pkg/$VENDOR_NAME"
