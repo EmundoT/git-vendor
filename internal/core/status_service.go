@@ -164,6 +164,27 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 		result.Vendors = append(result.Vendors, *vendorMap[key])
 	}
 
+	// Phase 3: Policy evaluation (GRD-002)
+	if s.configStore != nil {
+		config, configErr := s.configStore.Load()
+		if configErr == nil {
+			policySvc := NewPolicyService()
+			violations := policySvc.EvaluatePolicy(&config, result)
+			result.PolicyViolations = violations
+
+			// Distribute violations to per-vendor entries
+			for vi := range violations {
+				for ri := range result.Vendors {
+					if result.Vendors[ri].Name == violations[vi].VendorName {
+						result.Vendors[ri].PolicyViolations = append(
+							result.Vendors[ri].PolicyViolations, violations[vi])
+						break
+					}
+				}
+			}
+		}
+	}
+
 	// Compute summary
 	result.Summary = computeStatusSummary(result.Vendors, opts)
 
