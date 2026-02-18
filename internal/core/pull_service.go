@@ -80,13 +80,19 @@ func (s *VendorSyncer) PullVendors(ctx context.Context, opts PullOptions) (*Pull
 		}
 	}
 
-	// Phase 2: If --keep-local, snapshot local file hashes BEFORE sync
-	var localHashes map[string]string
+	// Phase 2: If --keep-local, snapshot local file hashes and back up modified files BEFORE sync
+	var backups map[string]string
 	if opts.KeepLocal {
-		var err error
-		localHashes, err = s.snapshotLocalFileHashes(opts.VendorName)
+		localHashes, err := s.snapshotLocalFileHashes(opts.VendorName)
 		if err != nil {
 			return nil, fmt.Errorf("snapshot local hashes: %w", err)
+		}
+		if len(localHashes) > 0 {
+			backups, err = s.backupLocallyModified(localHashes)
+			if err != nil {
+				cleanupBackups(backups)
+				return nil, fmt.Errorf("backup locally modified files: %w", err)
+			}
 		}
 	}
 
@@ -98,19 +104,22 @@ func (s *VendorSyncer) PullVendors(ctx context.Context, opts PullOptions) (*Pull
 		Local:      opts.Local,
 	}
 	if err := s.syncWithAutoUpdate(ctx, syncOpts); err != nil {
+		cleanupBackups(backups)
 		return nil, fmt.Errorf("pull sync phase: %w", err)
 	}
 
-	// Phase 4: If --keep-local, restore locally modified files
-	if opts.KeepLocal && len(localHashes) > 0 {
-		skipped, err := s.restoreLocallyModified(localHashes, opts.VendorName)
+	// Phase 4: If --keep-local, restore backed-up locally modified files after sync
+	if len(backups) > 0 {
+		restored, err := s.restoreLocallyModified(backups)
 		if err != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("keep-local restore: %s", err))
 		}
-		result.FilesSkipped = skipped
+		result.FilesSkipped = restored
 	}
 
-	// Phase 5: Collect sync stats from lock
+	// Phase 5: Collect sync stats from lock and count upstream removals (I1).
+	// Files in the lock's FileHashes that no longer exist on disk were removed
+	// by the sync's upstream-removal handling (VFY-003 / CopyStats.Removed).
 	lock, err := s.lockStore.Load()
 	if err == nil {
 		for _, l := range lock.Vendors {
@@ -118,7 +127,13 @@ func (s *VendorSyncer) PullVendors(ctx context.Context, opts PullOptions) (*Pull
 				continue
 			}
 			result.Synced++
-			result.FilesWritten += len(l.FileHashes)
+			for destPath := range l.FileHashes {
+				if _, statErr := os.Stat(destPath); errors.Is(statErr, os.ErrNotExist) {
+					result.FilesRemoved++
+				} else {
+					result.FilesWritten++
+				}
+			}
 		}
 	}
 
@@ -169,50 +184,55 @@ func (s *VendorSyncer) snapshotLocalFileHashes(vendorName string) (map[string]st
 	return modified, nil
 }
 
-// restoreLocallyModified checks files after sync and records which were skipped.
-// Since sync already overwrote files, restoreLocallyModified detects files that WERE
-// modified pre-sync by comparing their new hash against the snapshot.
-// Returns count of files that should have been skipped (for reporting).
-//
-// NOTE: This is a "detect and report" approach. A future enhancement could back up
-// modified files before sync and restore them here.
-func (s *VendorSyncer) restoreLocallyModified(preHashes map[string]string, vendorName string) (int, error) {
-	// For now, --keep-local works by detecting which files were modified
-	// and reporting them. The sync has already run, so we report what changed.
-	// A proper implementation would intercept the sync to skip these files.
-	//
-	// Since SyncVendor doesn't support per-file skip, we check post-sync
-	// whether the file was locally modified and warn the user.
-	lock, err := s.lockStore.Load()
-	if err != nil {
-		return 0, err
-	}
-
-	skipped := 0
-	cache := NewFileCacheStore(s.fs, s.rootDir)
-
-	for _, l := range lock.Vendors {
-		if vendorName != "" && l.Name != vendorName {
-			continue
+// backupLocallyModified copies locally modified files to temporary locations
+// before sync can overwrite them. Returns a map of destPath -> temp backup path
+// for files that were backed up.
+func (s *VendorSyncer) backupLocallyModified(modifiedPaths map[string]string) (map[string]string, error) {
+	backups := make(map[string]string)
+	for destPath := range modifiedPaths {
+		data, err := os.ReadFile(destPath)
+		if err != nil {
+			continue // file may have been deleted between snapshot and backup
 		}
-		for destPath := range l.FileHashes {
-			if _, wasModified := preHashes[destPath]; wasModified {
-				// This file was locally modified before pull.
-				// Check if sync actually changed it.
-				newHash, err := cache.ComputeFileChecksum(destPath)
-				if err != nil {
-					continue
-				}
-				if newHash != preHashes[destPath] {
-					// Sync overwrote a locally modified file
-					fmt.Printf("  warning: %s was locally modified (overwritten by pull)\n", destPath)
-					skipped++
-				}
-			}
+		tmpFile, err := os.CreateTemp("", "keep-local-*")
+		if err != nil {
+			return backups, fmt.Errorf("create temp for keep-local backup of %s: %w", destPath, err)
 		}
+		tmpPath := tmpFile.Name()
+		_ = tmpFile.Close()
+		if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+			return backups, fmt.Errorf("write keep-local backup for %s: %w", destPath, err)
+		}
+		backups[destPath] = tmpPath
 	}
+	return backups, nil
+}
 
-	return skipped, nil
+// restoreLocallyModified restores backed-up locally modified files after sync
+// overwrote them. Returns count of files actually restored.
+func (s *VendorSyncer) restoreLocallyModified(backups map[string]string) (int, error) {
+	restored := 0
+	for destPath, tmpPath := range backups {
+		data, err := os.ReadFile(tmpPath)
+		if err != nil {
+			continue // backup lost, nothing to restore
+		}
+		if err := os.WriteFile(destPath, data, 0644); err != nil {
+			return restored, fmt.Errorf("restore keep-local file %s: %w", destPath, err)
+		}
+		restored++
+		fmt.Printf("  preserved: %s (locally modified, kept by --keep-local)\n", destPath)
+		// Clean up temp file
+		_ = os.Remove(tmpPath)
+	}
+	return restored, nil
+}
+
+// cleanupBackups removes any remaining temporary backup files.
+func cleanupBackups(backups map[string]string) {
+	for _, tmpPath := range backups {
+		_ = os.Remove(tmpPath)
+	}
 }
 
 // pruneDeadMappings removes mappings from vendor.yml where the source file no longer exists

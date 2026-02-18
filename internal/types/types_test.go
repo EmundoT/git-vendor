@@ -1158,6 +1158,46 @@ func TestValidSeverityThresholds_Completeness(t *testing.T) {
 // Struct Field Tests (continued)
 // ============================================================================
 
+// TestResolvedPolicy_NoPointerAliasing verifies that ResolvedPolicy copies values
+// instead of sharing pointers with the input structs. Mutating the resolved policy
+// MUST NOT affect the original global or perVendor VendorPolicy (I7).
+func TestResolvedPolicy_NoPointerAliasing(t *testing.T) {
+	globalDrift := true
+	globalStale := false
+	globalDays := 30
+
+	global := &VendorPolicy{
+		BlockOnDrift:     &globalDrift,
+		BlockOnStale:     &globalStale,
+		MaxStalenessDays: &globalDays,
+	}
+
+	perVendorDrift := false
+	perVendor := &VendorPolicy{
+		BlockOnDrift: &perVendorDrift,
+	}
+
+	resolved := ResolvedPolicy(global, perVendor)
+
+	// Mutate resolved — should NOT affect originals
+	*resolved.BlockOnDrift = true
+	*resolved.BlockOnStale = true
+	*resolved.MaxStalenessDays = 999
+
+	if globalDrift != true {
+		t.Error("global BlockOnDrift was mutated via resolved pointer")
+	}
+	if globalStale != false {
+		t.Error("global BlockOnStale was mutated via resolved pointer")
+	}
+	if globalDays != 30 {
+		t.Errorf("global MaxStalenessDays was mutated via resolved pointer: got %d", globalDays)
+	}
+	if perVendorDrift != false {
+		t.Error("perVendor BlockOnDrift was mutated via resolved pointer")
+	}
+}
+
 func TestCommitInfo_ShortHashLength(t *testing.T) {
 	commit := CommitInfo{
 		Hash:      "abc123def456789012345678901234567890abcd",
