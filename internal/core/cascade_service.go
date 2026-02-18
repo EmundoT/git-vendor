@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/EmundoT/git-vendor/internal/types"
 )
@@ -41,6 +43,7 @@ type CascadeProjectResult struct {
 	PullResult    *PullResult // Result from pull operation (nil if skipped/failed)
 	VerifyPassed  bool     // Whether verify command succeeded (false if not run)
 	VerifyOutput  string   // Stdout/stderr from verify command
+	PRInfo        string   // PR URL or manual instructions (populated when --pr is used)
 	Error         error    // Non-nil if pull or verify failed
 }
 
@@ -327,12 +330,21 @@ func sortStrings(s []string) {
 // Ctrl+C support.
 //
 // Flow:
-//  1. Build DAG from sibling vendor.yml files
-//  2. Topological sort (error on cycles)
-//  3. Walk in order: cd into each project and run pull
-//  4. Optionally: verify, commit, push after each pull
-//  5. Return summary of results
+//  1. Validate mutually exclusive options (--pr vs --push)
+//  2. Build DAG from sibling vendor.yml files
+//  3. Topological sort (error on cycles)
+//  4. Walk in order: cd into each project and run pull
+//  5. Optionally: verify, commit/PR, push after each pull
+//  6. Return summary of results
 func (cs *CascadeService) Cascade(ctx context.Context, opts CascadeOptions) (*CascadeResult, error) {
+	// I11: Validate mutually exclusive options
+	if opts.PR && opts.Push {
+		return nil, fmt.Errorf("--pr and --push are mutually exclusive")
+	}
+	if opts.Push && !opts.Commit {
+		return nil, fmt.Errorf("--push requires --commit")
+	}
+
 	graph, projectDirs, err := cs.BuildDAG()
 	if err != nil {
 		return nil, err
@@ -417,7 +429,7 @@ func (cs *CascadeService) Cascade(ctx context.Context, opts CascadeOptions) (*Ca
 				}
 			}
 
-			output, verifyErr := runCommandInDir(ctx, dir, verifyCmd)
+			output, verifyErr := runShellInDir(ctx, dir, verifyCmd)
 			projResult.VerifyOutput = output
 			if verifyErr != nil {
 				projResult.Error = verifyErr
@@ -431,9 +443,15 @@ func (cs *CascadeService) Cascade(ctx context.Context, opts CascadeOptions) (*Ca
 			projResult.VerifyPassed = true
 		}
 
-		// Optional: commit
-		if opts.Commit || opts.PR {
-			commitErr := runCommandInDirSimple(ctx, dir, "git add -A && git commit -m \"chore(vendor): cascade pull\"")
+		// C4: --pr path: create branch, commit, push, create PR
+		if opts.PR {
+			cascadePRInProject(ctx, dir, name, pullResult, projResult, result)
+			continue
+		}
+
+		// --commit path: stage and commit with COMMIT-SCHEMA trailers
+		if opts.Commit {
+			commitErr := cascadeCommitInProject(ctx, dir)
 			if commitErr != nil {
 				// Commit may fail if nothing changed — not a hard error
 				// Only record as failure if we know files were updated
@@ -445,7 +463,7 @@ func (cs *CascadeService) Cascade(ctx context.Context, opts CascadeOptions) (*Ca
 					})
 				}
 			} else if opts.Push {
-				pushErr := runCommandInDirSimple(ctx, dir, "git push")
+				_, pushErr := runGitInDir(ctx, dir, "push")
 				if pushErr != nil {
 					result.Failed = append(result.Failed, CascadeFailure{
 						Project: name,
@@ -458,6 +476,99 @@ func (cs *CascadeService) Cascade(ctx context.Context, opts CascadeOptions) (*Ca
 	}
 
 	return result, nil
+}
+
+// cascadeCommitMessage is the commit message used for cascade pull commits.
+// cascadeCommitMessage includes COMMIT-SCHEMA v1 trailers and uses --no-verify
+// to skip the commit guard (drift is expected after a cascade pull).
+const cascadeCommitMessage = "chore(vendor): cascade pull\n\nCommit-Schema: manual/v1\nTags: vendor.cascade"
+
+// cascadeCommitInProject stages all changes and commits with COMMIT-SCHEMA
+// trailers in the given project directory. cascadeCommitInProject uses
+// --no-verify to bypass the commit guard since drift is expected after pull.
+func cascadeCommitInProject(ctx context.Context, dir string) error {
+	if _, err := runGitInDir(ctx, dir, "add", "-A"); err != nil {
+		return fmt.Errorf("git add: %w", err)
+	}
+	_, err := runGitInDir(ctx, dir, "commit", "--no-verify", "-m", cascadeCommitMessage)
+	return err
+}
+
+// cascadePRInProject implements the --pr workflow for a single project:
+// create branch, stage, commit, push, and attempt PR creation via gh CLI.
+// cascadePRInProject records the PR URL or manual instructions in
+// CascadeProjectResult.PRInfo and appends failures to CascadeResult.Failed.
+func cascadePRInProject(ctx context.Context, dir, name string, pullResult *PullResult, projResult *CascadeProjectResult, result *CascadeResult) {
+	branchName := fmt.Sprintf("vendor-cascade/%s", time.Now().Format("2006-01-02"))
+
+	// Save current branch name to restore later
+	origBranch, err := runGitInDir(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		result.Failed = append(result.Failed, CascadeFailure{
+			Project: name,
+			Phase:   "commit",
+			Error:   fmt.Sprintf("failed to get current branch: %s", err),
+		})
+		return
+	}
+	origBranch = strings.TrimSpace(origBranch)
+
+	// Create and switch to PR branch
+	if _, err := runGitInDir(ctx, dir, "checkout", "-b", branchName); err != nil {
+		result.Failed = append(result.Failed, CascadeFailure{
+			Project: name,
+			Phase:   "commit",
+			Error:   fmt.Sprintf("failed to create branch %s: %s", branchName, err),
+		})
+		return
+	}
+
+	// Stage and commit
+	commitErr := cascadeCommitInProject(ctx, dir)
+	if commitErr != nil {
+		// Nothing to commit — switch back and skip
+		if pullResult == nil || pullResult.Updated == 0 {
+			_, _ = runGitInDir(ctx, dir, "checkout", origBranch)
+			// Clean up the empty branch
+			_, _ = runGitInDir(ctx, dir, "branch", "-D", branchName)
+			return
+		}
+		result.Failed = append(result.Failed, CascadeFailure{
+			Project: name,
+			Phase:   "commit",
+			Error:   commitErr.Error(),
+		})
+		_, _ = runGitInDir(ctx, dir, "checkout", origBranch)
+		_, _ = runGitInDir(ctx, dir, "branch", "-D", branchName)
+		return
+	}
+
+	// Push the branch
+	_, pushErr := runGitInDir(ctx, dir, "push", "-u", "origin", branchName)
+	if pushErr != nil {
+		result.Failed = append(result.Failed, CascadeFailure{
+			Project: name,
+			Phase:   "push",
+			Error:   fmt.Sprintf("failed to push branch %s: %s", branchName, pushErr),
+		})
+		_, _ = runGitInDir(ctx, dir, "checkout", origBranch)
+		return
+	}
+
+	// Attempt PR creation via gh CLI
+	if isGhInstalled() {
+		prURL, ghErr := cascadeCreatePR(ctx, dir, branchName, name)
+		if ghErr != nil {
+			projResult.PRInfo = fmt.Sprintf("Branch %s pushed. PR creation failed: %s\nCreate manually: gh pr create --title 'chore(vendor): cascade pull' --head %s", branchName, ghErr, branchName)
+		} else {
+			projResult.PRInfo = prURL
+		}
+	} else {
+		projResult.PRInfo = fmt.Sprintf("Branch %s pushed. Install gh CLI to auto-create PRs, or create manually:\n  gh pr create --title 'chore(vendor): cascade pull' --head %s", branchName, branchName)
+	}
+
+	// Switch back to original branch
+	_, _ = runGitInDir(ctx, dir, "checkout", origBranch)
 }
 
 // runPullInProject runs git-vendor pull in the given project directory.
@@ -480,19 +591,49 @@ func (cs *CascadeService) runPullInProject(ctx context.Context, dir string) (*Pu
 	return mgr.Pull(ctx, pullOpts)
 }
 
-// runCommandInDir executes a shell command string in the given directory,
-// returning combined stdout+stderr output and any error.
-func runCommandInDir(ctx context.Context, dir, command string) (string, error) {
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+// runGitInDir executes a git command with explicit args in the given directory.
+// runGitInDir returns combined stdout+stderr and any error. This avoids shell
+// invocation (no "sh -c") for cross-platform compatibility (C3 fix).
+func runGitInDir(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-// runCommandInDirSimple executes a shell command in the given directory,
-// discarding output. Returns error if the command fails.
-func runCommandInDirSimple(ctx context.Context, dir, command string) error {
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+// runShellInDir executes a shell command string in the given directory using
+// the platform's native shell. runShellInDir uses "cmd /c" on Windows and
+// "sh -c" on Unix for cross-platform compatibility (C3 fix). Use runShellInDir
+// only for user-defined commands (e.g., verify_command); prefer runGitInDir
+// for all git operations.
+func runShellInDir(ctx context.Context, dir, command string) (string, error) {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd", "/c", command)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", command)
+	}
 	cmd.Dir = dir
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// cascadeCreatePR creates a pull request via the gh CLI for a cascade branch.
+// cascadeCreatePR returns the PR URL on success or an error if gh fails.
+func cascadeCreatePR(ctx context.Context, repoDir, branchName, projectName string) (string, error) {
+	title := "chore(vendor): cascade pull"
+	body := fmt.Sprintf("Automated cascade pull for project `%s`.\n\n_Created by `git vendor cascade --pr`._", projectName)
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "create",
+		"--title", title,
+		"--body", body,
+		"--head", branchName,
+	)
+	cmd.Dir = repoDir
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
