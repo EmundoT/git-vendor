@@ -13,4 +13,12 @@ go vet ./...
 echo "pre-commit: running go test..."
 go test -count=1 ./...
 
+# Vendor drift guard (GRD-001): block commits with unacknowledged vendor drift.
+# vendor-guard.sh is a standalone POSIX script that can also be installed separately.
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -x "$HOOK_DIR/vendor-guard.sh" ]; then
+    echo "pre-commit: running vendor drift guard..."
+    "$HOOK_DIR/vendor-guard.sh"
+fi
+
 echo "pre-commit: all checks passed"

@@ -106,6 +106,7 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 				case "modified":
 					v.FilesModified++
 					v.ModifiedPaths = append(v.ModifiedPaths, f.Path)
+					v.DriftDetails = append(v.DriftDetails, buildDriftDetail(f, false))
 				case "added":
 					v.FilesAdded++
 					v.AddedPaths = append(v.AddedPaths, f.Path)
@@ -115,6 +116,7 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 				case "accepted":
 					v.FilesAccepted++
 					v.AcceptedPaths = append(v.AcceptedPaths, f.Path)
+					v.DriftDetails = append(v.DriftDetails, buildDriftDetail(f, true))
 				}
 				break // one match per file
 			}
@@ -208,4 +210,21 @@ func computeStatusSummary(vendors []types.VendorStatusDetail, opts StatusOptions
 	}
 
 	return s
+}
+
+// buildDriftDetail constructs a DriftDetail from a FileStatus entry.
+// buildDriftDetail extracts lock hash (ExpectedHash) and disk hash (ActualHash)
+// from the verify result and marks whether the drift has been accepted.
+func buildDriftDetail(f types.FileStatus, accepted bool) types.DriftDetail {
+	d := types.DriftDetail{
+		Path:     f.Path,
+		Accepted: accepted,
+	}
+	if f.ExpectedHash != nil {
+		d.LockHash = *f.ExpectedHash
+	}
+	if f.ActualHash != nil {
+		d.DiskHash = *f.ActualHash
+	}
+	return d
 }
