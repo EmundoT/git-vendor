@@ -223,5 +223,5 @@ Detailed rules load automatically based on which files you're editing. See `.cla
 
 - `docs/COMMANDS.md` — Full command reference with all flags
 - `docs/CONFIGURATION.md` — vendor.yml and policy file format
-- `docs/ROADMAP.md` — Development roadmap and phases
+- `../git-ecosystem/ideas/` — Work queues and completed items
 - `docs/TROUBLESHOOTING.md` — Common issues and solutions
