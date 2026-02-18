@@ -253,10 +253,7 @@ func (s *SyncService) syncSequential(ctx context.Context, vendors []types.Vendor
 	}
 
 	// Display summary
-	if totalStats.FileCount > 0 {
-		fmt.Println()
-		fmt.Printf("Summary: Synced %s across all vendors\n", Pluralize(totalStats.FileCount, "file", "files"))
-	}
+	s.printSyncSummary(totalStats)
 
 	return nil
 }
@@ -327,12 +324,24 @@ func (s *SyncService) syncParallel(ctx context.Context, vendors []types.VendorSp
 	}
 
 	// Display summary
-	if totalStats.FileCount > 0 {
-		fmt.Println()
-		fmt.Printf("Summary: Synced %s across all vendors\n", Pluralize(totalStats.FileCount, "file", "files"))
-	}
+	s.printSyncSummary(totalStats)
 
 	return nil
+}
+
+// printSyncSummary prints the sync result summary including file counts and removals.
+func (s *SyncService) printSyncSummary(stats CopyStats) {
+	if stats.FileCount > 0 || len(stats.Removed) > 0 {
+		fmt.Println()
+		parts := []string{}
+		if stats.FileCount > 0 {
+			parts = append(parts, fmt.Sprintf("Synced %s", Pluralize(stats.FileCount, "file", "files")))
+		}
+		if len(stats.Removed) > 0 {
+			parts = append(parts, fmt.Sprintf("%s removed", Pluralize(len(stats.Removed), "file", "files")))
+		}
+		fmt.Printf("Summary: %s across all vendors\n", strings.Join(parts, ", "))
+	}
 }
 
 // buildLockMap builds a map of vendor name to ref to commit hash
