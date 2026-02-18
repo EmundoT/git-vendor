@@ -237,7 +237,7 @@ func TestGetCommandDescription(t *testing.T) {
 		{"sync", true, "Sync dependencies at locked versions"},
 		{"update", true, "Update lockfile with latest commits"},
 		{"validate", true, "Validate config and check conflicts"},
-		{"status", true, "Check sync status"},
+		{"status", true, "Show unified verify + outdated status"},
 		{"check-updates", true, "Check for available updates"},
 		{"diff", true, "Show commit differences"},
 		{"watch", true, "Watch for config changes"},

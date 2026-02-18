@@ -375,7 +375,7 @@ func getCommandDescription(cmd string) string {
 		"sync":           "Sync dependencies at locked versions",
 		"update":         "Update lockfile with latest commits",
 		"validate":       "Validate config and check conflicts",
-		"status":         "Check sync status",
+		"status":         "Show unified verify + outdated status",
 		"check-updates":  "Check for available updates",
 		"diff":           "Show commit differences",
 		"watch":          "Watch for config changes",

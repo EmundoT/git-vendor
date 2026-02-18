@@ -299,3 +299,45 @@ type FileStatus struct {
 	ActualHash   *string         `json:"actual_hash,omitempty"`
 	Position     *PositionDetail `json:"position,omitempty"` // Present only for type="position"
 }
+
+// VendorStatusDetail holds combined verify + outdated information for a single vendor/ref pair.
+// VendorStatusDetail is produced by the status command to merge offline (disk) and remote checks.
+type VendorStatusDetail struct {
+	Name       string `json:"name"`
+	Ref        string `json:"ref"`
+	CommitHash string `json:"commit_hash"`
+
+	// Offline (verify) results
+	FilesVerified int      `json:"files_verified"`
+	FilesModified int      `json:"files_modified"`
+	FilesAdded    int      `json:"files_added"`
+	FilesDeleted  int      `json:"files_deleted"`
+	ModifiedPaths []string `json:"modified_paths,omitempty"`
+	AddedPaths    []string `json:"added_paths,omitempty"`
+	DeletedPaths  []string `json:"deleted_paths,omitempty"`
+
+	// Remote (outdated) results — nil when --offline
+	UpstreamHash    string `json:"upstream_hash,omitempty"`
+	UpstreamStale   *bool  `json:"upstream_stale,omitempty"`   // nil = not checked
+	UpstreamSkipped bool   `json:"upstream_skipped,omitempty"` // true = ls-remote failed
+}
+
+// StatusResult holds the combined output of the status command (verify + outdated).
+// StatusResult is the top-level return type for Manager.Status / VendorSyncer.Status.
+type StatusResult struct {
+	Vendors []VendorStatusDetail `json:"vendors"`
+	Summary StatusSummary        `json:"summary"`
+}
+
+// StatusSummary contains aggregate statistics across all vendors for the status command.
+type StatusSummary struct {
+	TotalVendors   int    `json:"total_vendors"`
+	TotalFiles     int    `json:"total_files"`
+	Verified       int    `json:"verified"`
+	Modified       int    `json:"modified"`
+	Added          int    `json:"added"`
+	Deleted        int    `json:"deleted"`
+	Stale          int    `json:"stale"`          // Vendors behind upstream
+	UpstreamErrors int    `json:"upstream_errors"` // Vendors where ls-remote failed
+	Result         string `json:"result"`          // PASS, FAIL, WARN
+}
