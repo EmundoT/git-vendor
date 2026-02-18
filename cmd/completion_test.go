@@ -234,12 +234,15 @@ func TestGetCommandDescription(t *testing.T) {
 		{"edit", true, "Edit vendor configuration"},
 		{"remove", true, "Remove vendor dependency"},
 		{"list", true, "List all vendors"},
-		{"sync", true, "Sync dependencies at locked versions"},
-		{"update", true, "Update lockfile with latest commits"},
+		{"sync", true, "Sync at locked versions (DEPRECATED: use pull --locked)"},
+		{"update", true, "Update lockfile (DEPRECATED: use pull)"},
+		{"pull", true, "Fetch and sync vendor dependencies"},
 		{"validate", true, "Validate config and check conflicts"},
 		{"status", true, "Show unified verify + outdated status"},
+		{"verify", true, "Verify file hashes (DEPRECATED: use status --offline)"},
+		{"outdated", true, "Check staleness (DEPRECATED: use status --remote-only)"},
 		{"check-updates", true, "Check for available updates"},
-		{"diff", true, "Show commit differences"},
+		{"diff", true, "Show commit differences (DEPRECATED: use status)"},
 		{"watch", true, "Watch for config changes"},
 		{"completion", true, "Generate shell completion script"},
 		{"help", true, "Show help information"},
@@ -330,6 +333,53 @@ func TestFishCompletion_ContainsAllSyncFlags(t *testing.T) {
 		if !strings.Contains(script, flag) {
 			t.Errorf("Expected sync flag '%s' in fish completion", flag)
 		}
+	}
+}
+
+func TestDeprecatedCommandDescriptions(t *testing.T) {
+	for cmd, notice := range DeprecatedCommands {
+		desc := getCommandDescription(cmd)
+		if desc == "" {
+			t.Errorf("deprecated command %q has no description", cmd)
+		}
+		if !strings.Contains(desc, "DEPRECATED") {
+			t.Errorf("description for deprecated command %q should contain 'DEPRECATED', got: %q", cmd, desc)
+		}
+		_ = notice // DeprecatedCommands entries used by shell completion
+	}
+}
+
+func TestPullCommandInCompletions(t *testing.T) {
+	bash := GenerateBashCompletion()
+	if !strings.Contains(bash, "pull") {
+		t.Error("Expected 'pull' in bash completion commands")
+	}
+	if !strings.Contains(bash, "--locked") {
+		t.Error("Expected --locked flag in bash completion")
+	}
+
+	zsh := GenerateZshCompletion()
+	if !strings.Contains(zsh, "pull") {
+		t.Error("Expected 'pull' in zsh completion commands")
+	}
+	if !strings.Contains(zsh, "--locked[Use existing lock, skip fetch]") {
+		t.Error("Expected --locked flag with description in zsh completion")
+	}
+
+	fish := GenerateFishCompletion()
+	if !strings.Contains(fish, "__fish_seen_subcommand_from pull") {
+		t.Error("Expected pull subcommand check in fish completion")
+	}
+	if !strings.Contains(fish, "-l locked -d 'Use existing lock, skip fetch'") {
+		t.Error("Expected --locked flag in fish completion")
+	}
+
+	ps := GeneratePowerShellCompletion()
+	if !strings.Contains(ps, "'pull'") {
+		t.Error("Expected 'pull' in PowerShell completion")
+	}
+	if !strings.Contains(ps, "'--locked'") {
+		t.Error("Expected --locked flag in PowerShell completion")
 	}
 }
 

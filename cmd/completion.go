@@ -15,8 +15,11 @@ var commands = []string{
 	"list",
 	"sync",
 	"update",
+	"pull",
 	"validate",
 	"status",
+	"verify",
+	"outdated",
 	"check-updates",
 	"diff",
 	"watch",
@@ -36,6 +39,16 @@ var commands = []string{
 	"config",
 }
 
+// DeprecatedCommands maps deprecated command names to their replacement
+// descriptions, used by shell completion generators to annotate suggestions.
+var DeprecatedCommands = map[string]string{
+	"sync":     "DEPRECATED: use 'pull --locked'",
+	"update":   "DEPRECATED: use 'pull'",
+	"verify":   "DEPRECATED: use 'status --offline'",
+	"diff":     "DEPRECATED: use 'status'",
+	"outdated": "DEPRECATED: use 'status --remote-only'",
+}
+
 // GenerateBashCompletion generates bash completion script
 func GenerateBashCompletion() string {
 	return fmt.Sprintf(`# bash completion for git-vendor
@@ -50,6 +63,9 @@ _git_vendor_completions() {
 
     # Command-specific options
     case "${prev}" in
+        pull)
+            opts="--locked --prune --keep-local --interactive --force --no-cache --commit --local --verbose -v"
+            ;;
         sync)
             opts="--dry-run --force --no-cache --group --parallel --workers --verbose -v"
             ;;
@@ -128,6 +144,19 @@ _git_vendor() {
             ;;
         args)
             case $words[1] in
+                pull)
+                    _arguments \
+                        '--locked[Use existing lock, skip fetch]' \
+                        '--prune[Remove dead mappings]' \
+                        '--keep-local[Detect locally modified files]' \
+                        '--interactive[Interactive mode]' \
+                        '--force[Re-download even if synced]' \
+                        '--no-cache[Skip incremental cache]' \
+                        '--commit[Auto-commit after pull]' \
+                        '--local[Allow local paths]' \
+                        '--verbose[Show git commands]' \
+                        '-v[Show git commands]'
+                    ;;
                 sync)
                     _arguments \
                         '--dry-run[Preview without changes]' \
@@ -220,6 +249,17 @@ func GenerateFishCompletion() string {
 	}
 
 	// Add flag completions
+	completions = append(completions, "# pull command flags")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from pull' -l locked -d 'Use existing lock, skip fetch'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from pull' -l prune -d 'Remove dead mappings'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from pull' -l keep-local -d 'Detect locally modified files'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from pull' -l interactive -d 'Interactive mode'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from pull' -l force -d 'Re-download even if synced'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from pull' -l no-cache -d 'Skip incremental cache'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from pull' -l commit -d 'Auto-commit after pull'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from pull' -l local -d 'Allow local paths'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from pull' -l verbose -s v -d 'Show git commands'")
+
 	completions = append(completions, "# sync command flags")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from sync' -l dry-run -d 'Preview without changes'")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from sync' -l force -d 'Re-download even if synced'")
@@ -292,6 +332,12 @@ Register-ArgumentCompleter -Native -CommandName git-vendor -ScriptBlock {
         $subcommand = $tokens[1]
 
         switch ($subcommand) {
+            'pull' {
+                @('--locked', '--prune', '--keep-local', '--interactive', '--force', '--no-cache', '--commit', '--local', '--verbose', '-v') |
+                    Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                    }
+            }
             'sync' {
                 @('--dry-run', '--force', '--no-cache', '--group', '--parallel', '--workers', '--verbose', '-v') |
                     Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
@@ -364,7 +410,8 @@ Register-ArgumentCompleter -Native -CommandName git-vendor -ScriptBlock {
 `, strings.Join(cmdArray, ", "))
 }
 
-// getCommandDescription returns a short description for a command
+// getCommandDescription returns a short description for a command.
+// Deprecated commands include a deprecation notice in their description.
 func getCommandDescription(cmd string) string {
 	descriptions := map[string]string{
 		"init":           "Initialize vendor directory",
@@ -372,12 +419,15 @@ func getCommandDescription(cmd string) string {
 		"edit":           "Edit vendor configuration",
 		"remove":         "Remove vendor dependency",
 		"list":           "List all vendors",
-		"sync":           "Sync dependencies at locked versions",
-		"update":         "Update lockfile with latest commits",
+		"sync":           "Sync at locked versions (DEPRECATED: use pull --locked)",
+		"update":         "Update lockfile (DEPRECATED: use pull)",
+		"pull":           "Fetch and sync vendor dependencies",
 		"validate":       "Validate config and check conflicts",
 		"status":         "Show unified verify + outdated status",
+		"verify":         "Verify file hashes (DEPRECATED: use status --offline)",
+		"outdated":       "Check staleness (DEPRECATED: use status --remote-only)",
 		"check-updates":  "Check for available updates",
-		"diff":           "Show commit differences",
+		"diff":           "Show commit differences (DEPRECATED: use status)",
 		"watch":          "Watch for config changes",
 		"completion":     "Generate shell completion script",
 		"help":           "Show help information",

@@ -19,6 +19,67 @@ import (
 // Version information is managed in internal/version package
 // GoReleaser injects version info directly via ldflags
 
+// deprecatedAlias maps a deprecated command name to its replacement command and
+// any implicit flags that must be prepended to the user's arguments.
+type deprecatedAlias struct {
+	newCommand   string   // replacement command name
+	implicitArgs []string // flags injected before user-supplied args
+	notice       string   // stderr deprecation message
+}
+
+// deprecatedCommands defines the mapping from old command names to their
+// replacements under the CLI-REDESIGN. Each entry prints a deprecation notice
+// to stderr and rewrites os.Args so the new command handler runs transparently.
+var deprecatedCommands = map[string]deprecatedAlias{
+	"sync": {
+		newCommand:   "pull",
+		implicitArgs: []string{"--locked"},
+		notice:       "DEPRECATED: 'git vendor sync' is now 'git vendor pull --locked'. This alias will be removed in a future version.",
+	},
+	"update": {
+		newCommand:   "pull",
+		implicitArgs: nil,
+		notice:       "DEPRECATED: 'git vendor update' is now 'git vendor pull'. This alias will be removed in a future version.",
+	},
+	"verify": {
+		newCommand:   "status",
+		implicitArgs: []string{"--offline"},
+		notice:       "DEPRECATED: 'git vendor verify' is now 'git vendor status --offline'. This alias will be removed in a future version.",
+	},
+	"diff": {
+		newCommand:   "status",
+		implicitArgs: nil,
+		notice:       "DEPRECATED: 'git vendor diff' is now 'git vendor status'. This alias will be removed in a future version.",
+	},
+	"outdated": {
+		newCommand:   "status",
+		implicitArgs: []string{"--remote-only"},
+		notice:       "DEPRECATED: 'git vendor outdated' is now 'git vendor status --remote-only'. This alias will be removed in a future version.",
+	},
+}
+
+// rewriteDeprecatedCommand checks whether command is a deprecated alias. If so,
+// rewriteDeprecatedCommand prints the deprecation notice to stderr and rewrites
+// os.Args so the new command runs with any implicit flags prepended to the
+// user-supplied trailing arguments. Returns the (possibly rewritten) command name.
+func rewriteDeprecatedCommand(command string) string {
+	alias, ok := deprecatedCommands[command]
+	if !ok {
+		return command
+	}
+	fmt.Fprintln(os.Stderr, alias.notice)
+
+	// Rebuild os.Args: [binary, newCommand, implicitArgs..., userArgs...]
+	newArgs := []string{os.Args[0], alias.newCommand}
+	newArgs = append(newArgs, alias.implicitArgs...)
+	if len(os.Args) > 2 {
+		newArgs = append(newArgs, os.Args[2:]...)
+	}
+	os.Args = newArgs
+
+	return alias.newCommand
+}
+
 // minLen returns the smaller of a and b. Used for safe hash truncation in display output.
 func minLen(a, b int) int {
 	if a < b {
@@ -129,6 +190,11 @@ func main() {
 		tui.PrintError("Error", "git not found.")
 		os.Exit(1)
 	}
+
+	// Rewrite deprecated commands before dispatch. The old command cases
+	// (sync, update, verify, diff, outdated) are retained below for
+	// documentation but will no longer be reached once rewritten.
+	command = rewriteDeprecatedCommand(command)
 
 	manager := core.NewManager()
 	manager.SetUICallback(tui.NewTUICallback()) // Set TUI for user interaction
