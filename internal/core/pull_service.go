@@ -25,13 +25,14 @@ type PullOptions struct {
 
 // PullResult summarizes what a pull operation did.
 type PullResult struct {
-	Updated       int      // Vendors whose lock entries were refreshed
-	Synced        int      // Vendors whose files were copied to disk
-	FilesWritten  int      // Total files written
-	FilesSkipped  int      // Files skipped due to --keep-local
-	FilesRemoved  int      // Files removed (upstream deletion)
-	MappingsPruned int     // Mappings removed from vendor.yml (--prune)
-	Warnings      []string // Non-fatal warnings
+	Updated        int      `json:"updated"`                  // Vendors whose lock entries were refreshed
+	Synced         int      `json:"synced"`                   // Vendors whose files were copied to disk
+	FilesWritten   int      `json:"files_written"`            // Total files written
+	FilesSkipped   int      `json:"files_skipped"`            // Files skipped due to --keep-local
+	FilesRemoved   int      `json:"files_removed"`            // Files removed (upstream deletion)
+	MappingsPruned int      `json:"mappings_pruned"`          // Mappings removed from vendor.yml (--prune)
+	Warnings       []string `json:"warnings,omitempty"`       // Non-fatal warnings
+	DriftCleared   int      `json:"drift_cleared,omitempty"`  // AcceptedDrift entries cleared after overwrite
 }
 
 // PullVendors performs the combined update+sync operation.
@@ -96,6 +97,24 @@ func (s *VendorSyncer) PullVendors(ctx context.Context, opts PullOptions) (*Pull
 		}
 	}
 
+	// GAP-P4: Warn before overwriting files with accepted drift.
+	// PullVendors loads the lock and emits a warning per accepted_drift path
+	// that will be overwritten by the upcoming sync phase.
+	{
+		preLock, preLockErr := s.lockStore.Load()
+		if preLockErr == nil {
+			for i := range preLock.Vendors {
+				entry := &preLock.Vendors[i]
+				if opts.VendorName != "" && entry.Name != opts.VendorName {
+					continue
+				}
+				for path := range entry.AcceptedDrift {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("warning: %s has accepted drift that will be overwritten by pull", path))
+				}
+			}
+		}
+	}
+
 	// Phase 3: Sync (lock → disk)
 	syncOpts := SyncOptions{
 		VendorName: opts.VendorName,
@@ -115,6 +134,44 @@ func (s *VendorSyncer) PullVendors(ctx context.Context, opts PullOptions) (*Pull
 			result.Warnings = append(result.Warnings, fmt.Sprintf("keep-local restore: %s", err))
 		}
 		result.FilesSkipped = restored
+	}
+
+	// GAP-A1: Clear accepted_drift entries for synced vendors.
+	// After sync overwrites files, accepted_drift is stale. Clear unconditionally
+	// for synced vendors, but preserve entries for files that were kept via --keep-local.
+	{
+		driftLock, driftErr := s.lockStore.Load()
+		if driftErr == nil {
+			driftModified := false
+			for i := range driftLock.Vendors {
+				entry := &driftLock.Vendors[i]
+				if opts.VendorName != "" && entry.Name != opts.VendorName {
+					continue
+				}
+				if len(entry.AcceptedDrift) == 0 {
+					continue
+				}
+				if opts.KeepLocal && len(backups) > 0 {
+					// Only clear entries for files NOT preserved by --keep-local
+					for path := range entry.AcceptedDrift {
+						if _, kept := backups[path]; !kept {
+							delete(entry.AcceptedDrift, path)
+							result.DriftCleared++
+							driftModified = true
+						}
+					}
+				} else {
+					result.DriftCleared += len(entry.AcceptedDrift)
+					entry.AcceptedDrift = nil
+					driftModified = true
+				}
+			}
+			if driftModified {
+				if saveErr := s.lockStore.Save(driftLock); saveErr != nil {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("clear accepted_drift: %s", saveErr))
+				}
+			}
+		}
 	}
 
 	// Phase 5: Collect sync stats from lock and count upstream removals (I1).

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -287,6 +288,100 @@ func TestAccept_ClearNoDrift(t *testing.T) {
 	_, err := svc.Accept(AcceptOptions{VendorName: "mylib", Clear: true})
 	if err == nil {
 		t.Fatal("expected error when clearing vendor with no accepted drift")
+	}
+}
+
+// ============================================================================
+// T2: Accept service error path tests
+// ============================================================================
+
+// TestAccept_EmptyVendorName verifies AcceptService returns an error when
+// the vendor name is empty.
+func TestAccept_EmptyVendorName(t *testing.T) {
+	svc := NewAcceptService(nil, nil)
+	_, err := svc.Accept(AcceptOptions{VendorName: ""})
+	if err == nil {
+		t.Fatal("expected error for empty vendor name")
+	}
+	if !contains(err.Error(), "vendor name is required") {
+		t.Errorf("expected 'vendor name is required' error, got: %v", err)
+	}
+}
+
+// TestAccept_LockSaveFailure verifies AcceptService propagates lock save errors.
+func TestAccept_LockSaveFailure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lock := NewMockLockStore(ctrl)
+	cache := newMockCacheStore()
+
+	lockData := acceptTestLock("mylib", "main", "abc123", map[string]string{
+		"lib/file.go": "upstream_hash",
+	})
+	cache.files["lib/file.go"] = "local_hash"
+
+	lock.EXPECT().Load().Return(lockData, nil)
+	lock.EXPECT().Save(gomock.Any()).Return(fmt.Errorf("disk full"))
+
+	svc := NewAcceptService(lock, cache)
+	_, err := svc.Accept(AcceptOptions{VendorName: "mylib"})
+	if err == nil {
+		t.Fatal("expected error from lock save failure")
+	}
+	if !contains(err.Error(), "save lockfile") {
+		t.Errorf("expected 'save lockfile' in error, got: %v", err)
+	}
+}
+
+// TestAccept_FileNotFoundInFileHashes verifies AcceptService returns an error
+// when --file specifies a path that does not exist in the vendor's FileHashes.
+func TestAccept_FileNotFoundInFileHashes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lock := NewMockLockStore(ctrl)
+	cache := newMockCacheStore()
+
+	lockData := acceptTestLock("mylib", "main", "abc123", map[string]string{
+		"lib/file.go": "upstream_hash",
+	})
+
+	lock.EXPECT().Load().Return(lockData, nil)
+
+	svc := NewAcceptService(lock, cache)
+	_, err := svc.Accept(AcceptOptions{
+		VendorName: "mylib",
+		FilePath:   "lib/nonexistent.go",
+	})
+	if err == nil {
+		t.Fatal("expected error for file not found in file hashes")
+	}
+	if !contains(err.Error(), "not found in vendor") {
+		t.Errorf("expected 'not found in vendor' in error, got: %v", err)
+	}
+}
+
+// TestAccept_EmptyFileHashes verifies AcceptService returns an error when
+// the vendor has nil/empty FileHashes.
+func TestAccept_EmptyFileHashes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	lock := NewMockLockStore(ctrl)
+	cache := newMockCacheStore()
+
+	lockData := acceptTestLock("mylib", "main", "abc123", nil)
+
+	lock.EXPECT().Load().Return(lockData, nil)
+
+	svc := NewAcceptService(lock, cache)
+	_, err := svc.Accept(AcceptOptions{VendorName: "mylib"})
+	if err == nil {
+		t.Fatal("expected error for empty file hashes")
+	}
+	if !contains(err.Error(), "no file hashes") {
+		t.Errorf("expected 'no file hashes' in error, got: %v", err)
 	}
 }
 
