@@ -21,6 +21,5 @@ Read `.git-vendor/vendor.lock` and look at `file_hashes` keys under each vendor 
 ## Exceptions
 
 - `CLAUDE.md` is never vendored — always safe to edit locally.
-- `PROJECT_TASK.md` is never vendored — always safe to edit locally.
 - `.claude/settings.json` is never vendored — project-specific configuration.
 - If `.git-vendor/vendor.lock` does not exist, this project doesn't use git-vendor. Ignore this rule.
