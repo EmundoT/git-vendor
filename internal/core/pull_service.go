@@ -20,7 +20,7 @@ type PullOptions struct {
 	NoCache     bool   // Don't persist cache after pull
 	VendorName  string // Empty = all vendors
 	Local       bool   // Allow file:// and local path vendor URLs
-	Commit      bool   // Auto-commit after pull with vendor trailers
+	// NOTE: Commit behavior is handled at the CLI layer (main.go), not in PullVendors.
 }
 
 // PullResult summarizes what a pull operation did.
