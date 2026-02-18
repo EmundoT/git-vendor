@@ -478,6 +478,86 @@ func TestStatusService_CoherenceIssues_Propagated(t *testing.T) {
 	}
 }
 
+// TestStatusService_LockLoadFailure verifies Status() returns an error when
+// lockStore.Load() fails (T3: lock load failure path).
+func TestStatusService_LockLoadFailure(t *testing.T) {
+	svc := NewStatusService(
+		&statusStubVerify{result: &types.VerifyResult{}},
+		&statusStubOutdated{result: &types.OutdatedResult{}},
+		nil,
+		&statusStubLockStore{err: errForTest},
+	)
+
+	_, err := svc.Status(context.Background(), StatusOptions{})
+	if err == nil {
+		t.Fatal("expected error from Status() when lockStore.Load() fails, got nil")
+	}
+}
+
+// TestStatusService_VerifyErrorPropagation verifies Status() returns an error
+// when the verify service returns an error (T3: verify error propagation path).
+func TestStatusService_VerifyErrorPropagation(t *testing.T) {
+	svc := NewStatusService(
+		&statusStubVerify{err: errForTest},
+		&statusStubOutdated{result: &types.OutdatedResult{}},
+		nil,
+		&statusStubLockStore{
+			lock: types.VendorLock{Vendors: []types.LockDetails{{Name: "lib", Ref: "main", CommitHash: "abc"}}},
+		},
+	)
+
+	_, err := svc.Status(context.Background(), StatusOptions{})
+	if err == nil {
+		t.Fatal("expected error from Status() when verify returns error, got nil")
+	}
+}
+
+// TestStatusService_UpstreamSkipped verifies that when outdated returns a result
+// with Skipped > 0, vendors absent from the dependency list are marked with
+// UpstreamSkipped=true and counted in Summary.UpstreamErrors (T3).
+func TestStatusService_UpstreamSkipped(t *testing.T) {
+	vendor1 := "mylib"
+	svc := NewStatusService(
+		&statusStubVerify{
+			result: &types.VerifyResult{
+				Summary: types.VerifySummary{TotalFiles: 1, Verified: 1, Result: "PASS"},
+				Files:   []types.FileStatus{{Path: "a.go", Vendor: &vendor1, Status: "verified", Type: "file"}},
+			},
+		},
+		&statusStubOutdated{
+			result: &types.OutdatedResult{
+				// mylib is NOT in the Dependencies list — it was skipped
+				Dependencies: []types.UpdateCheckResult{},
+				TotalChecked: 0,
+				Skipped:      1,
+			},
+		},
+		nil,
+		&statusStubLockStore{
+			lock: types.VendorLock{Vendors: []types.LockDetails{{Name: "mylib", Ref: "main", CommitHash: "abc"}}},
+		},
+	)
+
+	result, err := svc.Status(context.Background(), StatusOptions{})
+	if err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+
+	if len(result.Vendors) != 1 {
+		t.Fatalf("expected 1 vendor, got %d", len(result.Vendors))
+	}
+	v := result.Vendors[0]
+	if !v.UpstreamSkipped {
+		t.Error("expected UpstreamSkipped=true for vendor absent from outdated dependencies")
+	}
+	if v.UpstreamStale != nil {
+		t.Errorf("expected UpstreamStale=nil for skipped vendor, got %v", *v.UpstreamStale)
+	}
+	if result.Summary.UpstreamErrors != 1 {
+		t.Errorf("expected UpstreamErrors=1, got %d", result.Summary.UpstreamErrors)
+	}
+}
+
 // errForTest is a sentinel error for asserting a stub was not called.
 var errForTest = &testSentinelError{msg: "should not be called"}
 

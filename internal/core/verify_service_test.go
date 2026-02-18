@@ -2911,3 +2911,230 @@ func TestVerify_Integration_JSONOutput_AllFields(t *testing.T) {
 		}
 	}
 }
+
+// ============================================================================
+// T5: verifyInternalEntries — targeted internal vendor drift tests
+// ============================================================================
+
+// TestVerify_InternalEntries_MatchingHashes verifies that verifyInternalEntries
+// reports DriftSynced when both source and destination files match their locked hashes.
+func TestVerify_InternalEntries_MatchingHashes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Both source and dest match their locked hashes
+	cache.files["src/shared.go"] = "src-hash-locked"
+	cache.files["lib/int/shared.go"] = "dest-hash-locked"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:   "int-sync",
+				Source: SourceInternal,
+				Specs: []types.BranchSpec{{
+					Ref: RefLocal,
+					Mapping: []types.PathMapping{
+						{From: "src/shared.go", To: "lib/int/shared.go"},
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "int-sync",
+				Ref:        RefLocal,
+				CommitHash: "local",
+				Source:     SourceInternal,
+				FileHashes: map[string]string{
+					"lib/int/shared.go": "dest-hash-locked",
+				},
+				SourceFileHashes: map[string]string{
+					"src/shared.go": "src-hash-locked",
+				},
+			},
+		},
+	}, nil)
+
+	// fs.Stat for findAddedFiles — dest path mapped from config
+	fs.EXPECT().Stat("lib/int/shared.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if len(result.InternalStatus) != 1 {
+		t.Fatalf("expected 1 InternalStatus entry, got %d", len(result.InternalStatus))
+	}
+	entry := result.InternalStatus[0]
+	if entry.Direction != types.DriftSynced {
+		t.Errorf("expected direction %q, got %q", types.DriftSynced, entry.Direction)
+	}
+	if entry.Action != "none" {
+		t.Errorf("expected action 'none', got %q", entry.Action)
+	}
+	if entry.VendorName != "int-sync" {
+		t.Errorf("expected vendor 'int-sync', got %q", entry.VendorName)
+	}
+}
+
+// TestVerify_InternalEntries_SourceMismatch verifies that verifyInternalEntries
+// reports DriftSourceDrift when the source file has changed since the last sync.
+func TestVerify_InternalEntries_SourceMismatch(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Source changed, dest unchanged
+	cache.files["src/shared.go"] = "src-hash-CHANGED"
+	cache.files["lib/int/shared.go"] = "dest-hash-locked"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:   "int-drift",
+				Source: SourceInternal,
+				Specs: []types.BranchSpec{{
+					Ref: RefLocal,
+					Mapping: []types.PathMapping{
+						{From: "src/shared.go", To: "lib/int/shared.go"},
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "int-drift",
+				Ref:        RefLocal,
+				CommitHash: "local",
+				Source:     SourceInternal,
+				FileHashes: map[string]string{
+					"lib/int/shared.go": "dest-hash-locked",
+				},
+				SourceFileHashes: map[string]string{
+					"src/shared.go": "src-hash-locked",
+				},
+			},
+		},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/int/shared.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if len(result.InternalStatus) != 1 {
+		t.Fatalf("expected 1 InternalStatus entry, got %d", len(result.InternalStatus))
+	}
+	entry := result.InternalStatus[0]
+	if entry.Direction != types.DriftSourceDrift {
+		t.Errorf("expected direction %q, got %q", types.DriftSourceDrift, entry.Direction)
+	}
+	if entry.SourceHashCurrent != "src-hash-CHANGED" {
+		t.Errorf("expected SourceHashCurrent 'src-hash-CHANGED', got %q", entry.SourceHashCurrent)
+	}
+}
+
+// ============================================================================
+// T5: detectCoherenceIssues — stale config and orphaned lock tests
+// ============================================================================
+
+// TestVerify_DetectCoherence_StaleAndOrphaned verifies that detectCoherenceIssues
+// correctly identifies stale config destinations (in config but not lock) and
+// orphaned lock entries (in lock but not config).
+func TestVerify_DetectCoherence_StaleAndOrphaned(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Only lib/v/existing.go is in both config and lock
+	cache.files["lib/v/existing.go"] = "existing-hash"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "ext",
+				URL:  "https://github.com/o/r",
+				Specs: []types.BranchSpec{{
+					Ref: "main",
+					Mapping: []types.PathMapping{
+						{From: "src/existing.go", To: "lib/v/existing.go"},
+						{From: "src/stale.go", To: "lib/v/stale.go"}, // in config, NOT in lock
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "ext",
+				Ref:        "main",
+				CommitHash: "abc",
+				FileHashes: map[string]string{
+					"lib/v/existing.go": "existing-hash",
+					"lib/v/orphan.go":   "orphan-hash", // in lock, NOT in config
+				},
+			},
+		},
+	}, nil)
+
+	// fs.Stat for findAddedFiles
+	fs.EXPECT().Stat("lib/v/existing.go").Return(&mockFileInfo{isDir: false}, nil)
+	fs.EXPECT().Stat("lib/v/stale.go").Return(nil, os.ErrNotExist)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Stale != 1 {
+		t.Errorf("expected 1 stale config entry, got %d", result.Summary.Stale)
+	}
+	if result.Summary.Orphaned != 1 {
+		t.Errorf("expected 1 orphaned lock entry, got %d", result.Summary.Orphaned)
+	}
+
+	// Verify file entries have the correct type and status
+	staleFound := false
+	orphanFound := false
+	for _, f := range result.Files {
+		if f.Status == "stale" && f.Type == "coherence" && f.Path == "lib/v/stale.go" {
+			staleFound = true
+		}
+		if f.Status == "orphaned" && f.Type == "coherence" && f.Path == "lib/v/orphan.go" {
+			orphanFound = true
+		}
+	}
+	if !staleFound {
+		t.Error("expected stale coherence entry for lib/v/stale.go")
+	}
+	if !orphanFound {
+		t.Error("expected orphaned coherence entry for lib/v/orphan.go")
+	}
+}

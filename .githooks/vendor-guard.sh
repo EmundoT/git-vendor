@@ -148,10 +148,30 @@ else
 
         if [ "$MODIFIED" -gt 0 ] 2>/dev/null && [ "$MODIFIED" -gt "$ACCEPTED" ] 2>/dev/null; then
             echo "[git-vendor] Lock mismatch detected:" >&2
-            printf '%s' "$STATUS_JSON" | grep -o '"modified_paths"[[:space:]]*:[[:space:]]*\[[^]]*\]' | \
-                grep -o '"[^"]*"' | sed 's/"//g' | while read -r path; do
-                echo "  $path" >&2
-            done
+            # Extract drift_details entries and display path + hash info (GAP-G1).
+            # drift_details objects have "path", "lock_hash", "disk_hash", "accepted" fields.
+            # Parse each path/lock_hash/disk_hash from the JSON without jq.
+            DRIFT_PATHS=$(printf '%s' "$STATUS_JSON" | grep -o '"drift_details"[[:space:]]*:[[:space:]]*\[[^]]*\]' 2>/dev/null)
+            if [ -n "$DRIFT_PATHS" ]; then
+                printf '%s' "$DRIFT_PATHS" | grep -o '"path":"[^"]*"' | sed 's/"path":"//;s/"$//' | while read -r dpath; do
+                    echo "  $dpath" >&2
+                done
+                # Show lock/disk hashes for each drift entry
+                printf '%s' "$DRIFT_PATHS" | grep -o '"lock_hash":"[^"]*"' | sed 's/"lock_hash":"//;s/"$//' | while read -r lh; do
+                    lh_short=$(printf '%s' "$lh" | cut -c1-16)
+                    echo "    lock:  ${lh_short}..." >&2
+                done
+                printf '%s' "$DRIFT_PATHS" | grep -o '"disk_hash":"[^"]*"' | sed 's/"disk_hash":"//;s/"$//' | while read -r dh; do
+                    dh_short=$(printf '%s' "$dh" | cut -c1-16)
+                    echo "    disk:  ${dh_short}..." >&2
+                done
+            else
+                # Fallback: extract modified_paths if drift_details not available
+                printf '%s' "$STATUS_JSON" | grep -o '"modified_paths"[[:space:]]*:[[:space:]]*\[[^]]*\]' | \
+                    grep -o '"[^"]*"' | sed 's/"//g' | while read -r path; do
+                    echo "  $path (lock hash mismatch)" >&2
+                done
+            fi
             BLOCK=1
         fi
     fi
