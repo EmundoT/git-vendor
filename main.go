@@ -85,6 +85,9 @@ func printStatusHuman(result *types.StatusResult) {
 		if v.FilesAdded > 0 {
 			fmt.Printf("    %s added locally\n", core.Pluralize(v.FilesAdded, "file", "files"))
 		}
+		for _, p := range v.AcceptedPaths {
+			fmt.Printf("    1 file accepted (drift acknowledged): %s\n", p)
+		}
 
 		// Remote results
 		if v.UpstreamStale != nil {
@@ -871,6 +874,77 @@ func main() {
 				os.Exit(1)
 			}
 			callback.ShowSuccess("Committed vendor changes.")
+		}
+
+	case "accept":
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		// Parse accept-specific flags
+		vendorName := ""
+		filePath := ""
+		clear := false
+		noCommit := false
+		args := os.Args[2:]
+
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+			switch {
+			case arg == "--clear":
+				clear = true
+			case arg == "--no-commit":
+				noCommit = true
+			case arg == "--file" && i+1 < len(args):
+				i++
+				filePath = args[i]
+			case strings.HasPrefix(arg, "--file="):
+				filePath = strings.TrimPrefix(arg, "--file=")
+			case !strings.HasPrefix(arg, "--"):
+				vendorName = arg
+			}
+		}
+
+		if vendorName == "" {
+			tui.PrintError("Usage", "git-vendor accept <vendor-name> [--file <path>] [--clear] [--no-commit]")
+			os.Exit(1)
+		}
+
+		opts := core.AcceptOptions{
+			VendorName: vendorName,
+			FilePath:   filePath,
+			Clear:      clear,
+			NoCommit:   noCommit,
+		}
+
+		result, err := manager.Accept(opts)
+		if err != nil {
+			tui.PrintError("Accept Failed", err.Error())
+			os.Exit(1)
+		}
+
+		if clear {
+			for _, p := range result.ClearedFiles {
+				fmt.Printf("  cleared: %s\n", p)
+			}
+			fmt.Printf("Cleared %s accepted drift entries for %s.\n",
+				core.Pluralize(len(result.ClearedFiles), "file", "files"), vendorName)
+		} else {
+			for _, p := range result.AcceptedFiles {
+				fmt.Printf("  accepted: %s\n", p)
+			}
+			fmt.Printf("Accepted drift for %s in %s.\n",
+				core.Pluralize(len(result.AcceptedFiles), "file", "files"), vendorName)
+		}
+
+		// Auto-commit lockfile change unless --no-commit
+		if !noCommit {
+			if err := manager.CommitVendorChanges("accept", vendorName); err != nil {
+				tui.PrintError("Commit Failed", err.Error())
+				os.Exit(1)
+			}
+			tui.PrintSuccess("Committed lockfile changes.")
 		}
 
 	case "validate":

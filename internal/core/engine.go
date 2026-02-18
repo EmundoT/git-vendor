@@ -294,6 +294,13 @@ func (m *Manager) Drift(ctx context.Context, opts DriftOptions) (*types.DriftRes
 	return m.syncer.Drift(ctx, opts)
 }
 
+// Accept acknowledges local drift to vendored files, legitimizing intentional modifications.
+// Accept writes accepted_drift entries to the lockfile so verify/status report "accepted" not "modified".
+// With Clear=true, Accept removes accepted_drift entries.
+func (m *Manager) Accept(opts AcceptOptions) (*AcceptResult, error) {
+	return m.syncer.Accept(opts)
+}
+
 // MigrateLockfile updates an existing lockfile to add missing metadata fields
 func (m *Manager) MigrateLockfile() (int, error) {
 	return m.syncer.MigrateLockfile()
