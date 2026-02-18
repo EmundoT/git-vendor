@@ -404,6 +404,12 @@ type VendorStatusDetail struct {
 	// Populated for modified and accepted files when offline checks run.
 	DriftDetails []DriftDetail `json:"drift_details,omitempty"`
 
+	// Lock age metadata for staleness policy evaluation (GRD-003).
+	// LastUpdated is the RFC3339 timestamp from LockDetails.Updated, recording when
+	// the lock entry was last written. Used by PolicyService to compare against
+	// MaxStalenessDays when the vendor is behind upstream.
+	LastUpdated string `json:"last_updated,omitempty"`
+
 	// Remote (outdated) results — nil when --offline
 	UpstreamHash    string `json:"upstream_hash,omitempty"`
 	UpstreamStale   *bool  `json:"upstream_stale,omitempty"`   // nil = not checked

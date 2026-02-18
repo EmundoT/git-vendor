@@ -1,11 +1,13 @@
 #!/bin/sh
-# vendor-guard.sh — Pre-commit drift detection for git-vendor (GRD-001).
-# Runs "git-vendor status --offline --format json --yes" and blocks the commit
-# if any vendored files have unacknowledged drift (modified but not accepted).
+# vendor-guard.sh — Pre-commit guard for git-vendor (GRD-001/GRD-002/GRD-003).
+# Two-pass approach:
+#   Pass 1: Offline check (fast, no network) — detects drift
+#   Pass 2: Full check (with remote) — runs only when block_on_stale is enabled
+#            in vendor.yml, to detect staleness beyond max_staleness_days.
 #
 # Exit codes:
-#   0 — No unacknowledged drift (or git-vendor not applicable)
-#   1 — Unacknowledged drift detected, commit blocked
+#   0 — No policy violations (or git-vendor not applicable)
+#   1 — Policy violation detected, commit blocked
 #
 # Dependencies:
 #   - git-vendor binary (skips silently if not found)
@@ -14,7 +16,7 @@
 # Usage:
 #   Called from .githooks/pre-commit or installed standalone.
 #   POSIX-compatible (#!/bin/sh).
-# #guard #drift-detection #pre-commit
+# #guard #drift-detection #staleness #pre-commit
 
 # --- Guard: skip if git-vendor is not installed ---
 if ! command -v git-vendor >/dev/null 2>&1; then
@@ -26,27 +28,44 @@ if [ ! -f ".git-vendor/vendor.yml" ]; then
     exit 0
 fi
 
-# --- Run status check ---
+# --- Pass 1: Offline check (fast, no network) ---
 STATUS_JSON=$(git-vendor status --offline --format=json --yes 2>/dev/null)
-EXIT_CODE=$?
 
-# If status command itself failed (exit 1 = FAIL which is expected for drift),
-# we still parse the JSON. Only bail on unexpected errors (no JSON output).
+# If status command produced no output, skip guard (fatal error).
 if [ -z "$STATUS_JSON" ]; then
-    # No output at all — git-vendor may have errored fatally. Skip guard.
     exit 0
 fi
 
-# --- Parse JSON for unacknowledged drift ---
-# Strategy: look for drift_details entries where accepted is false.
-# Two parsing paths: jq (preferred) and grep/awk (fallback).
+# --- GRD-003: Check if block_on_stale is enabled anywhere in vendor.yml ---
+# If so, re-run status WITHOUT --offline to get remote staleness data.
+# This avoids network latency on every commit when staleness checking is off.
+NEEDS_REMOTE=0
+if command -v jq >/dev/null 2>&1; then
+    # Precise YAML check not possible in pure shell; grep vendor.yml for the key.
+    # False positives (commented-out lines) are acceptable — worst case is an
+    # extra network round-trip.
+    :
+fi
+# Both jq and non-jq paths use the same grep heuristic on vendor.yml.
+if grep -q 'block_on_stale:[[:space:]]*true' ".git-vendor/vendor.yml" 2>/dev/null; then
+    NEEDS_REMOTE=1
+fi
 
+if [ "$NEEDS_REMOTE" -eq 1 ]; then
+    FULL_JSON=$(git-vendor status --format=json --yes 2>/dev/null)
+    if [ -n "$FULL_JSON" ]; then
+        STATUS_JSON="$FULL_JSON"
+    fi
+    # If full check failed, fall back to offline results (already in STATUS_JSON).
+fi
+
+# --- Parse JSON for policy violations and drift ---
 BLOCK=0
 
 if command -v jq >/dev/null 2>&1; then
     # --- jq path: precise JSON parsing ---
 
-    # Check policy violations first (GRD-002). Only "error" severity blocks.
+    # Check policy violations first (GRD-002/GRD-003). Only "error" severity blocks.
     POLICY_ERRORS=$(printf '%s' "$STATUS_JSON" | jq -r '
         [.policy_violations[]? | select(.severity == "error")]
         | if length == 0 then empty
@@ -108,7 +127,7 @@ if command -v jq >/dev/null 2>&1; then
     fi
 else
     # --- grep/awk fallback: pattern-match JSON text ---
-    # Check for policy error violations (GRD-002)
+    # Check for policy error violations (GRD-002/GRD-003)
     POLICY_ERROR_COUNT=$(printf '%s' "$STATUS_JSON" | grep -c '"severity"[[:space:]]*:[[:space:]]*"error"' 2>/dev/null)
     POLICY_ERROR_COUNT=${POLICY_ERROR_COUNT:-0}
 
