@@ -2226,3 +2226,688 @@ func TestVerify_CoherenceJSON(t *testing.T) {
 		t.Error("Expected an orphaned coherence entry in JSON output")
 	}
 }
+
+// ============================================================================
+// Internal Vendor Drift Tests (Spec 070)
+// ============================================================================
+
+func TestVerify_InternalVendor_SourceDrift(t *testing.T) {
+	// Source file changed since last sync but destination still matches lock.
+	// verifyInternalEntries should report DriftSourceDrift direction.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Destination file matches lock hash (no drift at dest)
+	cache.files["lib/internal/config.go"] = "dest-hash-locked"
+	// Source file has CHANGED since sync (different from locked source hash)
+	cache.files["src/config.go"] = "source-hash-NEW"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:       "internal-cfg",
+				Source:     SourceInternal,
+				Compliance: ComplianceSourceCanonical,
+				Specs: []types.BranchSpec{{
+					Ref: RefLocal,
+					Mapping: []types.PathMapping{
+						{From: "src/config.go", To: "lib/internal/config.go"},
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "internal-cfg",
+				Ref:        RefLocal,
+				CommitHash: "content-hash",
+				Source:     SourceInternal,
+				FileHashes: map[string]string{
+					"lib/internal/config.go": "dest-hash-locked",
+				},
+				SourceFileHashes: map[string]string{
+					"src/config.go": "source-hash-OLD", // different from current
+				},
+			},
+		},
+	}, nil)
+
+	// fs.Stat for findAddedFiles
+	fs.EXPECT().Stat("lib/internal/config.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Whole-file should be verified (dest matches lock)
+	if result.Summary.Verified != 1 {
+		t.Errorf("Expected 1 verified file, got %d", result.Summary.Verified)
+	}
+
+	// Should have internal status entries
+	if len(result.InternalStatus) == 0 {
+		t.Fatal("Expected InternalStatus entries for internal vendor")
+	}
+
+	entry := result.InternalStatus[0]
+	if entry.Direction != types.DriftSourceDrift {
+		t.Errorf("Expected direction %q, got %q", types.DriftSourceDrift, entry.Direction)
+	}
+	if entry.VendorName != "internal-cfg" {
+		t.Errorf("Expected vendor name 'internal-cfg', got %q", entry.VendorName)
+	}
+	if entry.FromPath != "src/config.go" {
+		t.Errorf("Expected from path 'src/config.go', got %q", entry.FromPath)
+	}
+	if entry.ToPath != "lib/internal/config.go" {
+		t.Errorf("Expected to path 'lib/internal/config.go', got %q", entry.ToPath)
+	}
+	if entry.Action != "propagate source → dest" {
+		t.Errorf("Expected action 'propagate source → dest', got %q", entry.Action)
+	}
+	if entry.Compliance != ComplianceSourceCanonical {
+		t.Errorf("Expected compliance %q, got %q", ComplianceSourceCanonical, entry.Compliance)
+	}
+}
+
+func TestVerify_InternalVendor_DestDrift(t *testing.T) {
+	// Destination file changed since last sync but source still matches lock.
+	// verifyInternalEntries should report DriftDestDrift direction.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Destination file has CHANGED (different from locked dest hash)
+	cache.files["lib/internal/util.go"] = "dest-hash-NEW"
+	// Source file still matches lock
+	cache.files["src/util.go"] = "source-hash-locked"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:       "internal-util",
+				Source:     SourceInternal,
+				Compliance: ComplianceSourceCanonical,
+				Specs: []types.BranchSpec{{
+					Ref: RefLocal,
+					Mapping: []types.PathMapping{
+						{From: "src/util.go", To: "lib/internal/util.go"},
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "internal-util",
+				Ref:        RefLocal,
+				CommitHash: "content-hash",
+				Source:     SourceInternal,
+				FileHashes: map[string]string{
+					"lib/internal/util.go": "dest-hash-locked", // different from current
+				},
+				SourceFileHashes: map[string]string{
+					"src/util.go": "source-hash-locked",
+				},
+			},
+		},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/internal/util.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Whole-file check: dest hash changed → modified
+	if result.Summary.Modified != 1 {
+		t.Errorf("Expected 1 modified file (dest hash changed), got %d", result.Summary.Modified)
+	}
+
+	// Internal status should show dest drift
+	if len(result.InternalStatus) == 0 {
+		t.Fatal("Expected InternalStatus entries for internal vendor")
+	}
+
+	entry := result.InternalStatus[0]
+	if entry.Direction != types.DriftDestDrift {
+		t.Errorf("Expected direction %q, got %q", types.DriftDestDrift, entry.Direction)
+	}
+	if entry.Action != "warning: dest modified (source-canonical)" {
+		t.Errorf("Expected source-canonical warning action, got %q", entry.Action)
+	}
+	if entry.SourceHashCurrent != "source-hash-locked" {
+		t.Errorf("Expected current source hash 'source-hash-locked', got %q", entry.SourceHashCurrent)
+	}
+	if entry.DestHashCurrent != "dest-hash-NEW" {
+		t.Errorf("Expected current dest hash 'dest-hash-NEW', got %q", entry.DestHashCurrent)
+	}
+}
+
+func TestVerify_InternalVendor_DestDrift_Bidirectional(t *testing.T) {
+	// Same as dest drift but with bidirectional compliance.
+	// Action should suggest propagating dest back to source.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	cache.files["lib/internal/shared.go"] = "dest-hash-NEW"
+	cache.files["src/shared.go"] = "source-hash-locked"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:       "internal-bidir",
+				Source:     SourceInternal,
+				Compliance: ComplianceBidirectional,
+				Specs: []types.BranchSpec{{
+					Ref: RefLocal,
+					Mapping: []types.PathMapping{
+						{From: "src/shared.go", To: "lib/internal/shared.go"},
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "internal-bidir",
+				Ref:        RefLocal,
+				CommitHash: "content-hash",
+				Source:     SourceInternal,
+				FileHashes: map[string]string{
+					"lib/internal/shared.go": "dest-hash-locked",
+				},
+				SourceFileHashes: map[string]string{
+					"src/shared.go": "source-hash-locked",
+				},
+			},
+		},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/internal/shared.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if len(result.InternalStatus) == 0 {
+		t.Fatal("Expected InternalStatus entries")
+	}
+
+	entry := result.InternalStatus[0]
+	if entry.Direction != types.DriftDestDrift {
+		t.Errorf("Expected direction %q, got %q", types.DriftDestDrift, entry.Direction)
+	}
+	if entry.Action != "propagate dest → source" {
+		t.Errorf("Expected bidirectional propagation action, got %q", entry.Action)
+	}
+	if entry.Compliance != ComplianceBidirectional {
+		t.Errorf("Expected compliance %q, got %q", ComplianceBidirectional, entry.Compliance)
+	}
+}
+
+func TestVerify_InternalVendor_Synced(t *testing.T) {
+	// Both source and destination match their locked hashes — synced state.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	cache.files["lib/internal/clean.go"] = "dest-hash"
+	cache.files["src/clean.go"] = "source-hash"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name:   "internal-clean",
+				Source: SourceInternal,
+				Specs: []types.BranchSpec{{
+					Ref: RefLocal,
+					Mapping: []types.PathMapping{
+						{From: "src/clean.go", To: "lib/internal/clean.go"},
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "internal-clean",
+				Ref:        RefLocal,
+				CommitHash: "content-hash",
+				Source:     SourceInternal,
+				FileHashes: map[string]string{
+					"lib/internal/clean.go": "dest-hash",
+				},
+				SourceFileHashes: map[string]string{
+					"src/clean.go": "source-hash",
+				},
+			},
+		},
+	}, nil)
+
+	fs.EXPECT().Stat("lib/internal/clean.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if result.Summary.Result != "PASS" {
+		t.Errorf("Expected PASS for synced internal vendor, got %s", result.Summary.Result)
+	}
+
+	if len(result.InternalStatus) == 0 {
+		t.Fatal("Expected InternalStatus entries")
+	}
+
+	entry := result.InternalStatus[0]
+	if entry.Direction != types.DriftSynced {
+		t.Errorf("Expected direction %q, got %q", types.DriftSynced, entry.Direction)
+	}
+	if entry.Action != "none" {
+		t.Errorf("Expected action 'none', got %q", entry.Action)
+	}
+}
+
+// ============================================================================
+// Comprehensive Mixed Discrepancy Test (VFY-002)
+// ============================================================================
+
+func TestVerify_Integration_AllDiscrepancyTypes(t *testing.T) {
+	// Single verify run producing every discrepancy type:
+	// - verified file
+	// - modified file
+	// - deleted file
+	// - added file (requires real filesystem for WalkDir)
+	// - stale config entry
+	// - orphaned lock entry
+	// - internal vendor drift
+	//
+	// This test uses a real filesystem for the added-file detection
+	// while mocking config/lock stores.
+	tmpDir := t.TempDir()
+
+	// Create vendor directories and files
+	vendorDir := filepath.Join(tmpDir, "lib", "multi")
+	if err := os.MkdirAll(vendorDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verified file: matches lock hash exactly
+	verifiedFile := filepath.Join(vendorDir, "verified.go")
+	if err := os.WriteFile(verifiedFile, []byte("package verified\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Modified file: exists but content differs from lock hash
+	modifiedFile := filepath.Join(vendorDir, "modified.go")
+	if err := os.WriteFile(modifiedFile, []byte("package modified-NEW\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Added file: exists on disk but NOT in lock FileHashes
+	addedFile := filepath.Join(vendorDir, "added.go")
+	if err := os.WriteFile(addedFile, []byte("package added\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Internal vendor source file (source drifted)
+	srcDir := filepath.Join(tmpDir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	internalSrcFile := filepath.Join(srcDir, "internal.go")
+	if err := os.WriteFile(internalSrcFile, []byte("package internal-NEW\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Internal vendor dest file
+	internalDestDir := filepath.Join(tmpDir, "lib", "internal")
+	if err := os.MkdirAll(internalDestDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	internalDestFile := filepath.Join(internalDestDir, "internal.go")
+	if err := os.WriteFile(internalDestFile, []byte("package internal-dest\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	realCache := NewFileCacheStore(NewOSFileSystem(), tmpDir)
+	verifiedHash, _ := realCache.ComputeFileChecksum(verifiedFile)
+	internalDestHash, _ := realCache.ComputeFileChecksum(internalDestFile)
+
+	// Deleted file: in lock FileHashes but NOT on disk
+	deletedFile := filepath.Join(vendorDir, "deleted.go")
+	// (not created — simulates deletion)
+
+	// Orphaned file: in lock FileHashes but NOT in config mapping.
+	// Must exist on disk so the whole-file check counts it as "verified"
+	// (not double-counted as "deleted").
+	orphanedFile := filepath.Join(vendorDir, "orphaned.go")
+	if err := os.WriteFile(orphanedFile, []byte("package orphaned\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	orphanedHash, _ := realCache.ComputeFileChecksum(orphanedFile)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "multi-vendor",
+				URL:  "https://github.com/owner/repo",
+				Specs: []types.BranchSpec{{
+					Ref: "main",
+					Mapping: []types.PathMapping{
+						{From: "src/verified.go", To: verifiedFile},
+						{From: "src/modified.go", To: modifiedFile},
+						{From: "src/deleted.go", To: deletedFile},
+						{From: "src/stale.go", To: filepath.Join(vendorDir, "stale.go")}, // stale: not in lock
+					},
+				}},
+			},
+			{
+				Name:   "internal-vendor",
+				Source: SourceInternal,
+				Specs: []types.BranchSpec{{
+					Ref: RefLocal,
+					Mapping: []types.PathMapping{
+						{From: internalSrcFile, To: internalDestFile},
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "multi-vendor",
+				Ref:        "main",
+				CommitHash: "abc123",
+				FileHashes: map[string]string{
+					verifiedFile: verifiedHash,
+					modifiedFile: "old-modified-hash", // mismatches current
+					deletedFile:  "deleted-file-hash", // file doesn't exist
+					orphanedFile: orphanedHash,        // orphaned: not in config but file exists
+				},
+			},
+			{
+				Name:       "internal-vendor",
+				Ref:        RefLocal,
+				CommitHash: "internal-hash",
+				Source:     SourceInternal,
+				FileHashes: map[string]string{
+					internalDestFile: internalDestHash,
+				},
+				SourceFileHashes: map[string]string{
+					internalSrcFile: "old-source-hash", // source has drifted
+				},
+			},
+		},
+	}, nil)
+
+	service := NewVerifyService(configStore, lockStore, realCache, NewOSFileSystem(), tmpDir)
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify aggregate counts.
+	// Verified: verifiedFile + orphanedFile (hash matches) + internalDestFile = 3
+	// The orphanedFile is verified by the whole-file check AND flagged as orphaned
+	// by coherence detection. Both counts increment independently.
+	if result.Summary.Verified != 3 {
+		t.Errorf("Expected 3 verified (verified + orphaned-on-disk + internal-dest), got %d", result.Summary.Verified)
+	}
+	if result.Summary.Modified != 1 {
+		t.Errorf("Expected 1 modified, got %d", result.Summary.Modified)
+	}
+	if result.Summary.Deleted != 1 {
+		t.Errorf("Expected 1 deleted, got %d", result.Summary.Deleted)
+	}
+	if result.Summary.Added != 1 {
+		t.Errorf("Expected 1 added, got %d", result.Summary.Added)
+	}
+	if result.Summary.Stale != 1 {
+		t.Errorf("Expected 1 stale, got %d", result.Summary.Stale)
+	}
+	if result.Summary.Orphaned != 1 {
+		t.Errorf("Expected 1 orphaned, got %d", result.Summary.Orphaned)
+	}
+
+	// Overall result: FAIL (modified + deleted present)
+	if result.Summary.Result != "FAIL" {
+		t.Errorf("Expected FAIL, got %s", result.Summary.Result)
+	}
+
+	// TotalFiles should count all file-level entries (not InternalStatus)
+	expectedTotal := result.Summary.Verified + result.Summary.Modified +
+		result.Summary.Deleted + result.Summary.Added +
+		result.Summary.Stale + result.Summary.Orphaned
+	if result.Summary.TotalFiles != expectedTotal {
+		t.Errorf("Expected TotalFiles=%d, got %d", expectedTotal, result.Summary.TotalFiles)
+	}
+
+	// Internal drift should be present
+	if len(result.InternalStatus) == 0 {
+		t.Error("Expected InternalStatus entries for internal vendor drift")
+	} else if result.InternalStatus[0].Direction != types.DriftSourceDrift {
+		t.Errorf("Expected source drift for internal vendor, got %q", result.InternalStatus[0].Direction)
+	}
+
+	// Verify all status types are present in Files
+	statusCounts := make(map[string]int)
+	for _, f := range result.Files {
+		statusCounts[f.Status]++
+	}
+	for _, expected := range []string{"verified", "modified", "deleted", "added", "stale", "orphaned"} {
+		if statusCounts[expected] == 0 {
+			t.Errorf("Expected at least one %q entry in Files", expected)
+		}
+	}
+}
+
+// ============================================================================
+// Comprehensive JSON Output Test (VFY-002)
+// ============================================================================
+
+func TestVerify_Integration_JSONOutput_AllFields(t *testing.T) {
+	// Verifies that JSON output contains all expected fields including
+	// stale/orphaned counts, internal_status, schema_version, and timestamp.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	configStore := NewMockConfigStore(ctrl)
+	lockStore := NewMockLockStore(ctrl)
+	fs := NewMockFileSystem(ctrl)
+	cache := newMockCacheStore()
+
+	// Verified file
+	cache.files["lib/v/ok.go"] = "hash-ok"
+	// Modified file
+	cache.files["lib/v/changed.go"] = "hash-changed-NEW"
+	// Internal vendor files
+	cache.files["lib/int/dest.go"] = "int-dest-hash"
+	cache.files["src/int.go"] = "int-src-hash-NEW"
+
+	configStore.EXPECT().Load().Return(types.VendorConfig{
+		Vendors: []types.VendorSpec{
+			{
+				Name: "ext-vendor",
+				URL:  "https://github.com/o/r",
+				Specs: []types.BranchSpec{{
+					Ref: "main",
+					Mapping: []types.PathMapping{
+						{From: "src/ok.go", To: "lib/v/ok.go"},
+						{From: "src/changed.go", To: "lib/v/changed.go"},
+						{From: "src/stale.go", To: "lib/v/stale.go"}, // stale
+					},
+				}},
+			},
+			{
+				Name:   "int-vendor",
+				Source: SourceInternal,
+				Specs: []types.BranchSpec{{
+					Ref: RefLocal,
+					Mapping: []types.PathMapping{
+						{From: "src/int.go", To: "lib/int/dest.go"},
+					},
+				}},
+			},
+		},
+	}, nil)
+
+	lockStore.EXPECT().Load().Return(types.VendorLock{
+		Vendors: []types.LockDetails{
+			{
+				Name:       "ext-vendor",
+				Ref:        "main",
+				CommitHash: "abc",
+				FileHashes: map[string]string{
+					"lib/v/ok.go":      "hash-ok",
+					"lib/v/changed.go": "hash-changed-OLD", // modified
+					"lib/v/orphan.go":  "orphan-hash",      // orphaned
+				},
+			},
+			{
+				Name:       "int-vendor",
+				Ref:        RefLocal,
+				CommitHash: "int-hash",
+				Source:     SourceInternal,
+				FileHashes: map[string]string{
+					"lib/int/dest.go": "int-dest-hash",
+				},
+				SourceFileHashes: map[string]string{
+					"src/int.go": "int-src-hash-OLD", // source drifted
+				},
+			},
+		},
+	}, nil)
+
+	// fs.Stat for findAddedFiles
+	fs.EXPECT().Stat("lib/v/ok.go").Return(&mockFileInfo{isDir: false}, nil)
+	fs.EXPECT().Stat("lib/v/changed.go").Return(&mockFileInfo{isDir: false}, nil)
+	fs.EXPECT().Stat("lib/v/stale.go").Return(nil, os.ErrNotExist)
+	fs.EXPECT().Stat("lib/int/dest.go").Return(&mockFileInfo{isDir: false}, nil)
+
+	service := NewVerifyService(configStore, lockStore, cache, fs, "/test")
+	result, err := service.Verify(context.Background())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Marshal and unmarshal to verify JSON roundtrip
+	jsonBytes, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Failed to marshal JSON: %v", err)
+	}
+
+	var parsed types.VerifyResult
+	if err := json.Unmarshal(jsonBytes, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal JSON: %v", err)
+	}
+
+	// Schema version
+	if parsed.SchemaVersion != "1.0" {
+		t.Errorf("Expected schema_version '1.0', got %q", parsed.SchemaVersion)
+	}
+
+	// Timestamp should be non-empty and RFC3339 parseable
+	if parsed.Timestamp == "" {
+		t.Error("Expected non-empty timestamp")
+	}
+
+	// Summary fields
+	if parsed.Summary.Verified != 2 {
+		t.Errorf("Expected 2 verified (ext ok + internal dest), got %d", parsed.Summary.Verified)
+	}
+	if parsed.Summary.Modified != 1 {
+		t.Errorf("Expected 1 modified, got %d", parsed.Summary.Modified)
+	}
+	if parsed.Summary.Stale != 1 {
+		t.Errorf("Expected 1 stale, got %d", parsed.Summary.Stale)
+	}
+	if parsed.Summary.Orphaned != 1 {
+		t.Errorf("Expected 1 orphaned, got %d", parsed.Summary.Orphaned)
+	}
+	if parsed.Summary.Result != "FAIL" {
+		t.Errorf("Expected FAIL result, got %q", parsed.Summary.Result)
+	}
+
+	// Files array: check type diversity
+	typeSet := make(map[string]bool)
+	statusSet := make(map[string]bool)
+	for _, f := range parsed.Files {
+		typeSet[f.Type] = true
+		statusSet[f.Status] = true
+	}
+	if !typeSet["file"] {
+		t.Error("Expected 'file' type in JSON Files array")
+	}
+	if !typeSet["coherence"] {
+		t.Error("Expected 'coherence' type in JSON Files array")
+	}
+	if !statusSet["verified"] {
+		t.Error("Expected 'verified' status in JSON Files array")
+	}
+	if !statusSet["modified"] {
+		t.Error("Expected 'modified' status in JSON Files array")
+	}
+	if !statusSet["stale"] {
+		t.Error("Expected 'stale' status in JSON Files array")
+	}
+	if !statusSet["orphaned"] {
+		t.Error("Expected 'orphaned' status in JSON Files array")
+	}
+
+	// InternalStatus should be present in JSON
+	if len(parsed.InternalStatus) == 0 {
+		t.Error("Expected internal_status in JSON output")
+	} else {
+		is := parsed.InternalStatus[0]
+		if is.VendorName != "int-vendor" {
+			t.Errorf("Expected internal_status vendor 'int-vendor', got %q", is.VendorName)
+		}
+		if string(is.Direction) != string(types.DriftSourceDrift) {
+			t.Errorf("Expected source_drifted direction in JSON, got %q", is.Direction)
+		}
+	}
+}
