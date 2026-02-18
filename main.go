@@ -742,6 +742,137 @@ func main() {
 			callback.ShowSuccess("Committed vendor changes.")
 		}
 
+	case "pull":
+		// Parse common flags
+		flags, args := parseCommonFlags(os.Args[2:])
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		// Parse pull-specific flags
+		locked := false
+		prune := false
+		keepLocal := false
+		interactive := false
+		force := false
+		noCache := false
+		commit := false
+		local := false
+		vendorName := ""
+
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+			switch {
+			case arg == "--locked":
+				locked = true
+			case arg == "--prune":
+				prune = true
+			case arg == "--keep-local":
+				keepLocal = true
+			case arg == "--interactive":
+				interactive = true
+			case arg == "--force":
+				force = true
+			case arg == "--no-cache":
+				noCache = true
+			case arg == "--commit":
+				commit = true
+			case arg == "--local":
+				local = true
+			case arg == "--verbose" || arg == "-v":
+				core.Verbose = true
+				manager.UpdateVerboseMode(true)
+			case !strings.HasPrefix(arg, "--"):
+				vendorName = arg
+			}
+		}
+
+		// --locked and --prune are mutually exclusive (prune requires fetching to detect removed files)
+		if locked && prune {
+			callback.ShowError("Invalid Options", "--locked and --prune are mutually exclusive")
+			os.Exit(1)
+		}
+
+		if !core.IsVendorInitialized() {
+			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		// Create signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		pullOpts := core.PullOptions{
+			Locked:      locked,
+			Prune:       prune,
+			KeepLocal:   keepLocal,
+			Interactive: interactive,
+			Force:       force,
+			NoCache:     noCache,
+			VendorName:  vendorName,
+			Local:       local,
+			Commit:      commit,
+		}
+
+		result, err := manager.Pull(ctx, pullOpts)
+		if err != nil {
+			callback.ShowError("Pull Failed", err.Error())
+			os.Exit(1)
+		}
+
+		// Display results
+		if flags.Mode == core.OutputJSON {
+			data := map[string]interface{}{
+				"updated":         result.Updated,
+				"synced":          result.Synced,
+				"files_written":   result.FilesWritten,
+				"files_skipped":   result.FilesSkipped,
+				"files_removed":   result.FilesRemoved,
+				"mappings_pruned": result.MappingsPruned,
+			}
+			if len(result.Warnings) > 0 {
+				data["warnings"] = result.Warnings
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(core.JSONOutput{
+				Status:  "success",
+				Message: "Pull complete.",
+				Data:    data,
+			})
+		} else if flags.Mode != core.OutputQuiet {
+			// Human-readable summary
+			if locked {
+				callback.ShowSuccess(fmt.Sprintf("Pulled (locked): %d vendor(s), %d file(s).", result.Synced, result.FilesWritten))
+			} else {
+				callback.ShowSuccess(fmt.Sprintf("Pulled: %d updated, %d synced, %d file(s).", result.Updated, result.Synced, result.FilesWritten))
+			}
+			if result.FilesSkipped > 0 {
+				fmt.Printf("  %d file(s) had local modifications (overwritten).\n", result.FilesSkipped)
+			}
+			if result.MappingsPruned > 0 {
+				fmt.Printf("  %d dead mapping(s) pruned from vendor.yml.\n", result.MappingsPruned)
+			}
+			for _, w := range result.Warnings {
+				fmt.Printf("  warning: %s\n", w)
+			}
+		}
+
+		// Auto-commit if --commit flag is set
+		if commit {
+			if err := manager.CommitVendorChanges("pull", vendorName); err != nil {
+				callback.ShowError("Commit Failed", err.Error())
+				os.Exit(1)
+			}
+			callback.ShowSuccess("Committed vendor changes.")
+		}
+
 	case "validate":
 		// Parse common flags
 		flags, _ := parseCommonFlags(os.Args[2:])
