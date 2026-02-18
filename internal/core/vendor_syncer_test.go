@@ -52,9 +52,13 @@ func (s *stubRepositoryService) GetConfig() (types.VendorConfig, error) {
 type stubSyncService struct {
 	syncErr       error
 	syncVendorErr error
+	syncCalled    bool
+	syncOpts      SyncOptions
 }
 
-func (s *stubSyncService) Sync(_ context.Context, _ SyncOptions) error {
+func (s *stubSyncService) Sync(_ context.Context, opts SyncOptions) error {
+	s.syncCalled = true
+	s.syncOpts = opts
 	return s.syncErr
 }
 

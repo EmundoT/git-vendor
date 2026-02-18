@@ -407,6 +407,17 @@ func (m *Manager) ListMirrors(vendorName string) (map[string]interface{}, error)
 	return m.syncer.ListMirrors(vendorName)
 }
 
+// Pull performs the combined update+sync operation ("get the latest from upstream").
+// ctx controls cancellation of git operations during pull.
+//
+// Default: fetch latest → update lock → copy files to disk.
+// With Locked: skip fetch, use existing lock hashes (deterministic rebuild).
+// With Prune: remove dead mappings from vendor.yml after sync.
+// With KeepLocal: detect locally modified files and warn (not overwritten).
+func (m *Manager) Pull(ctx context.Context, opts PullOptions) (*PullResult, error) {
+	return m.syncer.PullVendors(ctx, opts)
+}
+
 // UpdateVerboseMode updates the verbose flag for git operations
 func (m *Manager) UpdateVerboseMode(verbose bool) {
 	// Update the global git client
