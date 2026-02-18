@@ -18,9 +18,9 @@ type AcceptOptions struct {
 // AcceptResult holds the outcome of an accept operation.
 // AcceptResult reports which files were accepted or cleared for audit trail purposes.
 type AcceptResult struct {
-	VendorName    string   // Vendor that was operated on
-	AcceptedFiles []string // Files whose drift was accepted (empty for --clear)
-	ClearedFiles  []string // Files whose accepted drift was cleared (empty for non-clear)
+	VendorName    string   `json:"vendor_name"`              // Vendor that was operated on
+	AcceptedFiles []string `json:"accepted_files,omitempty"` // Files whose drift was accepted (empty for --clear)
+	ClearedFiles  []string `json:"cleared_files,omitempty"`  // Files whose accepted drift was cleared (empty for non-clear)
 }
 
 // AcceptService handles drift acceptance for vendored files.
