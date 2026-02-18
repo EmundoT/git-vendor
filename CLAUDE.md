@@ -67,6 +67,10 @@ internal/
     commit_service.go            # COMMIT-SCHEMA v1 trailers + git notes
     pull_service.go              # Pull command: combined update+sync orchestration
     push_service.go              # Push command: propose local changes to source repo via PR (CLI-005)
+    accept_service.go            # Accept command: acknowledge local drift to vendored files (CLI-003)
+    cascade_service.go           # Cascade command: transitive graph pull across sibling projects (CLI-006)
+    status_service.go            # Status command: unified verify+outdated inspection (CLI-001)
+    policy_service.go            # Policy engine: vendor.yml policy evaluation for commit guard (GRD-002)
     config_commands.go           # LLM-friendly CLI (Spec 072) + mirror management
     cli_response.go              # JSON output types for Spec 072
     remote_fallback.go           # Multi-remote: ResolveVendorURLs + FetchWithFallback
@@ -133,8 +137,35 @@ Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal`
 - **update**: Fetch latest commits and regenerate lockfile. Supports `<vendor-name>` positional arg and `--group <name>` for selective updates (non-targeted vendors retain existing lock entries). With `--local`: allows `file://` and local filesystem paths in vendor URLs.
 - **pull**: Combines update + sync into one operation ("get the latest from upstream"). Default: fetch latest, update lock, copy files. `--locked`: skip fetch, use existing lock (same as sync). `--prune`: remove dead mappings from vendor.yml. `--keep-local`: detect locally modified files. `--force`/`--no-cache`: passed through to sync. Supports `<vendor-name>` positional arg and `--local`. Implementation: `pull_service.go` (PullOptions, PullResult, VendorSyncer.PullVendors).
 - **push**: Propose local changes to vendored files back upstream via PR. Detects locally modified files (lock hash mismatch), clones source repo, applies diffs via reverse path mapping (`to -> from`), creates branch `vendor-push/<project>/<YYYY-MM-DD>`, pushes, and creates PR via `gh` CLI (graceful fallback to manual instructions if `gh` unavailable). `--file <path>`: push a single file. `--dry-run`: preview without action. Internal vendors are rejected (use `--reverse`). Implementation: `push_service.go` (PushOptions, PushResult, VendorSyncer.PushVendor).
+- **status**: Unified inspection replacing verify+diff+outdated. Offline checks first (lock vs disk), remote checks second (lock vs upstream). `--offline`: skip remote. `--remote-only`: skip disk. `--format json`: machine-readable. Exit codes: 0=PASS, 1=FAIL, 2=WARN. Includes config/lock coherence detection and policy violation reporting. Implementation: `status_service.go` (StatusService, StatusResult).
+- **accept**: Acknowledge local drift to vendored files. Writes `accepted_drift` to lock (path → local SHA-256). Accepted files pass commit guard. `--file <path>`: single file. `--clear`: remove drift entries. `--no-commit`: skip auto-commit. Implementation: `accept_service.go` (AcceptService, AcceptOptions, AcceptResult).
+- **cascade**: Walk dependency graph across sibling projects. Discovers siblings with vendor.yml, builds DAG, topological sort, pulls in order. `--root <dir>`: parent directory. `--verify`: run build/test after each pull. `--commit`/`--push`: auto-commit/push. `--pr`: create branches+PRs. `--dry-run`: preview order. Implementation: `cascade_service.go` (CascadeService, CascadeOptions, CascadeResult).
 - **diff**: Compare locked vs latest commit per vendor. Supports `<vendor-name>`, `--ref <ref>`, `--group <name>` filters. `DiffVendorWithOptions(DiffOptions)` is the primary API; `DiffVendor(name)` is a backward-compatible wrapper.
 - **outdated**: Lightweight staleness check via `git ls-remote` (1 command per vendor, no temp dirs). Read-only — does not modify lockfile. Exit code 1 = stale. CI-friendly alternative to `check-updates`.
+
+## Deprecated Commands
+
+Old commands are aliased with deprecation warnings (CLI-004). Remove after 2 minor versions:
+- `sync` → `pull --locked`
+- `update` → `pull`
+- `verify` → `status --offline`
+- `diff` → `status`
+- `outdated` → `status --remote-only`
+
+## Commit Guard
+
+Pre-commit hook chain in `.githooks/`:
+- **vendor-guard.sh** (GRD-001): Runs `status --offline --format json`, blocks commits with unacknowledged vendor drift. Two-pass: offline first, remote only when `block_on_stale` policy is enabled.
+- **pre-commit**: Calls vendor-guard.sh after existing go build/vet/test checks.
+
+## Policy Engine (GRD-002/GRD-003)
+
+Policy lives in `vendor.yml` at top level (global defaults) with per-vendor overrides:
+- `block_on_drift` (bool, default true): commit guard blocks on unacknowledged drift
+- `block_on_stale` (bool, default false): commit guard checks upstream staleness (network)
+- `max_staleness_days` (int, optional): grace window before staleness becomes blocking
+
+Per-vendor policy inherits from global and overrides specific fields. Implementation: `policy_service.go` (PolicyService, VendorPolicy, PolicyViolation, ResolvedPolicy).
 
 ## Lock Conflict Detection
 
