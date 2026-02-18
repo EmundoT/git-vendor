@@ -61,15 +61,46 @@ func parseCommonFlags(args []string) (core.NonInteractiveFlags, []string) {
 	return flags, remaining
 }
 
-// countSynced counts how many vendors are synced
-func countSynced(statuses []types.VendorStatus) int {
-	count := 0
-	for _, s := range statuses {
-		if s.IsSynced {
-			count++
+// printStatusHuman renders a StatusResult in the human-readable format specified
+// by CLI-REDESIGN.md. Groups output by vendor, showing verify + outdated info.
+func printStatusHuman(result *types.StatusResult) {
+	for _, v := range result.Vendors {
+		shortHash := v.CommitHash
+		if len(shortHash) > 7 {
+			shortHash = shortHash[:7]
 		}
+		fmt.Printf("  %s (%s @ %s)\n", v.Name, v.Ref, shortHash)
+
+		// Offline results
+		totalChecked := v.FilesVerified + v.FilesModified + v.FilesDeleted
+		if totalChecked > 0 {
+			fmt.Printf("    %s verified\n", core.Pluralize(v.FilesVerified, "file", "files"))
+		}
+		for _, p := range v.ModifiedPaths {
+			fmt.Printf("    1 file modified locally: %s\n", p)
+		}
+		for _, p := range v.DeletedPaths {
+			fmt.Printf("    1 file deleted locally: %s\n", p)
+		}
+		if v.FilesAdded > 0 {
+			fmt.Printf("    %s added locally\n", core.Pluralize(v.FilesAdded, "file", "files"))
+		}
+
+		// Remote results
+		if v.UpstreamStale != nil {
+			if *v.UpstreamStale {
+				fmt.Println("    upstream has new commits available")
+			} else {
+				fmt.Println("    up to date")
+			}
+		} else if v.UpstreamSkipped {
+			fmt.Println("    upstream check skipped (network error)")
+		}
+
+		fmt.Println()
 	}
-	return count
+
+	fmt.Printf("Result: %s\n", result.Summary.Result)
 }
 
 func main() {
@@ -812,6 +843,71 @@ func main() {
 			fmt.Printf("• Vendors: %s\n", core.Pluralize(len(cfg.Vendors), "vendor", "vendors"))
 		}
 
+	case "status":
+		// Unified inspection: merges verify (offline) + outdated (remote)
+		format := "table"
+		offline := false
+		remoteOnly := false
+
+		for _, arg := range os.Args[2:] {
+			switch {
+			case arg == "--format=json" || arg == "--json":
+				format = "json"
+			case arg == "--format=table":
+				format = "table"
+			case strings.HasPrefix(arg, "--format="):
+				format = strings.TrimPrefix(arg, "--format=")
+			case arg == "--offline":
+				offline = true
+			case arg == "--remote-only":
+				remoteOnly = true
+			}
+		}
+
+		if offline && remoteOnly {
+			tui.PrintError("Invalid Flags", "--offline and --remote-only are mutually exclusive")
+			os.Exit(1)
+		}
+
+		if !core.IsVendorInitialized() {
+			tui.PrintError("Not Initialized", core.ErrNotInitialized.Error())
+			os.Exit(1)
+		}
+
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		result, err := manager.Status(ctx, core.StatusOptions{
+			Offline:    offline,
+			RemoteOnly: remoteOnly,
+		})
+		if err != nil {
+			tui.PrintError("Status Failed", err.Error())
+			os.Exit(1)
+		}
+
+		switch format {
+		case "json":
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				tui.PrintError("JSON Output Failed", err.Error())
+				os.Exit(1)
+			}
+		default:
+			printStatusHuman(result)
+		}
+
+		// Exit code: 0=PASS, 1=FAIL, 2=WARN
+		switch result.Summary.Result {
+		case "PASS":
+			os.Exit(0)
+		case "WARN":
+			os.Exit(2)
+		default: // FAIL
+			os.Exit(1)
+		}
+
 	case "verify":
 		// Parse command-specific flags
 		format := "table" // default format
@@ -1050,109 +1146,6 @@ func main() {
 			os.Exit(2) // WARN only if no vulns (vulns take precedence)
 		}
 		os.Exit(0)
-
-	case "status":
-		// Parse common flags
-		flags, _ := parseCommonFlags(os.Args[2:])
-
-		// Create appropriate callback
-		var callback core.UICallback
-		if flags.Yes || flags.Mode != core.OutputNormal {
-			callback = tui.NewNonInteractiveTUICallback(flags)
-		} else {
-			callback = tui.NewTUICallback()
-		}
-		manager.SetUICallback(callback)
-
-		if !core.IsVendorInitialized() {
-			callback.ShowError("Not Initialized", core.ErrNotInitialized.Error())
-			os.Exit(1)
-		}
-
-		// Check sync status
-		status, err := manager.CheckSyncStatus()
-		if err != nil {
-			callback.ShowError("Status Check Failed", err.Error())
-			os.Exit(1)
-		}
-
-		// Compute aggregate file/position counts
-		totalFiles := 0
-		totalPositions := 0
-		for _, vs := range status.VendorStatuses {
-			totalFiles += vs.FileCount
-			totalPositions += vs.PositionCount
-		}
-
-		if flags.Mode == core.OutputJSON {
-			// JSON output mode
-			vendorStatusData := make([]map[string]interface{}, 0, len(status.VendorStatuses))
-			for _, vs := range status.VendorStatuses {
-				vendorStatusData = append(vendorStatusData, map[string]interface{}{
-					"name":           vs.Name,
-					"ref":            vs.Ref,
-					"is_synced":      vs.IsSynced,
-					"missing_paths":  vs.MissingPaths,
-					"file_count":     vs.FileCount,
-					"position_count": vs.PositionCount,
-				})
-			}
-
-			_ = callback.FormatJSON(core.JSONOutput{
-				Status: func() string {
-					if status.AllSynced {
-						return "success"
-					}
-					return "warning"
-				}(),
-				Message: func() string {
-					if status.AllSynced {
-						return "All vendors synced"
-					}
-					return "Some vendors need syncing"
-				}(),
-				Data: map[string]interface{}{
-					"all_synced":      status.AllSynced,
-					"vendor_statuses": vendorStatusData,
-					"total_files":     totalFiles,
-					"total_positions": totalPositions,
-				},
-			})
-
-			if !status.AllSynced {
-				os.Exit(1)
-			}
-		} else {
-			// Normal output mode
-			if status.AllSynced {
-				detail := core.Pluralize(totalFiles, "file", "files")
-				if totalPositions > 0 {
-					detail += ", " + core.Pluralize(totalPositions, "position", "positions")
-				}
-				callback.ShowSuccess(fmt.Sprintf("All vendors synced (%s)", detail))
-			} else {
-				// Show which vendors need syncing
-				callback.ShowWarning("Vendors Need Syncing", fmt.Sprintf("%s out of sync",
-					core.Pluralize(len(status.VendorStatuses)-countSynced(status.VendorStatuses), "vendor", "vendors")))
-				fmt.Println()
-
-				for _, vs := range status.VendorStatuses {
-					if !vs.IsSynced {
-						detail := core.Pluralize(vs.FileCount, "file", "files")
-						if vs.PositionCount > 0 {
-							detail += ", " + core.Pluralize(vs.PositionCount, "position", "positions")
-						}
-						fmt.Printf("⚠ %s @ %s (%s)\n", vs.Name, vs.Ref, detail)
-						for _, path := range vs.MissingPaths {
-							fmt.Printf("  • Missing: %s\n", path)
-						}
-					}
-				}
-				fmt.Println()
-				fmt.Println("Run 'git-vendor sync' to fix.")
-				os.Exit(1)
-			}
-		}
 
 	case "check-updates":
 		// Parse common flags
