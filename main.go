@@ -3333,6 +3333,114 @@ func main() {
 			os.Exit(core.ExitInvalidArguments)
 		}
 
+	case "cascade":
+		// Parse common flags
+		flags, args := parseCommonFlags(os.Args[2:])
+
+		// Create appropriate callback
+		var callback core.UICallback
+		if flags.Yes || flags.Mode != core.OutputNormal {
+			callback = tui.NewNonInteractiveTUICallback(flags)
+		} else {
+			callback = tui.NewTUICallback()
+		}
+		manager.SetUICallback(callback)
+
+		// Parse cascade-specific flags
+		cascadeOpts := core.CascadeOptions{}
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+			switch {
+			case arg == "--root" && i+1 < len(args):
+				i++
+				cascadeOpts.Root = args[i]
+			case arg == "--dry-run":
+				cascadeOpts.DryRun = true
+			case arg == "--verify":
+				cascadeOpts.Verify = true
+			case arg == "--commit":
+				cascadeOpts.Commit = true
+			case arg == "--push":
+				cascadeOpts.Push = true
+			case arg == "--pr":
+				cascadeOpts.PR = true
+			case arg == "--verbose" || arg == "-v":
+				core.Verbose = true
+				manager.UpdateVerboseMode(true)
+			}
+		}
+
+		// --push requires --commit
+		if cascadeOpts.Push && !cascadeOpts.Commit {
+			callback.ShowError("Invalid Options", "--push requires --commit")
+			os.Exit(1)
+		}
+
+		// Create signal-aware context for Ctrl+C cancellation
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		result, err := manager.Cascade(ctx, cascadeOpts)
+		if err != nil {
+			if flags.Mode == core.OutputJSON {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				_ = enc.Encode(core.JSONOutput{
+					Status: "error",
+					Error:  &core.JSONError{Title: "Cascade Failed", Message: err.Error()},
+				})
+			} else {
+				callback.ShowError("Cascade Failed", err.Error())
+			}
+			os.Exit(1)
+		}
+
+		// Display results
+		if flags.Mode == core.OutputJSON {
+			data := map[string]interface{}{
+				"order":   result.Order,
+				"updated": result.Updated,
+				"current": result.Current,
+				"skipped": result.Skipped,
+			}
+			if len(result.Failed) > 0 {
+				failures := make([]map[string]interface{}, len(result.Failed))
+				for i, f := range result.Failed {
+					failures[i] = map[string]interface{}{
+						"project": f.Project,
+						"phase":   f.Phase,
+						"error":   f.Error,
+					}
+				}
+				data["failed"] = failures
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(core.JSONOutput{
+				Status:  "success",
+				Message: fmt.Sprintf("Cascade complete: %d projects walked.", len(result.Order)),
+				Data:    data,
+			})
+		} else if flags.Mode != core.OutputQuiet {
+			if cascadeOpts.DryRun {
+				fmt.Println("Cascade order (dry run):")
+				for i, name := range result.Order {
+					fmt.Printf("  %d. %s\n", i+1, name)
+				}
+			} else {
+				callback.ShowSuccess(fmt.Sprintf("Cascade complete: %d project(s) walked.", len(result.Order)))
+				if len(result.Updated) > 0 {
+					fmt.Printf("  Updated: %s\n", strings.Join(result.Updated, ", "))
+				}
+				if len(result.Current) > 0 {
+					fmt.Printf("  Current: %s\n", strings.Join(result.Current, ", "))
+				}
+				for _, f := range result.Failed {
+					fmt.Printf("  FAILED: %s (%s): %s\n", f.Project, f.Phase, f.Error)
+				}
+			}
+		}
+
 	default:
 		tui.PrintError("Unknown Command", fmt.Sprintf("'%s' is not a valid git-vendor command", command))
 		fmt.Println()

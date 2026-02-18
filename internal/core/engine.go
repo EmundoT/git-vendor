@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 
 	git "github.com/EmundoT/git-plumbing"
 
@@ -440,6 +442,25 @@ func (m *Manager) Pull(ctx context.Context, opts PullOptions) (*PullResult, erro
 // manual instructions if the gh CLI is unavailable).
 func (m *Manager) Push(ctx context.Context, opts PushOptions) (*PushResult, error) {
 	return m.syncer.PushVendor(ctx, opts)
+}
+
+// Cascade walks the dependency graph across sibling projects and runs pull
+// in topological order. ctx controls cancellation of pull and verify operations.
+//
+// Cascade discovers sibling repos in the root directory (default: parent of
+// current project), builds a DAG from vendor relationships, topological sorts,
+// and pulls in dependency order. Optional verify/commit/push after each pull.
+func (m *Manager) Cascade(ctx context.Context, opts CascadeOptions) (*CascadeResult, error) {
+	rootDir := opts.Root
+	if rootDir == "" {
+		rootDir = ".."
+	}
+	absRoot, err := filepath.Abs(rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("cascade: resolve root: %w", err)
+	}
+	svc := NewCascadeService(absRoot)
+	return svc.Cascade(ctx, opts)
 }
 
 // UpdateVerboseMode updates the verbose flag for git operations
