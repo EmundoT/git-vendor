@@ -602,6 +602,14 @@ func (s *VendorSyncer) Status(ctx context.Context, opts StatusOptions) (*types.S
 	return svc.Status(ctx, opts)
 }
 
+// Accept processes drift acceptance or clearing for a vendor's files.
+// Accept creates an AcceptService on demand (no DI overhead — accept is infrequent).
+func (s *VendorSyncer) Accept(opts AcceptOptions) (*AcceptResult, error) {
+	cache := NewFileCacheStore(s.fs, s.rootDir)
+	svc := NewAcceptService(s.lockStore, cache)
+	return svc.Accept(opts)
+}
+
 // MigrateLockfile updates an existing lockfile to add missing metadata fields.
 // For fields that can't be computed (VendoredAt, VendoredBy), it uses best guesses.
 // Returns the number of entries migrated and any error.

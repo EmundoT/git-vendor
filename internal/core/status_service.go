@@ -112,6 +112,9 @@ func (s *StatusService) Status(ctx context.Context, opts StatusOptions) (*types.
 				case "deleted":
 					v.FilesDeleted++
 					v.DeletedPaths = append(v.DeletedPaths, f.Path)
+				case "accepted":
+					v.FilesAccepted++
+					v.AcceptedPaths = append(v.AcceptedPaths, f.Path)
 				}
 				break // one match per file
 			}
@@ -172,11 +175,12 @@ func computeStatusSummary(vendors []types.VendorStatusDetail, opts StatusOptions
 	}
 
 	for _, v := range vendors {
-		s.TotalFiles += v.FilesVerified + v.FilesModified + v.FilesAdded + v.FilesDeleted
+		s.TotalFiles += v.FilesVerified + v.FilesModified + v.FilesAdded + v.FilesDeleted + v.FilesAccepted
 		s.Verified += v.FilesVerified
 		s.Modified += v.FilesModified
 		s.Added += v.FilesAdded
 		s.Deleted += v.FilesDeleted
+		s.Accepted += v.FilesAccepted
 		if v.UpstreamStale != nil && *v.UpstreamStale {
 			s.Stale++
 		}
