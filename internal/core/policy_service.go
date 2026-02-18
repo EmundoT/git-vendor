@@ -67,17 +67,27 @@ func (p *PolicyService) EvaluatePolicy(config *types.VendorConfig, statusResult 
 		}
 		resolved := types.ResolvedPolicy(globalPolicy, perVendor)
 
-		// Check drift: unacknowledged modifications
+		// Check drift: unacknowledged modifications and deletions (I6).
+		// Distinguish between modified and deleted files in the violation message
+		// so the commit guard can provide targeted resolution guidance.
 		unackedDrift := v.FilesModified + v.FilesDeleted
 		if unackedDrift > 0 {
 			severity := "warning"
 			if *resolved.BlockOnDrift {
 				severity = "error"
 			}
+			msg := fmt.Sprintf("%s has %d unacknowledged drifted file(s)", v.Name, unackedDrift)
+			if v.FilesModified > 0 && v.FilesDeleted > 0 {
+				msg = fmt.Sprintf("%s has %d modified and %d deleted vendored file(s)",
+					v.Name, v.FilesModified, v.FilesDeleted)
+			} else if v.FilesDeleted > 0 {
+				msg = fmt.Sprintf("%s has %d deleted vendored file(s) (restore with 'pull' or remove mapping)",
+					v.Name, v.FilesDeleted)
+			}
 			violations = append(violations, types.PolicyViolation{
 				VendorName: v.Name,
 				Type:       "drift",
-				Message:    fmt.Sprintf("%s has %d unacknowledged drifted file(s)", v.Name, unackedDrift),
+				Message:    msg,
 				Severity:   severity,
 			})
 		}

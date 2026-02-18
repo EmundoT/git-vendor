@@ -294,6 +294,91 @@ func TestPullVendors_LocalFlag_PassedThrough(t *testing.T) {
 	}
 }
 
+// TestPullVendors_KeepLocal_DoesNotError verifies that --keep-local flag passes
+// through without error. The full file preservation flow (C1) requires real
+// filesystem paths that match lock entries, which needs integration-level testing.
+func TestPullVendors_KeepLocal_DoesNotError(t *testing.T) {
+	env := setupPullTestEnv(t)
+
+	vendor := createTestVendorSpec("test-vendor", "https://github.com/owner/repo", "main")
+	env.writeConfig(createTestConfig(vendor))
+	env.writeLock(testLock())
+
+	result, err := env.syncer.PullVendors(context.Background(), PullOptions{KeepLocal: true})
+	if err != nil {
+		t.Fatalf("PullVendors with --keep-local returned error: %v", err)
+	}
+
+	// With stub sync (no-op), no files are detected as modified (relative paths
+	// from lock don't resolve against test CWD), so FilesSkipped should be 0.
+	if result.FilesSkipped != 0 {
+		t.Errorf("Expected FilesSkipped=0 with stub sync, got %d", result.FilesSkipped)
+	}
+}
+
+// TestBackupRestore_RoundTrip verifies that backupLocallyModified and
+// restoreLocallyModified correctly preserve file content through a backup/restore
+// cycle. This tests the core C1 mechanism independent of the full pull pipeline.
+func TestBackupRestore_RoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	rootDir := filepath.Join(tmpDir, VendorDir)
+	if err := os.MkdirAll(rootDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := NewRootedFileSystem(tmpDir)
+	syncer := &VendorSyncer{
+		fs:      fs,
+		rootDir: rootDir,
+		ui:      &SilentUICallback{},
+	}
+
+	// Create a file to back up
+	testFile := filepath.Join(tmpDir, "lib", "file.go")
+	if err := os.MkdirAll(filepath.Dir(testFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	originalContent := []byte("// original local modification\npackage lib\n")
+	if err := os.WriteFile(testFile, originalContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate modified paths map (path -> hash, hash value doesn't matter for backup)
+	modifiedPaths := map[string]string{testFile: "somehash"}
+
+	// Back up
+	backups, err := syncer.backupLocallyModified(modifiedPaths)
+	if err != nil {
+		t.Fatalf("backupLocallyModified failed: %v", err)
+	}
+	if len(backups) != 1 {
+		t.Fatalf("expected 1 backup, got %d", len(backups))
+	}
+
+	// Simulate sync overwriting the file
+	if err := os.WriteFile(testFile, []byte("// overwritten by sync\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Restore
+	restored, err := syncer.restoreLocallyModified(backups)
+	if err != nil {
+		t.Fatalf("restoreLocallyModified failed: %v", err)
+	}
+	if restored != 1 {
+		t.Errorf("expected 1 restored, got %d", restored)
+	}
+
+	// Verify content is back to original
+	afterContent, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read file after restore: %v", err)
+	}
+	if string(afterContent) != string(originalContent) {
+		t.Errorf("restore did not preserve content.\nExpected: %q\nGot: %q", originalContent, afterContent)
+	}
+}
+
 // TestPruneDeadMappings_NoDeadMappings verifies pruneDeadMappings is a no-op when all mappings are alive.
 func TestPruneDeadMappings_NoDeadMappings(t *testing.T) {
 	env := setupPullTestEnv(t)
