@@ -85,6 +85,13 @@ func (s *FileCopyService) copyMapping(tempDir string, vendor *types.VendorSpec, 
 		if err := s.fs.MkdirAll(destFile, 0755); err != nil {
 			return CopyStats{}, err
 		}
+		if len(mapping.Exclude) > 0 {
+			stats, err := s.copyDirWithExcludes(srcPath, destFile, mapping.Exclude)
+			if err != nil {
+				return CopyStats{}, fmt.Errorf("failed to copy directory %s to %s: %w", srcPath, destFile, err)
+			}
+			return stats, nil
+		}
 		stats, err := s.fs.CopyDir(srcPath, destFile)
 		if err != nil {
 			return CopyStats{}, fmt.Errorf("failed to copy directory %s to %s: %w", srcPath, destFile, err)
@@ -183,6 +190,51 @@ func (s *FileCopyService) cleanSourcePath(path, ref string) string {
 	clean := strings.Replace(path, "blob/"+ref+"/", "", 1)
 	clean = strings.Replace(clean, "tree/"+ref+"/", "", 1)
 	return clean
+}
+
+// copyDirWithExcludes walks srcDir and copies files to dstDir, skipping any file
+// whose path relative to srcDir matches an exclude pattern. Also skips .git entries
+// (consistent with OSFileSystem.CopyDir). Returns aggregated CopyStats with Excluded count.
+func (s *FileCopyService) copyDirWithExcludes(srcDir, dstDir string, excludes []string) (CopyStats, error) {
+	var stats CopyStats
+
+	err := filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(relPath, ".git") {
+			return nil
+		}
+
+		// Check exclude patterns against the relative path
+		if relPath != "." && MatchesExclude(relPath, excludes) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			stats.Excluded++
+			return nil
+		}
+
+		destPath := filepath.Join(dstDir, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(destPath, info.Mode())
+		}
+
+		fileStats, err := s.fs.CopyFile(path, destPath)
+		if err != nil {
+			return err
+		}
+		stats.Add(fileStats)
+		return nil
+	})
+
+	return stats, err
 }
 
 // computeDestPath computes the destination path for a mapping.

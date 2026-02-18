@@ -29,9 +29,12 @@ type BranchSpec struct {
 }
 
 // PathMapping defines a source-to-destination path mapping for vendoring.
+// When From is a directory, Exclude patterns (gitignore-style globs) skip
+// matching files during sync. Exclude has no effect on file-level mappings.
 type PathMapping struct {
-	From string `yaml:"from"`
-	To   string `yaml:"to"`
+	From    string   `yaml:"from"`
+	To      string   `yaml:"to"`
+	Exclude []string `yaml:"exclude,omitempty"`
 }
 
 // VendorLock represents the lock file (vendor.lock) storing resolved commit hashes.
