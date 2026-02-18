@@ -65,6 +65,7 @@ internal/
     diff_service.go / drift_service.go  # Diff (with DiffOptions filtering) and drift detection
     outdated_service.go              # Lightweight staleness check via git ls-remote
     commit_service.go            # COMMIT-SCHEMA v1 trailers + git notes
+    pull_service.go              # Pull command: combined update+sync orchestration
     config_commands.go           # LLM-friendly CLI (Spec 072) + mirror management
     cli_response.go              # JSON output types for Spec 072
     remote_fallback.go           # Multi-remote: ResolveVendorURLs + FetchWithFallback
@@ -125,10 +126,11 @@ Internal vendors track files **within the same repository** for consistency enfo
 
 Internal vendors MUST use `Ref: "local"` (sentinel, not a git ref). `--internal` flag on `sync` runs only internal vendors. `--reverse` propagates dest changes back to source (requires `--internal`).
 
-## sync vs update
+## sync vs update vs pull
 
 - **sync**: Fetch dependencies at locked commit hashes (deterministic). Uses `--depth 1` for shallow clones. Falls back to full fetch for stale commits. With `--internal`: syncs only internal vendors (no network). With `--local`: allows `file://` and local filesystem paths in vendor URLs.
 - **update**: Fetch latest commits and regenerate lockfile. Supports `<vendor-name>` positional arg and `--group <name>` for selective updates (non-targeted vendors retain existing lock entries). With `--local`: allows `file://` and local filesystem paths in vendor URLs.
+- **pull**: Combines update + sync into one operation ("get the latest from upstream"). Default: fetch latest, update lock, copy files. `--locked`: skip fetch, use existing lock (same as sync). `--prune`: remove dead mappings from vendor.yml. `--keep-local`: detect locally modified files. `--force`/`--no-cache`: passed through to sync. Supports `<vendor-name>` positional arg and `--local`. Implementation: `pull_service.go` (PullOptions, PullResult, VendorSyncer.PullVendors).
 - **diff**: Compare locked vs latest commit per vendor. Supports `<vendor-name>`, `--ref <ref>`, `--group <name>` filters. `DiffVendorWithOptions(DiffOptions)` is the primary API; `DiffVendor(name)` is a backward-compatible wrapper.
 - **outdated**: Lightweight staleness check via `git ls-remote` (1 command per vendor, no temp dirs). Read-only — does not modify lockfile. Exit code 1 = stale. CI-friendly alternative to `check-updates`.
 
