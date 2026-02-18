@@ -77,6 +77,9 @@ type LockDetails struct {
 	// Multi-remote provenance (schema v1.3)
 	SourceURL string `yaml:"source_url,omitempty"` // Which URL actually served the content (empty = primary URL)
 
+	// Accepted drift metadata (CLI-003)
+	AcceptedDrift map[string]string `yaml:"accepted_drift,omitempty"` // path -> SHA-256 of accepted local content
+
 	// Internal vendor metadata (spec 070)
 	Source           string            `yaml:"source,omitempty"`              // "internal" for internal vendors
 	SourceFileHashes map[string]string `yaml:"source_file_hashes,omitempty"` // source path -> SHA-256
@@ -276,6 +279,7 @@ type VerifySummary struct {
 	Modified   int    `json:"modified"`
 	Added      int    `json:"added"`
 	Deleted    int    `json:"deleted"`
+	Accepted   int    `json:"accepted"` // Files with accepted drift (CLI-003)
 	Stale      int    `json:"stale"`    // Config mappings not present in lock FileHashes
 	Orphaned   int    `json:"orphaned"` // Lock FileHashes entries not present in config mappings
 	Result     string `json:"result"`   // PASS, FAIL, WARN
@@ -293,7 +297,7 @@ type PositionDetail struct {
 type FileStatus struct {
 	Path         string          `json:"path"`
 	Vendor       *string         `json:"vendor"`
-	Status       string          `json:"status"`             // verified, modified, added, deleted, stale, orphaned
+	Status       string          `json:"status"`             // verified, modified, added, deleted, accepted, stale, orphaned
 	Type         string          `json:"type"`               // "file", "position", or "coherence"
 	ExpectedHash *string         `json:"expected_hash,omitempty"`
 	ActualHash   *string         `json:"actual_hash,omitempty"`
@@ -312,9 +316,11 @@ type VendorStatusDetail struct {
 	FilesModified int      `json:"files_modified"`
 	FilesAdded    int      `json:"files_added"`
 	FilesDeleted  int      `json:"files_deleted"`
+	FilesAccepted int      `json:"files_accepted"` // Files with accepted drift (CLI-003)
 	ModifiedPaths []string `json:"modified_paths,omitempty"`
 	AddedPaths    []string `json:"added_paths,omitempty"`
 	DeletedPaths  []string `json:"deleted_paths,omitempty"`
+	AcceptedPaths []string `json:"accepted_paths,omitempty"`
 
 	// Remote (outdated) results — nil when --offline
 	UpstreamHash    string `json:"upstream_hash,omitempty"`
@@ -337,6 +343,7 @@ type StatusSummary struct {
 	Modified       int    `json:"modified"`
 	Added          int    `json:"added"`
 	Deleted        int    `json:"deleted"`
+	Accepted       int    `json:"accepted"`       // Files with accepted drift (CLI-003)
 	Stale          int    `json:"stale"`          // Vendors behind upstream
 	UpstreamErrors int    `json:"upstream_errors"` // Vendors where ls-remote failed
 	Result         string `json:"result"`          // PASS, FAIL, WARN

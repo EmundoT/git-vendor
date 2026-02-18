@@ -77,6 +77,8 @@ func (s *VerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 
 	// Build map of expected files from lockfile
 	expectedFiles := make(map[string]expectedFileInfo)
+	// Build map of accepted drift hashes (CLI-003): path -> accepted local hash
+	acceptedDrift := make(map[string]string)
 
 	for i := range lock.Vendors {
 		lockEntry := &lock.Vendors[i]
@@ -87,6 +89,9 @@ func (s *VerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 					hash:   hash,
 				}
 			}
+		}
+		for path, hash := range lockEntry.AcceptedDrift {
+			acceptedDrift[path] = hash
 		}
 	}
 
@@ -133,6 +138,17 @@ func (s *VerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 				ActualHash:   &actualHash,
 			})
 			result.Summary.Verified++
+		} else if acceptedHash, ok := acceptedDrift[path]; ok && actualHash == acceptedHash {
+			// File has accepted drift — local hash matches the accepted hash (CLI-003)
+			result.Files = append(result.Files, types.FileStatus{
+				Path:         path,
+				Vendor:       &vendorName,
+				Status:       "accepted",
+				Type:         "file",
+				ExpectedHash: &expectedHash,
+				ActualHash:   &actualHash,
+			})
+			result.Summary.Accepted++
 		} else {
 			// File modified
 			result.Files = append(result.Files, types.FileStatus{
@@ -194,7 +210,7 @@ func (s *VerifyService) Verify(_ context.Context) (*types.VerifyResult, error) {
 	switch {
 	case result.Summary.Modified > 0 || result.Summary.Deleted > 0:
 		result.Summary.Result = "FAIL"
-	case result.Summary.Added > 0 || result.Summary.Stale > 0 || result.Summary.Orphaned > 0:
+	case result.Summary.Added > 0 || result.Summary.Accepted > 0 || result.Summary.Stale > 0 || result.Summary.Orphaned > 0:
 		result.Summary.Result = "WARN"
 	default:
 		result.Summary.Result = "PASS"
