@@ -153,6 +153,20 @@ func (mr *MockGitClientMockRecorder) ConfigSet(ctx, dir, key, value interface{})
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfigSet", reflect.TypeOf((*MockGitClient)(nil).ConfigSet), ctx, dir, key, value)
 }
 
+// CreateBranch mocks base method.
+func (m *MockGitClient) CreateBranch(ctx context.Context, dir, name, startPoint string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateBranch", ctx, dir, name, startPoint)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateBranch indicates an expected call of CreateBranch.
+func (mr *MockGitClientMockRecorder) CreateBranch(ctx, dir, name, startPoint interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateBranch", reflect.TypeOf((*MockGitClient)(nil).CreateBranch), ctx, dir, name, startPoint)
+}
+
 // Fetch mocks base method.
 func (m *MockGitClient) Fetch(ctx context.Context, dir, remote string, depth int, ref string) error {
 	m.ctrl.T.Helper()
@@ -283,6 +297,20 @@ func (m *MockGitClient) LsRemote(ctx context.Context, url, ref string) (string, 
 func (mr *MockGitClientMockRecorder) LsRemote(ctx, url, ref interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LsRemote", reflect.TypeOf((*MockGitClient)(nil).LsRemote), ctx, url, ref)
+}
+
+// Push mocks base method.
+func (m *MockGitClient) Push(ctx context.Context, dir, remote, branch string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Push", ctx, dir, remote, branch)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Push indicates an expected call of Push.
+func (mr *MockGitClientMockRecorder) Push(ctx, dir, remote, branch interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Push", reflect.TypeOf((*MockGitClient)(nil).Push), ctx, dir, remote, branch)
 }
 
 // SetRemoteURL mocks base method.

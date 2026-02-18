@@ -72,6 +72,12 @@ func (g *Git) LsRemote(ctx context.Context, url, ref string) (string, error) {
 	return ParseLsRemoteOutput(out, ref)
 }
 
+// Push pushes a local branch to a remote.
+// Push runs "git push <remote> <branch>" in the repository directory.
+func (g *Git) Push(ctx context.Context, remote, branch string) error {
+	return g.RunSilent(ctx, "push", remote, branch)
+}
+
 // ParseLsRemoteOutput extracts the commit hash from git ls-remote output.
 // When multiple lines match (e.g., annotated tags), ParseLsRemoteOutput prefers
 // the dereferenced entry (^{}) which points to the underlying commit.
