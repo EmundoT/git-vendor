@@ -5,7 +5,7 @@ hooks:
   PreCompact:
     - hooks:
         - type: command
-          command: "echo '## GRC AUDIT IN PROGRESS' && echo 'An active compliance audit is walking the message chain.' && echo 'Preserve all requirement tracking (REQ-NNN) and findings (FINDING-NNN) from above.' && cat .claude/krillin_counters.md 2>/dev/null | head -20"
+          command: "echo '## GRC AUDIT IN PROGRESS' && echo 'An active compliance audit is walking the message chain.' && echo 'Preserve all requirement tracking (REQ-NNN) and findings (FINDING-NNN) from above.' && cat ../../krillin_counters.md 2>/dev/null | head -20"
           timeout: 10
           statusMessage: "Preserving GRC audit context"
   SubagentStart:
@@ -326,7 +326,7 @@ The replacement prompt should:
 
 ## Phase 10: Update Krillin Counters
 
-After completing the report, update `.claude/krillin_counters.md`:
+After completing the report, update `../../krillin_counters.md` (workspace-level, not version-controlled):
 
 - For each FINDING, determine if it matches an existing error category
 - If yes, increment the counter and update the timestamp
@@ -336,7 +336,7 @@ After completing the report, update `.claude/krillin_counters.md`:
 
 ```bash
 # Read current counters
-cat .claude/krillin_counters.md
+cat ../../krillin_counters.md
 
 # Update with findings from this audit
 # [edit the file with new counts]
@@ -362,7 +362,7 @@ The greater the reconciliation between your GRC and the agent's defense, the les
 
 ## Integration Points
 
-- **`.claude/krillin_counters.md`** — Error tracking across audits
+- **`../../krillin_counters.md`** — Error tracking across audits (workspace-level, untracked)
 - **`CLAUDE.md`** — MD+ convention nominations land here
 - **Conversation context** — Your primary evidence source
 - **TodoWrite outputs** — Plans and task tracking in context
