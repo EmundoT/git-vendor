@@ -133,8 +133,11 @@ type PathMapping struct {
 //   - Unknown minor versions: warning, operation proceeds, unknown fields preserved
 //   - Unknown major versions: error, operation aborts to prevent data corruption
 //
-// Current version: 1.1 (adds LicenseSPDX, SourceVersionTag, VendoredAt,
-// VendoredBy, LastSyncedAt). Migrate via "git-vendor migrate".
+// Current version: 1.3. History:
+//   - 1.1: LicenseSPDX, SourceVersionTag, VendoredAt, VendoredBy, LastSyncedAt
+//   - 1.2: Positions (position extraction, Spec 071)
+//   - 1.3: SourceURL (multi-remote), AcceptedDrift (CLI-003), Source/SourceFileHashes (Spec 070)
+// Migrate via "git-vendor migrate".
 type VendorLock struct {
 	SchemaVersion string        `yaml:"schema_version,omitempty"`
 	Vendors       []LockDetails `yaml:"vendors"`
@@ -149,7 +152,7 @@ type LockDetails struct {
 	Updated     string            `yaml:"updated"`
 	FileHashes  map[string]string `yaml:"file_hashes,omitempty"` // path -> SHA-256 hash
 
-	// Metadata fields (schema v1.1)
+	// Metadata fields (added in schema v1.1)
 	LicenseSPDX      string `yaml:"license_spdx,omitempty"`       // SPDX license identifier
 	SourceVersionTag string `yaml:"source_version_tag,omitempty"` // Git tag matching commit (if any)
 	VendoredAt       string `yaml:"vendored_at,omitempty"`        // ISO 8601 timestamp of initial vendoring
