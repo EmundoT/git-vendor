@@ -1158,6 +1158,82 @@ func main() {
 			fmt.Println()
 		}
 
+	case "hook":
+		// Subcommand: git-vendor hook install [--pre-commit|--makefile] [--dry-run]
+		if len(os.Args) < 3 || os.Args[2] != "install" {
+			tui.PrintError("Usage", "git-vendor hook install [--pre-commit|--makefile] [--dry-run]")
+			os.Exit(1)
+		}
+
+		// Parse hook install flags
+		preCommit := false
+		makefile := false
+		dryRun := false
+		for i := 3; i < len(os.Args); i++ {
+			switch os.Args[i] {
+			case "--pre-commit":
+				preCommit = true
+			case "--makefile":
+				makefile = true
+			case "--dry-run":
+				dryRun = true
+			default:
+				tui.PrintError("Unknown Flag", fmt.Sprintf("'%s' is not a valid flag for hook install", os.Args[i]))
+				os.Exit(1)
+			}
+		}
+
+		// Default to --pre-commit when neither flag is specified
+		if !preCommit && !makefile {
+			preCommit = true
+		}
+
+		if preCommit && makefile {
+			tui.PrintError("Invalid Flags", "cannot specify both --pre-commit and --makefile")
+			os.Exit(1)
+		}
+
+		if makefile {
+			// Makefile target always goes to stdout
+			fmt.Print(core.GenerateMakefileTarget())
+		} else {
+			// Pre-commit hook
+			script := core.GeneratePreCommitHook()
+
+			if dryRun {
+				fmt.Print(script)
+			} else {
+				// Ensure .githooks/ exists
+				if err := os.MkdirAll(".githooks", 0755); err != nil {
+					tui.PrintError("Directory Creation Failed", err.Error())
+					os.Exit(1)
+				}
+
+				hookPath := ".githooks/vendor-guard.sh"
+
+				// Back up existing file
+				if _, err := os.Stat(hookPath); err == nil {
+					backupPath := hookPath + ".bak"
+					data, readErr := os.ReadFile(hookPath)
+					if readErr != nil {
+						tui.PrintError("Backup Failed", readErr.Error())
+						os.Exit(1)
+					}
+					if writeErr := os.WriteFile(backupPath, data, 0755); writeErr != nil {
+						tui.PrintError("Backup Failed", writeErr.Error())
+						os.Exit(1)
+					}
+					fmt.Fprintf(os.Stderr, "Existing %s backed up to %s\n", hookPath, backupPath)
+				}
+
+				if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
+					tui.PrintError("Write Failed", err.Error())
+					os.Exit(1)
+				}
+				tui.PrintSuccess(fmt.Sprintf("Vendor guard hook installed to %s", hookPath))
+			}
+		}
+
 	case "scan":
 		// Parse command-specific flags
 		format := "table" // default format

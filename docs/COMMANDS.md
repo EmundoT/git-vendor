@@ -34,6 +34,7 @@ All examples in this document use `git-vendor`, but you can substitute `git vend
 - [update](#update)
 - [validate](#validate)
 - [status](#status)
+- [hook install](#hook-install)
 - [check-updates](#check-updates)
 - [diff](#diff)
 - [watch](#watch)
@@ -430,6 +431,62 @@ charmbracelet-huh              (inherited)     strict
 security-lib                   strict          strict
 readme-sync                    info            strict  <- overridden
 ```
+
+---
+
+### hook install
+
+Generate vendor guard hook scripts for pre-commit or Makefile integration. The generated scripts call `git-vendor status --offline` to detect vendor drift and block commits or builds accordingly.
+
+**Usage:**
+
+```bash
+git-vendor hook install [--pre-commit|--makefile] [--dry-run]
+```
+
+**Options:**
+
+| Flag             | Description                                                        |
+| ---------------- | ------------------------------------------------------------------ |
+| `--pre-commit`   | Generate a POSIX shell pre-commit hook (default if no flag given)  |
+| `--makefile`     | Generate a Makefile `vendor-check` target (printed to stdout)      |
+| `--dry-run`      | Print the generated script to stdout without writing any files     |
+
+**Pre-commit behavior:**
+
+- Writes to `.githooks/vendor-guard.sh` (creates `.githooks/` if needed)
+- If the file already exists, backs up to `.githooks/vendor-guard.sh.bak` with a warning
+- Both strict (exit 1) and lenient (exit 2) drift block commits
+- Skips gracefully if `git-vendor` is not installed or project has no `vendor.yml`
+
+**Makefile behavior:**
+
+- Prints a `.PHONY: vendor-check` target to stdout (user pastes into their Makefile)
+- Uses `--strict-only` — only strict enforcement failures block the build
+- Lenient and info-level drift pass through
+
+**Examples:**
+
+```bash
+# Install pre-commit hook (default)
+git-vendor hook install
+
+# Preview the generated hook without writing
+git-vendor hook install --dry-run
+
+# Generate Makefile target
+git-vendor hook install --makefile
+
+# Explicit pre-commit flag
+git-vendor hook install --pre-commit
+```
+
+**Exit codes:**
+
+The generated pre-commit hook uses these exit codes from `git-vendor status`:
+- `0` - PASS (no drift, or info-only) — commit allowed
+- `1` - FAIL (strict vendor drift) — commit blocked
+- `2` - WARN (lenient vendor drift) — commit blocked
 
 ---
 

@@ -119,6 +119,12 @@ func (s *ValidationService) validateVendor(vendor *types.VendorSpec) error {
 	// Validate per-vendor enforcement level (Spec 075)
 	if vendor.Enforcement != "" && vendor.Enforcement != EnforcementStrict &&
 		vendor.Enforcement != EnforcementLenient && vendor.Enforcement != EnforcementInfo {
+		// Detect stale Spec 070 values that used the same YAML key for sync direction
+		if vendor.Enforcement == ComplianceBidirectional || vendor.Enforcement == ComplianceSourceCanonical {
+			return NewValidationError(vendor.Name, "", "compliance",
+				fmt.Sprintf("compliance %q is a sync direction (Spec 070), not an enforcement level (Spec 075); use the 'direction' YAML key for %q and 'compliance' for %q/%q/%q",
+					vendor.Enforcement, vendor.Enforcement, EnforcementStrict, EnforcementLenient, EnforcementInfo))
+		}
 		return NewValidationError(vendor.Name, "", "compliance",
 			fmt.Sprintf("compliance must be empty, %q, %q, or %q",
 				EnforcementStrict, EnforcementLenient, EnforcementInfo))
@@ -315,6 +321,12 @@ func (s *ValidationService) validateInternalVendor(vendor *types.VendorSpec) err
 	// Validate per-vendor enforcement level (Spec 075)
 	if vendor.Enforcement != "" && vendor.Enforcement != EnforcementStrict &&
 		vendor.Enforcement != EnforcementLenient && vendor.Enforcement != EnforcementInfo {
+		// Detect stale Spec 070 values that used the same YAML key for sync direction
+		if vendor.Enforcement == ComplianceBidirectional || vendor.Enforcement == ComplianceSourceCanonical {
+			return NewValidationError(vendor.Name, "", "compliance",
+				fmt.Sprintf("compliance %q is a sync direction (Spec 070), not an enforcement level (Spec 075); use the 'direction' YAML key for %q and 'compliance' for %q/%q/%q",
+					vendor.Enforcement, vendor.Enforcement, EnforcementStrict, EnforcementLenient, EnforcementInfo))
+		}
 		return NewValidationError(vendor.Name, "", "compliance",
 			fmt.Sprintf("compliance must be empty, %q, %q, or %q",
 				EnforcementStrict, EnforcementLenient, EnforcementInfo))

@@ -26,6 +26,7 @@ var commands = []string{
 	"completion",
 	"help",
 	"compliance",
+	"hook",
 	// LLM-friendly commands (Spec 072)
 	"create",
 	"delete",
@@ -114,6 +115,12 @@ _git_vendor_completions() {
             ;;
         compliance)
             opts=""
+            ;;
+        hook)
+            opts="install"
+            ;;
+        install)
+            opts="--pre-commit --makefile --dry-run"
             ;;
     esac
 
@@ -249,6 +256,9 @@ _git_vendor() {
                     ;;
                 compliance)
                     ;;
+                hook)
+                    _arguments '1:subcommand:(install)'
+                    ;;
             esac
             ;;
     esac
@@ -329,6 +339,12 @@ func GenerateFishCompletion() string {
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from update-mapping' -l to -d 'New destination path' -r")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from update-mapping' -l json -d 'JSON output'")
 	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from config' -f -a 'get set list'")
+
+	completions = append(completions, "# hook command")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from hook' -f -a 'install'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from install' -l pre-commit -d 'Generate pre-commit hook'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from install' -l makefile -d 'Generate Makefile target'")
+	completions = append(completions, "complete -c git-vendor -n '__fish_seen_subcommand_from install' -l dry-run -d 'Print to stdout without writing'")
 
 	return strings.Join(completions, "\n")
 }
@@ -437,6 +453,12 @@ Register-ArgumentCompleter -Native -CommandName git-vendor -ScriptBlock {
                         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
                     }
             }
+            'hook' {
+                @('install') |
+                    Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                    }
+            }
         }
     }
 }
@@ -475,6 +497,7 @@ func getCommandDescription(cmd string) string {
 		"check":          "Check vendor sync status",
 		"preview":        "Preview what would be synced",
 		"compliance":     "Show effective compliance levels",
+		"hook":           "Generate vendor guard hook scripts",
 		"config":         "Get or set configuration values",
 	}
 

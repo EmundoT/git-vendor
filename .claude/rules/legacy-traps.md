@@ -24,4 +24,4 @@ REJECTED: Transforms (extract-section, embed-json, template rendering) are out o
 REJECTED: Internal vendors sync sequentially even with `--parallel`. Internal mappings may share destination files; concurrent writes would race.
 
 ### Full compliance enforcement modes (Spec 075)
-IMPLEMENTED: Spec 075 adds strict/lenient/info enforcement levels with exit code semantics, `compliance` block in vendor.yml, `--strict-only`/`--compliance=<level>` flags on status, and `compliance` informational command. Hook install generator deferred to follow-up PR.
+IMPLEMENTED: Spec 075 adds strict/lenient/info enforcement levels with exit code semantics, `compliance` block in vendor.yml, `--strict-only`/`--compliance=<level>` flags on status, `compliance` informational command, and `hook install` generator for pre-commit hooks and Makefile targets.

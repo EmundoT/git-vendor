@@ -1,0 +1,58 @@
+# Compliance enforcement example (Spec 075)
+#
+# The compliance block controls how vendor drift affects exit codes and commit gates.
+# Three levels: strict (blocks builds + commits), lenient (blocks commits only),
+# info (reported but blocks nothing).
+#
+# Mode: "default" lets per-vendor compliance override the global default.
+#       "override" forces the global default for ALL vendors.
+
+compliance:
+  default: lenient        # Fallback level when per-vendor isn't set
+  mode: default           # Per-vendor overrides allowed
+
+vendors:
+  # Security-critical code: strict enforcement blocks builds AND commits
+  - name: security-lib
+    url: https://github.com/example/security-lib
+    license: MIT
+    compliance: strict
+    specs:
+      - ref: v2.1.0
+        mapping:
+          - from: src/crypto/hash.go
+            to: internal/vendor/crypto/hash.go
+          - from: src/crypto/sign.go
+            to: internal/vendor/crypto/sign.go
+
+  # Documentation sync: lenient enforcement warns on drift but blocks commits
+  - name: shared-docs
+    url: https://github.com/example/shared-docs
+    license: MIT
+    compliance: lenient
+    specs:
+      - ref: main
+        mapping:
+          - from: guides/quickstart.md
+            to: docs/quickstart.md
+
+  # Experimental vendor: info-only, drift is reported but blocks nothing
+  - name: experimental-utils
+    url: https://github.com/example/experimental-utils
+    license: Apache-2.0
+    compliance: info
+    specs:
+      - ref: main
+        mapping:
+          - from: src/helpers.go
+            to: internal/experimental/helpers.go
+
+  # No per-vendor compliance: inherits global default (lenient)
+  - name: common-config
+    url: https://github.com/example/common-config
+    license: MIT
+    specs:
+      - ref: main
+        mapping:
+          - from: config/defaults.yml
+            to: config/vendor/defaults.yml

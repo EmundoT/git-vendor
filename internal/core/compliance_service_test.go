@@ -996,6 +996,37 @@ func TestValidateConfig_RejectsInvalidPerVendorEnforcement(t *testing.T) {
 	}
 }
 
+func TestValidateConfig_DetectsStaleSpec070ComplianceValues(t *testing.T) {
+	// Spec 070 used the YAML key "compliance" for sync direction (bidirectional/source-canonical).
+	// Spec 075 repurposed it for enforcement levels. Catch the old values with a helpful error.
+	for _, staleValue := range []string{"bidirectional", "source-canonical"} {
+		t.Run(staleValue, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			mockConfig := NewMockConfigStore(ctrl)
+
+			mockConfig.EXPECT().Load().Return(types.VendorConfig{
+				Vendors: []types.VendorSpec{
+					{Name: "lib-a", URL: "https://example.com/a", Enforcement: staleValue,
+						Specs: []types.BranchSpec{{Ref: "main", Mapping: []types.PathMapping{{From: "a.go", To: "a.go"}}}}},
+				},
+			}, nil)
+
+			svc := NewValidationService(mockConfig)
+			err := svc.ValidateConfig()
+			if err == nil {
+				t.Fatalf("expected error for stale Spec 070 compliance value %q", staleValue)
+			}
+			if !contains(err.Error(), "sync direction") {
+				t.Errorf("expected migration hint about sync direction, got: %v", err)
+			}
+			if !contains(err.Error(), "direction") {
+				t.Errorf("expected hint to use 'direction' YAML key, got: %v", err)
+			}
+		})
+	}
+}
+
 // ============================================================================
 // Cycle Detection Tests
 // ============================================================================

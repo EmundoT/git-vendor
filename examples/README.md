@@ -13,6 +13,7 @@ This directory contains example vendor configurations for common use cases.
 | [monorepo-vendor.yml](./monorepo-vendor.yml) | Vendoring from monorepo structure |
 | [multiple-repos-vendor.yml](./multiple-repos-vendor.yml) | Multiple vendor dependencies |
 | [default-target-vendor.yml](./default-target-vendor.yml) | Using default_target for convenience |
+| [compliance-vendor.yml](./compliance-vendor.yml) | Compliance enforcement levels (Spec 075) |
 
 ## Example Structure
 

@@ -72,6 +72,7 @@ internal/
     status_service.go            # Status command: unified verify+outdated inspection (CLI-001)
     policy_service.go            # Policy engine: vendor.yml policy evaluation for commit guard (GRD-002)
     enforcement_service.go       # Compliance enforcement: resolve levels + exit codes (Spec 075)
+    hook_generator.go            # Pre-commit hook and Makefile target generators (Spec 075 D3)
     config_commands.go           # LLM-friendly CLI (Spec 072) + mirror management
     cli_response.go              # JSON output types for Spec 072
     remote_fallback.go           # Multi-remote: ResolveVendorURLs + FetchWithFallback
@@ -159,6 +160,13 @@ Old commands are aliased with deprecation warnings (CLI-004). Remove after 2 min
 Pre-commit hook chain in `.githooks/`:
 - **vendor-guard.sh** (GRD-001): Runs `status --offline --format json`, blocks commits with unacknowledged vendor drift. Two-pass: offline first, remote only when `block_on_stale` policy is enabled.
 - **pre-commit**: Calls vendor-guard.sh after existing go build/vet/test checks.
+
+`hook install` generates a simplified guard for new projects:
+- `git-vendor hook install [--pre-commit]`: writes `.githooks/vendor-guard.sh` (backs up existing). Strict drift (exit 1) blocks commits; lenient drift (exit 2) warns but allows the commit; info (exit 0) passes silently.
+- `git-vendor hook install --makefile`: prints `vendor-check` target to stdout. Only `--strict-only` — lenient/info pass.
+- `--dry-run`: prints to stdout without writing.
+
+The generated hook is a simplified single-pass alternative to the full `vendor-guard.sh` (GRD-001), which adds two-pass staleness checks (offline first, remote when `block_on_stale` is enabled) and JSON-format output parsing. Projects can start with the generated hook and upgrade to the full version later.
 
 ## Policy Engine (GRD-002/GRD-003)
 
