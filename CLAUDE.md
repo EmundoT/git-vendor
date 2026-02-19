@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-**CRITICAL: ALWAYS USE THE `private` REMOTE** (e.g. `git pull private main`, `git push private main`).
-
 ## Ecosystem Rules
 
 This project follows the git-ecosystem shared rules:
